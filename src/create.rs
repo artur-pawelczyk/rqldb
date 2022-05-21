@@ -1,17 +1,10 @@
 use std::fmt;
 
+use crate::schema::{Column, Type};
+
 pub struct CreateRelationCommand {
     name: String,
     columns: Vec<Column>
-}
-
-struct Column {
-    name: String,
-    kind: Type
-}
-
-pub enum Type {
-    TEXT, NUMBER
 }
 
 impl CreateRelationCommand {
@@ -64,7 +57,7 @@ impl Type {
 #[cfg(test)]
 mod tests {
     use super::CreateRelationCommand;
-    use super::Type::*;
+    use crate::schema::Type::*;
 
     #[test]
     fn create_table() {

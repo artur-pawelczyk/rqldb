@@ -1,15 +1,18 @@
 pub mod select;
 pub mod create;
+pub mod schema;
 
 use select::{SelectQuery, Operator};
-use create::{CreateRelationCommand, Type};
+use schema::{Schema, Type};
+use create::CreateRelationCommand;
 
 struct Database {
+    schema: Schema
 }
 
 impl Database {
     pub fn new() -> Self{
-        Self{}
+        Self{schema: Schema::new()}
     }
 
     pub fn execute_create(&self, command: &CreateRelationCommand) {
@@ -17,7 +20,7 @@ impl Database {
 }
 
 fn main() {
-    let command = CreateRelationCommand::with_name("document")
+    let command = create::CreateRelationCommand::with_name("document")
         .column("id", Type::NUMBER)
         .column("content", Type::TEXT);
 
