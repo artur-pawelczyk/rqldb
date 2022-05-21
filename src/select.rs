@@ -8,7 +8,7 @@ pub struct SelectQuery {
 
 impl SelectQuery {
     pub fn scan(table: &str) -> Self {
-        SelectQuery{source:  Source::TableScan(String::from(table)), filters: Vec::new(), finisher: Finisher::AllRows}
+        SelectQuery{source:  Source::TableScan(String::from(table)), filters: Vec::new(), finisher: Finisher::AllColumns}
     }
 
     pub fn filter(mut self, left: &str, op: Operator, right: &str) -> Self {
@@ -17,12 +17,12 @@ impl SelectQuery {
     }
 
     pub fn select_all(mut self) -> Self {
-        self.finisher = Finisher::AllRows;
+        self.finisher = Finisher::AllColumns;
         self
     }
 
     pub fn select(mut self, columns: &[&str]) -> Self {
-        self.finisher = Finisher::Rows(columns.iter().map(|x| x.to_string()).collect());
+        self.finisher = Finisher::Columns(columns.iter().map(|x| x.to_string()).collect());
         self
     }
 
@@ -90,14 +90,14 @@ fn join(a: &str, b: &str, c: &str) -> String {
 }
 
 enum Finisher {
-    AllRows, Rows(Vec<String>)
+    AllColumns, Columns(Vec<String>)
 }
 
 impl Finisher {
     fn print(&self) -> String {
         match self {
-            Finisher::AllRows => "select_all".to_owned(),
-            Finisher::Rows(rows) => "select ".to_owned() + &join2(rows)
+            Finisher::AllColumns => "select_all".to_owned(),
+            Finisher::Columns(rows) => "select ".to_owned() + &join2(rows)
         }
     }
 }
