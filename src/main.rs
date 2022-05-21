@@ -15,7 +15,8 @@ impl Database {
         Self{schema: Schema::new()}
     }
 
-    pub fn execute_create(&self, command: &CreateRelationCommand) {
+    pub fn execute_create(&mut self, command: &CreateRelationCommand) {
+        self.schema.add_relation(&command.name, &command.columns)
     }
 }
 
@@ -24,6 +25,6 @@ fn main() {
         .column("id", Type::NUMBER)
         .column("content", Type::TEXT);
 
-    let db = Database::new();
+    let mut db = Database::new();
     db.execute_create(&command);
 }

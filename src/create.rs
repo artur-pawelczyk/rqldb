@@ -3,8 +3,8 @@ use std::fmt;
 use crate::schema::{Column, Type};
 
 pub struct CreateRelationCommand {
-    name: String,
-    columns: Vec<Column>
+    pub name: String,
+    pub columns: Vec<Column>
 }
 
 impl CreateRelationCommand {
