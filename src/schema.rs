@@ -2,7 +2,7 @@ pub struct Schema {
     pub relations: Vec<Relation>
 }
 
-struct Relation {
+pub struct Relation {
     pub name: String,
     pub columns: Vec<Column>
 }
