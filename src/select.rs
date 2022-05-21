@@ -80,13 +80,9 @@ enum Filter {
 impl Filter {
     fn print(&self) -> String {
         match self {
-            Filter::Condition(left, op, right) => "filter ".to_owned() + &join(left, &op.print(), right)
+            Filter::Condition(left, op, right) => "filter ".to_owned() + left + " " + &op.print() + " " + right
         }
     }
-}
-
-fn join(a: &str, b: &str, c: &str) -> String {
-    [a, " ", b, " ", c].iter().copied().collect::<String>()
 }
 
 enum Finisher {
@@ -97,12 +93,12 @@ impl Finisher {
     fn print(&self) -> String {
         match self {
             Finisher::AllColumns => "select_all".to_owned(),
-            Finisher::Columns(rows) => "select ".to_owned() + &join2(rows)
+            Finisher::Columns(rows) => "select ".to_owned() + &print_tokens(rows)
         }
     }
 }
 
-fn join2(tokens: &[String]) -> String {
+fn print_tokens(tokens: &[String]) -> String {
     let mut s  = String::new();
     for token in tokens {
         s.push_str(token);
