@@ -3,14 +3,14 @@ use std::fmt;
 pub struct Query {}
 
 pub struct SelectQuery {
-    source: String,
+    source: Source,
     filters: Vec<Filter>,
-    columns: Vec<String> // or "finisher"
+    finisher: Finisher
 }
 
 impl Query {
     pub fn scan(table: &str) -> SelectQuery {
-        SelectQuery{source:  String::from(table), filters: Vec::new(), columns: Vec::new()}
+        SelectQuery{source:  Source::TableScan(String::from(table)), filters: Vec::new(), finisher: Finisher::AllRows}
     }
 }
 
@@ -21,39 +21,27 @@ impl SelectQuery {
     }
 
     pub fn select_all(mut self) -> Self {
-        self.columns.clear();
+        self.finisher = Finisher::AllRows;
         self
     }
 
     pub fn select(mut self, columns: &[&str]) -> Self {
-        self.columns.reserve(columns.len());
-        for col in columns {
-            self.columns.push(col.to_string());
-        }
+        self.finisher = Finisher::Rows(columns.iter().map(|x| x.to_string()).collect());
         self
     }
 
     pub fn print(&self) -> String {
         let mut s = String::new();
-        s.push_str("scan ");
-        s.push_str(&self.source);
+
+        s.push_str(&self.source.print());
 
         for filter in &self.filters {
-            s.push_str(" | filter ");
+            s.push_str(" | ");
             s.push_str(&filter.print());
         }
 
         s.push_str(" | ");
-        if self.columns.is_empty() {
-            s.push_str("select_all");
-        } else {
-            s.push_str("select ");
-            for col in &self.columns {
-                s.push_str(&col);
-                s.push(' ');
-            }
-            s.pop();
-        }
+        s.push_str(&self.finisher.print());
 
         s
     }
@@ -77,6 +65,18 @@ impl Operator {
     }
 }
 
+enum Source {
+    TableScan(String)
+}
+
+impl Source {
+    fn print(&self) -> String {
+        match self {
+            Source::TableScan(table) => "scan ".to_owned() + table
+        }
+    }
+}
+
 enum Filter {
     Condition(String, Operator, String)
 }
@@ -84,13 +84,38 @@ enum Filter {
 impl Filter {
     fn print(&self) -> String {
         match self {
-            Filter::Condition(left, op, right) => join(left, &op.print(), right)
+            Filter::Condition(left, op, right) => "filter ".to_owned() + &join(left, &op.print(), right)
         }
     }
 }
 
 fn join(a: &str, b: &str, c: &str) -> String {
     [a, " ", b, " ", c].iter().copied().collect::<String>()
+}
+
+enum Finisher {
+    AllRows, Rows(Vec<String>)
+}
+
+impl Finisher {
+    fn print(&self) -> String {
+        match self {
+            Finisher::AllRows => "select_all".to_owned(),
+            Finisher::Rows(rows) => "select ".to_owned() + &join2(rows)
+        }
+    }
+}
+
+fn join2(tokens: &[String]) -> String {
+    let mut s  = String::new();
+    for token in tokens {
+        s.push_str(token);
+        s.push(' ');
+    }
+
+    if !s.is_empty() { s.pop(); }
+    
+    s
 }
 
 #[cfg(test)]
