@@ -1,20 +1,16 @@
 use std::fmt;
 
-pub struct Query {}
-
 pub struct SelectQuery {
     source: Source,
     filters: Vec<Filter>,
     finisher: Finisher
 }
 
-impl Query {
-    pub fn scan(table: &str) -> SelectQuery {
+impl SelectQuery {
+    pub fn scan(table: &str) -> Self {
         SelectQuery{source:  Source::TableScan(String::from(table)), filters: Vec::new(), finisher: Finisher::AllRows}
     }
-}
 
-impl SelectQuery {
     pub fn filter(mut self, left: &str, op: Operator, right: &str) -> Self {
         self.filters.push(Filter::Condition(left.to_string(), op, right.to_string()));
         return self;
@@ -120,18 +116,18 @@ fn join2(tokens: &[String]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use super::Operator::*;
+    use super::SelectQuery;
+    use super::Operator::EQ;
 
     #[test]
     fn select_all() {
-        let query = Query::scan("example").select_all();
+         let query = SelectQuery::scan("example").select_all();
         assert_eq!(query.to_string(), "scan example | select_all")
     }
 
     #[test]
     fn where_clause() {
-        let query = Query::scan("example").filter("id", EQ, "1").select(&["id", "a_column"]);
+        let query = SelectQuery::scan("example").filter("id", EQ, "1").select(&["id", "a_column"]);
         assert_eq!(query.to_string(), "scan example | filter id = 1 | select id a_column")
     }
 }
