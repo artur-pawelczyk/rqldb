@@ -1,6 +1,6 @@
 use std::fmt;
 
-pub struct CreateTableQuery {
+pub struct CreateRelationCommand {
     name: String,
     columns: Vec<Column>
 }
@@ -14,9 +14,9 @@ pub enum Type {
     TEXT, NUMBER
 }
 
-impl CreateTableQuery {
+impl CreateRelationCommand {
     pub fn with_name(name: &str) -> Self {
-        CreateTableQuery{name: name.to_string(), columns: Vec::new()}
+        CreateRelationCommand{name: name.to_string(), columns: Vec::new()}
     }
 
     pub fn column(mut self, name: &str, kind: Type) -> Self {
@@ -40,7 +40,7 @@ impl CreateTableQuery {
     }
 }
 
-impl fmt::Display for CreateTableQuery {
+impl fmt::Display for CreateRelationCommand {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.print())
     }
@@ -63,12 +63,12 @@ impl Type {
 
 #[cfg(test)]
 mod tests {
-    use super::CreateTableQuery;
+    use super::CreateRelationCommand;
     use super::Type::*;
 
     #[test]
     fn create_table() {
-        let query = CreateTableQuery::with_name("example")
+        let query = CreateRelationCommand::with_name("example")
             .column("id", NUMBER)
             .column("contents", TEXT);
 

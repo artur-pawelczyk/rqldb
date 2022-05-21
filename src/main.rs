@@ -2,8 +2,25 @@ pub mod select;
 pub mod create;
 
 use select::{SelectQuery, Operator};
+use create::{CreateRelationCommand, Type};
+
+struct Database {
+}
+
+impl Database {
+    pub fn new() -> Self{
+        Self{}
+    }
+
+    pub fn execute_create(&self, command: &CreateRelationCommand) {
+    }
+}
 
 fn main() {
-    let query = SelectQuery::scan("example").filter("id", Operator::EQ, "1").select(&["id", "a_column"]);
-    println!("{}", query);
+    let command = CreateRelationCommand::with_name("document")
+        .column("id", Type::NUMBER)
+        .column("content", Type::TEXT);
+
+    let db = Database::new();
+    db.execute_create(&command);
 }
