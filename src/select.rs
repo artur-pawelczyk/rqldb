@@ -11,6 +11,10 @@ impl SelectQuery {
         SelectQuery{source:  Source::TableScan(String::from(table)), filters: Vec::new(), finisher: Finisher::AllColumns}
     }
 
+    pub fn tuple(values: &[&str]) -> Self {
+        SelectQuery{source: Source::Tuple(values.iter().map(|x| x.to_string()).collect()), filters: Vec::new(), finisher: Finisher::AllColumns}
+    }
+
     pub fn filter(mut self, left: &str, op: Operator, right: &str) -> Self {
         self.filters.push(Filter::Condition(left.to_string(), op, right.to_string()));
         return self;
@@ -23,6 +27,11 @@ impl SelectQuery {
 
     pub fn select(mut self, columns: &[&str]) -> Self {
         self.finisher = Finisher::Columns(columns.iter().map(|x| x.to_string()).collect());
+        self
+    }
+
+    pub fn insert_into(mut self, name: &str) -> Self {
+        self.finisher = Finisher::Insert(name.to_string());
         self
     }
 
@@ -62,13 +71,15 @@ impl Operator {
 }
 
 pub enum Source {
-    TableScan(String)
+    TableScan(String),
+    Tuple(Vec<String>)
 }
 
 impl Source {
     fn print(&self) -> String {
         match self {
-            Source::TableScan(table) => "scan ".to_owned() + table
+            Source::TableScan(table) => "scan ".to_owned() + table,
+            Source::Tuple(values) => "tuple ".to_owned() + &print_tokens(values)
         }
     }
 }
@@ -86,14 +97,17 @@ impl Filter {
 }
 
 enum Finisher {
-    AllColumns, Columns(Vec<String>)
+    AllColumns,
+    Columns(Vec<String>),
+    Insert(String)
 }
 
 impl Finisher {
     fn print(&self) -> String {
         match self {
-            Finisher::AllColumns => "select_all".to_owned(),
-            Finisher::Columns(rows) => "select ".to_owned() + &print_tokens(rows)
+            Finisher::AllColumns => "select_all".to_string(),
+            Finisher::Columns(rows) => "select ".to_string() + &print_tokens(rows),
+            Finisher::Insert(name) => "insert_into ".to_string() + name
         }
     }
 }
@@ -125,5 +139,11 @@ mod tests {
     fn where_clause() {
         let query = SelectQuery::scan("example").filter("id", EQ, "1").select(&["id", "a_column"]);
         assert_eq!(query.to_string(), "scan example | filter id = 1 | select id a_column")
+    }
+
+    #[test]
+    fn source_is_tuple() {
+        let query = SelectQuery::tuple(&["1", "example_value"]).insert_into("example");
+        assert_eq!(query.to_string(), "tuple 1 example_value | insert_into example");
     }
 }

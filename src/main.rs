@@ -33,20 +33,27 @@ impl Database {
     }
 
     pub fn execute_query(&self, query: &SelectQuery) -> Result<Tuples, &str> {
-        let relation = match &query.source {
-            Source::TableScan(relation) => relation
+        let tuples = match &query.source {
+            Source::TableScan(name) => {
+                let rel = self.schema.find_relation(&name).ok_or("No such relation")?;
+                Tuples::empty(rel.columns.iter().map(|col| col.name.clone()).collect())
+            },
+            Source::Tuple(values) => {
+                Tuples::single_unnamed(values.iter().map(|x| x.to_owned().into_bytes()).collect())
+            }
         };
 
-        match self.schema.find_relation(&relation) {
-            Option::Some(rel) => Result::Ok(Tuples::empty(rel.columns.iter().map(|col| col.name.clone()).collect())),
-            Option::None => Result::Err("No such relation")
-        }
+        Result::Ok(tuples)
     }
 }
 
 impl Tuples {
     pub fn empty(attributes: Vec<String>) -> Self {
         Self{attributes: Rc::new(attributes), results: Vec::new()}
+    }
+
+    pub fn single_unnamed(values: Vec<Vec<u8>>) -> Self {
+        Self{attributes: Rc::new(Vec::new()), results: vec![Tuple{data: values}]}
     }
 
     pub fn size(&self) -> u32 {
@@ -96,5 +103,23 @@ mod tests {
         assert_eq!(tuples.size(), 0);
         let attrs = tuples.attributes();
         assert_eq!(attrs.as_slice(), ["id".to_string(), "content".to_string()]);
+    }
+
+    #[test]
+    fn insert() {
+        let mut db = Database::new();
+
+        let command = CreateRelationCommand::with_name("document")
+            .column("id", Type::NUMBER)
+            .column("content", Type::TEXT);
+        db.execute_create(&command);
+
+        let insert_query = SelectQuery::tuple(&["1", "something"]).insert_into("document");
+        let insert_result = db.execute_query(&insert_query);
+        assert_eq!(insert_result.is_ok(), true);
+
+        let query = SelectQuery::scan("document").select_all();
+        let result = db.execute_query(&query);
+        assert_eq!(result.is_ok(), true);
     }
 }
