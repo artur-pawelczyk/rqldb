@@ -49,7 +49,8 @@ impl Type {
     fn print(&self) -> &'static str {
         match self {
             Type::NUMBER => "NUMBER",
-            Type::TEXT => "TEXT"
+            Type::TEXT => "TEXT",
+            Type::BYTE(n) => if n == &1 { "UINT8" } else if n == &2 { "UINT16" } else if n == &4 { "UINT36" } else { panic!() }
         }
     }
 }

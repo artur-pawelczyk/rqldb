@@ -15,6 +15,7 @@ pub struct Column {
 
 #[derive(Clone)]
 pub enum Type {
+    BYTE(u8),
     NUMBER, TEXT
 }
 

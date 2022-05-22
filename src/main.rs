@@ -3,7 +3,8 @@ pub mod create;
 pub mod schema;
 
 use std::collections::HashMap;
-use core::slice::Iter;
+use std::rc::Rc;
+use std::ops::Deref;
 
 use select::{SelectQuery, Operator, Source};
 use schema::{Schema, Type};
@@ -14,7 +15,12 @@ struct Database {
 }
 
 struct Tuples {
-    results: Vec<HashMap<String, String>>
+    results: Vec<Tuple>,
+    attributes: Rc<Vec<String>>
+}
+
+struct Tuple {
+    data: Vec<Vec<u8>>
 }
 
 impl Database {
@@ -31,18 +37,24 @@ impl Database {
             Source::TableScan(relation) => relation
         };
 
-        let rel = self.schema.find_relation(&relation);
-        if rel.is_some() {
-            return Result::Ok(Tuples{results: Vec::new()});
-        } else {
-            return Result::Err("No such relation");
+        match self.schema.find_relation(&relation) {
+            Option::Some(rel) => Result::Ok(Tuples::empty(rel.columns.iter().map(|col| col.name.clone()).collect())),
+            Option::None => Result::Err("No such relation")
         }
     }
 }
 
 impl Tuples {
-    pub fn iter(&self) -> Iter<HashMap<String, String>> {
-        self.results.iter()
+    pub fn empty(attributes: Vec<String>) -> Self {
+        Self{attributes: Rc::new(attributes), results: Vec::new()}
+    }
+
+    pub fn size(&self) -> u32 {
+        self.results.len() as u32
+    }
+
+    pub fn attributes(&self) -> Rc<Vec<String>> {
+        Rc::clone(&self.attributes)
     }
 }
 
@@ -80,6 +92,9 @@ mod tests {
         let result = db.execute_query(&query);
 
         assert_eq!(result.is_ok(), true);
-        assert_eq!(result.unwrap().iter().count(), 0);
+        let tuples = result.unwrap();
+        assert_eq!(tuples.size(), 0);
+        let attrs = tuples.attributes();
+        assert_eq!(attrs.as_slice(), ["id".to_string(), "content".to_string()]);
     }
 }
