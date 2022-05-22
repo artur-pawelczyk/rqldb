@@ -1,7 +1,7 @@
 use std::fmt;
 
 pub struct SelectQuery {
-    source: Source,
+    pub source: Source,
     filters: Vec<Filter>,
     finisher: Finisher
 }
@@ -61,7 +61,7 @@ impl Operator {
     }
 }
 
-enum Source {
+pub enum Source {
     TableScan(String)
 }
 

@@ -27,4 +27,9 @@ impl Schema {
         let relation = Relation{name: name.to_string(), columns: columns.to_vec()};
         self.relations.push(relation);
     }
+
+    pub fn find_relation(&self, name: &str) -> Option<&Relation> {
+        self.relations.iter()
+            .find(|x| x.name == name)
+    }
 }
