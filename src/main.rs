@@ -19,9 +19,7 @@ struct Tuples {
     attributes: Rc<Vec<String>>
 }
 
-struct Tuple {
-    data: Vec<Vec<u8>>
-}
+type Tuple = Vec<Vec<u8>>;
 
 impl Database {
     pub fn new() -> Self{
@@ -52,8 +50,8 @@ impl Tuples {
         Self{attributes: Rc::new(attributes), results: Vec::new()}
     }
 
-    pub fn single_unnamed(values: Vec<Vec<u8>>) -> Self {
-        Self{attributes: Rc::new(Vec::new()), results: vec![Tuple{data: values}]}
+    pub fn single_unnamed(values: Tuple) -> Self {
+        Self{attributes: Rc::new(Vec::new()), results: vec![values]}
     }
 
     pub fn size(&self) -> u32 {
