@@ -2,8 +2,8 @@ use std::fmt;
 
 pub struct SelectQuery {
     pub source: Source,
-    filters: Vec<Filter>,
-    finisher: Finisher
+    pub filters: Vec<Filter>,
+    pub finisher: Finisher
 }
 
 impl SelectQuery {
@@ -84,7 +84,7 @@ impl Source {
     }
 }
 
-enum Filter {
+pub enum Filter {
     Condition(String, Operator, String)
 }
 
@@ -96,7 +96,7 @@ impl Filter {
     }
 }
 
-enum Finisher {
+pub enum Finisher {
     AllColumns,
     Columns(Vec<String>),
     Insert(String)

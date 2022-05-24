@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::ops::Deref;
 
-use select::{SelectQuery, Operator, Source};
+use select::{SelectQuery, Operator, Source, Finisher};
 use schema::{Schema, Type};
 use create::CreateRelationCommand;
 
@@ -41,7 +41,28 @@ impl Database {
             }
         };
 
-        Result::Ok(tuples)
+        match query.finisher {
+            Finisher::AllColumns => Result::Ok(tuples),
+            Finisher::Columns(_) => todo!(),
+            Finisher::Insert(_) => Result::Err("Can't run a mutating query")
+        }
+    }
+
+    pub fn execute_mut_query(&mut self, query: &SelectQuery) -> Result<Tuples, &str> {
+        let tuples = match &query.source {
+            Source::TableScan(name) => {
+                let rel = self.schema.find_relation(&name).ok_or("No such relation")?;
+                Tuples::empty(rel.columns.iter().map(|col| col.name.clone()).collect())
+            },
+            Source::Tuple(values) => {
+                Tuples::single_unnamed(values.iter().map(|x| x.to_owned().into_bytes()).collect())
+            }
+        };
+
+        match &query.finisher {
+            Finisher::Insert(table) => Result::Ok(Tuples::empty(vec![])),
+            _ => todo!()
+        }
     }
 }
 
@@ -81,7 +102,7 @@ mod tests {
         let query = SelectQuery::scan("not_real_relation").select_all();
         let db = Database::new();
         let result = db.execute_query(&query);
-        assert_eq!(result.is_ok(), false);
+        assert!(!result.is_ok());
     }
 
     #[test]
@@ -96,7 +117,7 @@ mod tests {
         let query = SelectQuery::scan("document").select_all();
         let result = db.execute_query(&query);
 
-        assert_eq!(result.is_ok(), true);
+        assert!(result.is_ok());
         let tuples = result.unwrap();
         assert_eq!(tuples.size(), 0);
         let attrs = tuples.attributes();
@@ -113,11 +134,11 @@ mod tests {
         db.execute_create(&command);
 
         let insert_query = SelectQuery::tuple(&["1", "something"]).insert_into("document");
-        let insert_result = db.execute_query(&insert_query);
-        assert_eq!(insert_result.is_ok(), true);
+        let insert_result = db.execute_mut_query(&insert_query);
+        assert!(insert_result.is_ok());
 
         let query = SelectQuery::scan("document").select_all();
         let result = db.execute_query(&query);
-        assert_eq!(result.is_ok(), true);
+        assert!(result.is_ok());
     }
 }
