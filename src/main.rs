@@ -11,11 +11,14 @@ use schema::{Schema, Type};
 use create::CreateRelationCommand;
 
 struct Database {
-    schema: Schema
+    schema: Schema,
+    objects: HashMap<String, Object>
 }
 
-struct Tuples {
-    results: Vec<Tuple>,
+type Object = Vec<Tuple>;
+
+pub struct Tuples {
+    results: Rc<Vec<Tuple>>,
     attributes: Rc<Vec<String>>
 }
 
@@ -23,18 +26,21 @@ type Tuple = Vec<Vec<u8>>;
 
 impl Database {
     pub fn new() -> Self{
-        Self{schema: Schema::new()}
+        Self{schema: Schema::new(), objects: HashMap::new()}
     }
 
     pub fn execute_create(&mut self, command: &CreateRelationCommand) {
-        self.schema.add_relation(&command.name, &command.columns)
+        self.schema.add_relation(&command.name, &command.columns);
+        self.objects.insert(command.name.clone(), Object::new());
     }
 
     pub fn execute_query(&self, query: &SelectQuery) -> Result<Tuples, &str> {
         let tuples = match &query.source {
             Source::TableScan(name) => {
-                let rel = self.schema.find_relation(&name).ok_or("No such relation")?;
-                Tuples::empty(rel.columns.iter().map(|col| col.name.clone()).collect())
+                let rel = self.schema.find_relation(&name).ok_or("No such relation in schema")?;
+                let attributes = rel.columns.iter().map(|col| col.name.clone()).collect();
+                let values = self.objects.get(name).ok_or("Could not find the object")?;
+                Tuples{attributes: Rc::new(attributes), results: Rc::new(values.clone())}
             },
             Source::Tuple(values) => {
                 Tuples::single_unnamed(values.iter().map(|x| x.to_owned().into_bytes()).collect())
@@ -60,7 +66,14 @@ impl Database {
         };
 
         match &query.finisher {
-            Finisher::Insert(table) => Result::Ok(Tuples::empty(vec![])),
+            Finisher::Insert(table) => {
+                let object = self.objects.entry(table.to_string()).or_insert(Object::new());
+                for tuple in tuples.results().deref() {
+                    object.push(tuple.clone());
+                }
+
+                Result::Ok(tuples)
+            }
             _ => todo!()
         }
     }
@@ -68,11 +81,11 @@ impl Database {
 
 impl Tuples {
     pub fn empty(attributes: Vec<String>) -> Self {
-        Self{attributes: Rc::new(attributes), results: Vec::new()}
+        Self{attributes: Rc::new(attributes), results: Rc::new(vec![])}
     }
 
     pub fn single_unnamed(values: Tuple) -> Self {
-        Self{attributes: Rc::new(Vec::new()), results: vec![values]}
+        Self{attributes: Rc::new(vec![]), results: Rc::new(vec![values])}
     }
 
     pub fn size(&self) -> u32 {
@@ -81,6 +94,10 @@ impl Tuples {
 
     pub fn attributes(&self) -> Rc<Vec<String>> {
         Rc::clone(&self.attributes)
+    }
+
+    pub fn results(&self) -> Rc<Vec<Tuple>> {
+        Rc::clone(&self.results)
     }
 }
 
@@ -140,5 +157,7 @@ mod tests {
         let query = SelectQuery::scan("document").select_all();
         let result = db.execute_query(&query);
         assert!(result.is_ok());
+        let tuples = result.unwrap();
+        assert_eq!(tuples.size(), 1);
     }
 }
