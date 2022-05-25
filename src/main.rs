@@ -102,12 +102,25 @@ impl Tuples {
 }
 
 fn main() {
+    let mut db = Database::new();
+
     let command = CreateRelationCommand::with_name("document")
         .column("id", Type::NUMBER)
         .column("content", Type::TEXT);
-
-    let mut db = Database::new();
     db.execute_create(&command);
+
+    let insert_query = SelectQuery::tuple(&["1", "something"]).insert_into("document");
+    let insert_result = db.execute_mut_query(&insert_query);
+    assert!(insert_result.is_ok());
+
+    let query = SelectQuery::scan("document").select_all();
+    let result = db.execute_query(&query);
+    assert!(result.is_ok());
+    let tuples = result.unwrap();
+    assert_eq!(tuples.size(), 1);
+    let results = tuples.results();
+    let tuple = results.iter().next().expect("fail");
+    assert_eq!(&tuple[0], &Vec::from(1_i32.to_be_bytes()));
 }
 
 #[cfg(test)]
@@ -142,7 +155,7 @@ mod tests {
     }
 
     #[test]
-    fn insert() {
+    pub fn insert() {
         let mut db = Database::new();
 
         let command = CreateRelationCommand::with_name("document")
@@ -159,5 +172,9 @@ mod tests {
         assert!(result.is_ok());
         let tuples = result.unwrap();
         assert_eq!(tuples.size(), 1);
+        let results = tuples.results();
+        let tuple = results.iter().next().expect("fail");
+        assert_eq!(&tuple[0], &Vec::from(('1' as u8).to_be_bytes()));
+        assert_eq!(&tuple[1], &Vec::from("something".as_bytes()));
     }
 }
