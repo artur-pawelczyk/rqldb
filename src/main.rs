@@ -1,6 +1,7 @@
 pub mod select;
 pub mod create;
 pub mod schema;
+pub mod parse;
 
 use std::collections::HashMap;
 use std::rc::Rc;
