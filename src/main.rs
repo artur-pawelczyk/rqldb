@@ -20,7 +20,7 @@ type Object = Vec<ByteTuple>;
 type ByteTuple = Vec<Vec<u8>>;
 
 // TODO: Rename to something like "QueryResults"
-pub struct Tuples {
+pub struct QueryResults {
     results: Rc<Vec<Tuple>>,
     attributes: Rc<Vec<String>>
 }
@@ -92,19 +92,19 @@ impl Database {
         self.objects.insert(command.name.clone(), Object::new());
     }
 
-    pub fn execute_query(&self, query: &SelectQuery) -> Result<Tuples, &str> {
+    pub fn execute_query(&self, query: &SelectQuery) -> Result<QueryResults, &str> {
         let source_tuples = match &query.source {
             Source::TableScan(name) => {
                 let rel = self.schema.find_relation(&name).ok_or("No such relation in schema")?;
                 let attributes = rel.columns.iter().map(|col| col.name.clone()).collect();
                 let values = self.objects.get(name).ok_or("Could not find the object")?;
                 let tuples = values.iter().map(|x| Tuple::from_bytes(x)).collect();
-                Tuples{attributes: Rc::new(attributes), results: Rc::new(tuples)}
+                QueryResults{attributes: Rc::new(attributes), results: Rc::new(tuples)}
             },
             Source::Tuple(values) => {
                 let cells = values.iter().map(|x| Cell::from_string(x)).collect();
                 let tuple = Tuple{contents: cells};
-                Tuples{attributes: Rc::new(vec![]), results: Rc::new(vec![tuple])}
+                QueryResults{attributes: Rc::new(vec![]), results: Rc::new(vec![tuple])}
             }
         };
 
@@ -115,25 +115,25 @@ impl Database {
         }
     }
 
-    pub fn execute_mut_query(&mut self, query: &SelectQuery) -> Result<Tuples, &str> {
+    pub fn execute_mut_query(&mut self, query: &SelectQuery) -> Result<QueryResults, &str> {
         let source_tuples = match &query.source {
             Source::TableScan(name) => {
                 let rel = self.schema.find_relation(&name).ok_or("No such relation in schema")?;
                 let attributes = rel.columns.iter().map(|col| col.name.clone()).collect();
                 let values = self.objects.get(name).ok_or("Could not find the object")?;
                 let tuples = values.iter().map(|x| Tuple::from_bytes(x)).collect();
-                Tuples{attributes: Rc::new(attributes), results: Rc::new(tuples)}
+                QueryResults{attributes: Rc::new(attributes), results: Rc::new(tuples)}
             },
             Source::Tuple(values) => {
                 let cells = values.iter().map(|x| Cell::from_string(x)).collect();
                 let tuple = Tuple{contents: cells};
-                Tuples{attributes: Rc::new(vec![]), results: Rc::new(vec![tuple])}
+                QueryResults{attributes: Rc::new(vec![]), results: Rc::new(vec![tuple])}
             }
         };
 
         match &query.finisher {
             Finisher::Insert(table) => {
-                let _tableSchema = self.schema.find_relation(table);
+                let _table_schema = self.schema.find_relation(table);
                 let object = self.objects.entry(table.to_string()).or_insert(Object::new());
                 for tuple in source_tuples.results().deref() {
                     object.push(tuple.contents.iter().map(|x| x.into_bytes()).collect())
@@ -146,7 +146,7 @@ impl Database {
     }
 }
 
-impl Tuples {
+impl QueryResults {
     pub fn empty(attributes: Vec<String>) -> Self {
         Self{attributes: Rc::new(attributes), results: Rc::new(vec![])}
     }
@@ -169,25 +169,6 @@ impl Tuples {
 }
 
 fn main() {
-    let mut db = Database::new();
-
-    let command = CreateRelationCommand::with_name("document")
-        .column("id", Type::NUMBER)
-        .column("content", Type::TEXT);
-    db.execute_create(&command);
-
-    let insert_query = SelectQuery::tuple(&["1", "something"]).insert_into("document");
-    let insert_result = db.execute_mut_query(&insert_query);
-    assert!(insert_result.is_ok());
-
-    let query = SelectQuery::scan("document").select_all();
-    let result = db.execute_query(&query);
-    assert!(result.is_ok());
-    let tuples = result.unwrap();
-    assert_eq!(tuples.size(), 1);
-    let results = tuples.results();
-    let tuple = results.iter().next().expect("fail");
-    assert_eq!(&tuple.contents[0].into_bytes(), &Vec::from(1_i32.to_be_bytes()));
 }
 
 #[cfg(test)]
