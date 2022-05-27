@@ -23,25 +23,21 @@ impl ParserState {
         self.pos < self.tokens.len()
     }
 
-    fn next(&mut self) -> &Token {
-        let next = &self.tokens[self.pos];
-        self.pos += 1;
-        next
-    }
-
-    fn next2(&mut self) -> Option<&Token> {
+    fn next(&mut self) -> Option<&Token> {
         if self.has_next() {
-            Option::Some(self.next())
+            let next = &self.tokens[self.pos];
+            self.pos += 1;
+            Option::Some(next)
         } else {
             Option::None
         }
     }
 
-    fn peek(&self) -> &Token {
+    fn _peek(&self) -> &Token {
         &self.tokens[self.pos]
     }
 
-    fn revind(&mut self) {
+    fn _rewind(&mut self) {
         assert!(self.pos > 0);
         self.pos -= 1
     }
@@ -51,10 +47,17 @@ pub fn parse_query(source: &str) -> SelectQuery {
     let mut parser = ParserState::new(tokenize(source));
     let mut query = SelectQuery::scan("");
 
-    while parser.has_next() {
-        match parser.next() {
+    while let Some(token) = parser.next() {
+        match token {
             Token::Symbol(name) => if name == "scan" {
-                 query = SelectQuery::scan(read_args(&mut parser)[0].name())
+                let rest = expect_n_args(read_until_end(&mut parser), 1);
+                for arg in rest {
+                    match arg {
+                        Token::Symbol(name) => { query = SelectQuery::scan(name.as_str()) },
+                        _ => panic!()
+                    }
+                }
+
             } else if name == "select_all" {
                 query = query.select_all()
             },
@@ -69,7 +72,7 @@ pub fn parse_command(source: &str) -> CreateRelationCommand {
     let mut parser = ParserState::new(tokenize(source));
     let mut command = CreateRelationCommand::with_name("");
 
-    while let Some(token) = parser.next2() {
+    while let Some(token) = parser.next() {
         match token {
             Token::Symbol(name) => if name == "create_table" {
                 let rest = read_until_end(&mut parser);
@@ -96,52 +99,19 @@ fn str_to_type(name: &str) -> Type {
     }
 }
 
-struct Arg {
-    name: String,
-    kind: Option<String>
-}
-
-impl Arg {
-    fn simple(name: &str) -> Self {
-        Self{name: name.to_string(), kind: Option::None}
+fn expect_n_args<T>(args: Vec<T>, expect: usize) -> Vec<T> {
+    let len = args.len();
+    if len != expect {
+        panic!("Expected {} args; given {}", expect, len);
     }
 
-    fn with_type(name: &str, kind: &str) -> Self {
-        Self{name: name.to_string(), kind: Option::Some(kind.to_string())}
-    }
-
-    fn name(&self) -> &str {
-        self.name.as_str()
-    }
-
-    fn expect_type(&self) -> &str {
-        match &self.kind {
-            Some(kind) => kind.as_str(),
-            _ => panic!()
-        }
-    }
-}
-
-fn read_args(parser: &mut ParserState) -> Vec<Arg> {
-    let mut args: Vec<Arg> = Vec::new();
-
-    while let Some(arg) = parser.next2() {
-        if arg == &Token::Pipe { break; }
-
-        match arg {
-            Token::Symbol(name) => args.push(Arg::simple(name)),
-            Token::SymbolWithType(name, kind) => args.push(Arg::with_type(name, kind)),
-            _ => panic!()
-        }
-    }
-
-    return args;
+    args
 }
 
 fn read_until_end(parser: &mut ParserState) -> Vec<Token> {
     let mut args: Vec<Token> = Vec::new();
 
-    while let Some(token) = parser.next2() {
+    while let Some(token) = parser.next() {
         match token {
             Token::Pipe => { break },
             _ => args.push(token.clone())
