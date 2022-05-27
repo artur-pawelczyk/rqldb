@@ -157,7 +157,7 @@ mod tests {
 
     #[test]
     fn test_parse_command() {
-        assert_parse_command("create_table example id::NUMBER");
+        assert_parse_command("create_table example id::NUMBER content::TEXT");
     }
 
     fn assert_parse_command(command: &str) {
