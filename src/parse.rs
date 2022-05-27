@@ -2,6 +2,8 @@ use crate::select::SelectQuery;
 use crate::create::CreateRelationCommand;
 use crate::schema::Type;
 
+use std::rc::Rc;
+
 #[derive(PartialEq, Clone)]
 pub enum Token {
     Symbol(String),
@@ -9,14 +11,28 @@ pub enum Token {
     Pipe,
 }
 
-struct ParserState {
-    tokens: Vec<Token>,
+impl Token {
+    fn to_string(&self) -> String {
+        match self {
+            Token::Symbol(x) => String::from(x),
+            Token::SymbolWithType(x, y) => x.clone() + "::" + y,
+            Token::Pipe => String::from("|"),
+        }
+    }
+}
+
+struct Cursor {
+    tokens: Rc<Vec<Token>>,
     pos: usize
 }
 
-impl ParserState {
+impl Cursor {
     fn new(tokens: Vec<Token>) -> Self {
-        Self{tokens, pos: 0}
+        Self{tokens: Rc::new(tokens), pos: 0}
+    }
+
+    fn clone(&self) -> Self {
+        Self{tokens: Rc::clone(&self.tokens), pos: self.pos}
     }
 
     fn has_next(&self) -> bool {
@@ -33,8 +49,8 @@ impl ParserState {
         }
     }
 
-    fn _peek(&self) -> &Token {
-        &self.tokens[self.pos]
+    fn peek(&self) -> Option<&Token> {
+        self.tokens.get(self.pos)
     }
 
     fn _rewind(&mut self) {
@@ -43,33 +59,56 @@ impl ParserState {
     }
 }
 
-pub fn parse_query(source: &str) -> SelectQuery {
-    let mut parser = ParserState::new(tokenize(source));
-    let mut query = SelectQuery::scan("");
+pub fn parse_query(query_str: &str) -> SelectQuery {
+    let mut cursor = Cursor::new(tokenize(query_str));
+    let mut query = read_source(&mut cursor);
 
-    while let Some(token) = parser.next() {
+    while let Some(token) = cursor.next() {
         match token {
-            Token::Symbol(name) => if name == "scan" {
-                let rest = expect_n_args(read_until_end(&mut parser), 1);
-                for arg in rest {
-                    match arg {
-                        Token::Symbol(name) => { query = SelectQuery::scan(name.as_str()) },
-                        _ => panic!()
-                    }
-                }
-
-            } else if name == "select_all" {
-                query = query.select_all()
+            Token::Symbol(name) => match name.as_str() {
+                "select_all" => query = query.select_all(),
+                "insert_into" => query = query.insert_into(cursor.next().unwrap().to_string().as_str()),
+                _ => panic!()
             },
-            _ => todo!()
+            _ => panic!()
         }
     }
 
     query
 }
 
+fn read_source(cursor: &mut Cursor) -> SelectQuery {
+    let function = cursor.peek().expect("Expected source function");
+
+    match function {
+        Token::Symbol(name) => match name.as_str() {
+            "scan" => read_table_scan(cursor),
+            "tuple" => read_tuple(cursor),
+            _ => panic!()
+        },
+        _ => panic!()
+    }
+}
+
+fn read_table_scan(cursor: &mut Cursor) -> SelectQuery {
+    cursor.next().expect("Expected  'scan' function");
+    let args = read_until_end(cursor);
+    SelectQuery::scan(args.get(0).expect("Expected one argument to 'scan'").to_string().as_str())
+}
+
+fn read_tuple(cursor: &mut Cursor) -> SelectQuery {
+    cursor.next().expect("Expected 'tuple' function");
+
+    let mut values = Vec::new();
+    for token in read_until_end(cursor) {
+        values.push(token.to_string());
+    }
+
+    SelectQuery::tuple(&values)
+}
+
 pub fn parse_command(source: &str) -> CreateRelationCommand {
-    let mut parser = ParserState::new(tokenize(source));
+    let mut parser = Cursor::new(tokenize(source));
     let mut command = CreateRelationCommand::with_name("");
 
     while let Some(token) = parser.next() {
@@ -108,7 +147,7 @@ fn expect_n_args<T>(args: Vec<T>, expect: usize) -> Vec<T> {
     args
 }
 
-fn read_until_end(parser: &mut ParserState) -> Vec<Token> {
+fn read_until_end(parser: &mut Cursor) -> Vec<Token> {
     let mut args: Vec<Token> = Vec::new();
 
     while let Some(token) = parser.next() {
@@ -148,6 +187,8 @@ mod tests {
     #[test]
     fn test_parse_query() {
         assert_parse("scan example | select_all");
+        assert_parse("tuple 1 2 | select_all");
+        assert_parse("tuple 1 2 | insert_into example");
     }
 
     fn assert_parse(query: &str) {

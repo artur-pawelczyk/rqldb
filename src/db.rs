@@ -204,7 +204,7 @@ mod tests {
             .column("content", Type::TEXT);
         db.execute_create(&command);
 
-        let insert_query = SelectQuery::tuple(&["1", "something"]).insert_into("document");
+        let insert_query = SelectQuery::tuple(&["1".to_string(), "something".to_string()]).insert_into("document");
         let insert_result = db.execute_mut_query(&insert_query);
         assert!(insert_result.is_ok());
 
