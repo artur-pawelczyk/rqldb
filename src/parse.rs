@@ -2,7 +2,7 @@ use crate::select::SelectQuery;
 use crate::create::CreateRelationCommand;
 use crate::schema::Type;
 
-use std::rc::Rc;
+use std::fmt;
 
 #[derive(PartialEq, Clone)]
 pub enum Token {
@@ -22,17 +22,23 @@ impl Token {
 }
 
 struct Cursor {
-    tokens: Rc<Vec<Token>>,
+    tokens: Vec<Token>,
     pos: usize
+}
+
+#[derive(Debug)]
+pub struct ParseError(&'static str);
+
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.0)
+    }
 }
 
 impl Cursor {
     fn new(tokens: Vec<Token>) -> Self {
-        Self{tokens: Rc::new(tokens), pos: 0}
-    }
-
-    fn clone(&self) -> Self {
-        Self{tokens: Rc::clone(&self.tokens), pos: self.pos}
+        Self{tokens: tokens, pos: 0}
     }
 
     fn has_next(&self) -> bool {
@@ -49,56 +55,56 @@ impl Cursor {
         }
     }
 
-    fn peek(&self) -> Option<&Token> {
-        self.tokens.get(self.pos)
-    }
-
     fn _rewind(&mut self) {
         assert!(self.pos > 0);
         self.pos -= 1
     }
 }
 
-pub fn parse_query(query_str: &str) -> SelectQuery {
+pub fn parse_query(query_str: &str) -> Result<SelectQuery, ParseError> {
     let mut cursor = Cursor::new(tokenize(query_str));
-    let mut query = read_source(&mut cursor);
+    let mut query = read_source(&mut cursor)?;
 
     while let Some(token) = cursor.next() {
         match token {
             Token::Symbol(name) => match name.as_str() {
                 "select_all" => query = query.select_all(),
                 "insert_into" => query = query.insert_into(cursor.next().unwrap().to_string().as_str()),
-                _ => panic!()
+                _ => return Err(ParseError("Finisher not recognized"))
             },
-            _ => panic!()
+            _ => return Err(ParseError("Expected a symbol"))
         }
     }
 
-    query
+    Result::Ok(query)
 }
 
-fn read_source(cursor: &mut Cursor) -> SelectQuery {
-    let function = cursor.peek().expect("Expected source function");
+fn read_source(cursor: &mut Cursor) -> Result<SelectQuery, ParseError> {
+    let function = match cursor.next() {
+        Some(x) => x,
+        None => return Err(ParseError("Expected source function"))
+    };
 
     match function {
         Token::Symbol(name) => match name.as_str() {
-            "scan" => read_table_scan(cursor),
-            "tuple" => read_tuple(cursor),
-            _ => panic!()
+            "scan" => Ok(read_table_scan(cursor)?),
+            "tuple" => Ok(read_tuple(cursor)),
+            _ => { return Result::Err(ParseError("Unnokwn source function")); }
         },
-        _ => panic!()
+        _ => return Err(ParseError("Expected a symbol"))
     }
 }
 
-fn read_table_scan(cursor: &mut Cursor) -> SelectQuery {
-    cursor.next().expect("Expected  'scan' function");
+fn read_table_scan(cursor: &mut Cursor) -> Result<SelectQuery, ParseError> {
     let args = read_until_end(cursor);
-    SelectQuery::scan(args.get(0).expect("Expected one argument to 'scan'").to_string().as_str())
+    if args.len() == 1 {
+        Ok(SelectQuery::scan(&args[0].to_string()))
+    } else {
+        Err(ParseError("'scan' expects exactly one argument"))
+    }
 }
 
 fn read_tuple(cursor: &mut Cursor) -> SelectQuery {
-    cursor.next().expect("Expected 'tuple' function");
-
     let mut values = Vec::new();
     for token in read_until_end(cursor) {
         values.push(token.to_string());
@@ -107,27 +113,31 @@ fn read_tuple(cursor: &mut Cursor) -> SelectQuery {
     SelectQuery::tuple(&values)
 }
 
-pub fn parse_command(source: &str) -> CreateRelationCommand {
+pub fn parse_command(source: &str) -> Result<CreateRelationCommand, ParseError> {
     let mut parser = Cursor::new(tokenize(source));
     let mut command = CreateRelationCommand::with_name("");
 
     while let Some(token) = parser.next() {
         match token {
             Token::Symbol(name) => if name == "create_table" {
-                let rest = read_until_end(&mut parser);
-                for arg in rest {
+                let name = match parser.next() {
+                    Some(Token::Symbol(name)) => name,
+                    _ => return Err(ParseError("Expected table name"))
+                };
+                command = CreateRelationCommand::with_name(name);
+
+                for arg in read_until_end(&mut parser) {
                     match arg {
-                        Token::Symbol(name) => { command = CreateRelationCommand::with_name(name.as_str()); },
                         Token::SymbolWithType(name, kind) => { command = command.column(name.as_str(), str_to_type(kind.as_str())); },
                         _ => panic!()
                     }
                 }
-            } else { panic!("Only create_table is allowed") },
-            _ => panic!()
+            } else { return Err(ParseError("Only create_table is allowed")) },
+            _ => return Err(ParseError("Expected a symbol"))
         }
     }
 
-    command
+    Ok(command)
 }
 
 fn str_to_type(name: &str) -> Type {
@@ -136,15 +146,6 @@ fn str_to_type(name: &str) -> Type {
         "TEXT" => Type::TEXT,
         _ => todo!(),
     }
-}
-
-fn expect_n_args<T>(args: Vec<T>, expect: usize) -> Vec<T> {
-    let len = args.len();
-    if len != expect {
-        panic!("Expected {} args; given {}", expect, len);
-    }
-
-    args
 }
 
 fn read_until_end(parser: &mut Cursor) -> Vec<Token> {
@@ -191,9 +192,24 @@ mod tests {
         assert_parse("tuple 1 2 | insert_into example");
     }
 
+    #[test]
+    fn test_fail_parse_query() {
+        assert_parse_query_fails("");
+        assert_parse_query_fails("scann example");
+        assert_parse_query_fails("scan example1 example2");
+        assert_parse_query_fails("| select_all");
+        assert_parse_query_fails("scan example | i_dont_know");
+        assert_parse_query_fails("scan example | id::NUMBER");
+    }
+
     fn assert_parse(query: &str) {
         let parsed = parse_query(query);
-        assert_eq!(parsed.to_string(), query);
+        assert_eq!(parsed.unwrap().to_string(), query);
+    }
+
+    fn assert_parse_query_fails(query: &str) {
+        let parsed = parse_query(query);
+        assert!(parsed.is_err());
     }
 
     #[test]
@@ -201,8 +217,22 @@ mod tests {
         assert_parse_command("create_table example id::NUMBER content::TEXT");
     }
 
+    #[test]
+    fn test_fails_parse_command() {
+        assert_parse_command_fails("create_someting example");
+        assert_parse_command_fails("| create_table example");
+        assert_parse_command_fails("create_table int::NUMBER example contents::TEXT");
+        assert_parse_command_fails("create_table example int::NUMBER | contents::TEXT");
+        assert_parse_command_fails("create_table example int::number something contents::TEXT");
+    }
+
     fn assert_parse_command(command: &str) {
         let parsed = parse_command(command);
-        assert_eq!(parsed.to_string(), command);
+        assert_eq!(parsed.unwrap().to_string(), command);
+    }
+
+    fn assert_parse_command_fails(command: &str) {
+        let parsed = parse_command(command);
+        assert!(parsed.is_err());
     }
 }

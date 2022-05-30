@@ -25,11 +25,17 @@ fn main() {
 
 fn handle_command(db: &mut Database, cmd: &str) {
     if cmd.starts_with("create") {
-        let command = parse_command(cmd);
+        let command = match parse_command(cmd) {
+            Ok(x) => x,
+            Err(error) => { println!("{}", error); return; }
+        };
         db.execute_create(&command);
-        println!("OK");
     } else {
-        let query = parse_query(cmd);
+        let query = match parse_query(cmd) {
+            Ok(parsed) => parsed,
+            Err(error) => { println!("{}", error); return; }
+        };
+
         match db.execute_mut_query(&query) {
             Result::Ok(response) => print_result(&response),
             Result::Err(err) => println!("{}", err),
