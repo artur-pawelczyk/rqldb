@@ -129,7 +129,7 @@ pub fn parse_command(source: &str) -> Result<CreateRelationCommand, ParseError> 
                 for arg in read_until_end(&mut parser) {
                     match arg {
                         Token::SymbolWithType(name, kind) => { command = command.column(name.as_str(), str_to_type(kind.as_str())); },
-                        _ => panic!()
+                        _ => return Err(ParseError("Expected a symbol with a type"))
                     }
                 }
             } else { return Err(ParseError("Only create_table is allowed")) },
@@ -144,7 +144,7 @@ fn str_to_type(name: &str) -> Type {
     match name {
         "NUMBER" => Type::NUMBER,
         "TEXT" => Type::TEXT,
-        _ => todo!(),
+        _ => panic!("Unknown type {}", name)
     }
 }
 
@@ -223,7 +223,7 @@ mod tests {
         assert_parse_command_fails("| create_table example");
         assert_parse_command_fails("create_table int::NUMBER example contents::TEXT");
         assert_parse_command_fails("create_table example int::NUMBER | contents::TEXT");
-        assert_parse_command_fails("create_table example int::number something contents::TEXT");
+        assert_parse_command_fails("create_table example int::NUMBER something contents::TEXT");
     }
 
     fn assert_parse_command(command: &str) {
