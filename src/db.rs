@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::ops::Deref;
 use std::fmt;
+use std::iter::zip;
 
 use crate::select::{SelectQuery, Source, Finisher};
 use crate::schema::{Schema, Type};
@@ -25,41 +26,45 @@ pub struct Tuple {
 }
 
 pub struct Cell {
-    pub contents: Vec<u8>
+    contents: Vec<u8>,
+    kind: Type
 }
 
 impl Tuple {
-    fn from_bytes(bytes: &Vec<Vec<u8>>) -> Tuple {
-        let contents = bytes.iter().map(|cell_bytes| Cell::from_bytes(cell_bytes)).collect();
-        Tuple{contents}
+    fn from_bytes(types: &[Type], bytes: &Vec<Vec<u8>>) -> Tuple {
+        let cells: Vec<Cell> = zip(types, bytes).map(|(t, b)| Cell::from_bytes(t.clone(), b)).collect();
+        Tuple{contents: cells}
     }
 }
 
 impl Cell {
-    fn from_bytes(bytes: &[u8]) -> Cell {
+    fn from_bytes(kind: Type, bytes: &[u8]) -> Cell {
         if let Some(first) = bytes.get(0) {
             let firstchar = *first as char;
             if let Some(num) = firstchar.to_digit(8) {
-                return Cell{contents: vec![num as u8]}
+                return Cell{contents: vec![num as u8], kind}
             }
         }
 
-        Cell{contents: Vec::from(bytes)}
+        Cell{contents: Vec::from(bytes), kind}
     }
 
     fn from_string(source: &str) -> Cell {
-        if let Result::Ok(number) = source.parse::<u8>() {
-            Cell{contents: vec![number]}
+        if let Result::Ok(number) = source.parse::<i32>() {
+            Cell{contents: Vec::from(number.to_be_bytes()), kind: Type::NUMBER}
         } else {
-            Cell{contents: Vec::from(source.as_bytes())}
+            Cell{contents: Vec::from(source.as_bytes()), kind: Type::NUMBER}
         }
     }
 
     pub fn into_string(&self) -> String {
-        if self.contents.len() == 1 {
-            self.contents[0].to_string()
-        } else {
-            String::from_utf8(self.contents.clone()).unwrap()
+        match self.kind {
+            Type::NUMBER => {
+                let bytes: [u8; 4] = self.contents.clone().try_into().unwrap();
+                i32::from_be_bytes(bytes).to_string()
+            },
+            Type::TEXT => String::from_utf8(self.contents.clone()).unwrap(),
+            _ => todo!(),
         }
     }
 
@@ -86,20 +91,7 @@ impl Database {
     }
 
     pub fn execute_query(&self, query: &SelectQuery) -> Result<QueryResults, &str> {
-        let source_tuples = match &query.source {
-            Source::TableScan(name) => {
-                let rel = self.schema.find_relation(&name).ok_or("No such relation in schema")?;
-                let attributes = rel.columns.iter().map(|col| col.name.clone()).collect();
-                let values = self.objects.get(name).ok_or("Could not find the object")?;
-                let tuples = values.iter().map(|x| Tuple::from_bytes(x)).collect();
-                QueryResults{attributes: Rc::new(attributes), results: Rc::new(tuples)}
-            },
-            Source::Tuple(values) => {
-                let cells = values.iter().map(|x| Cell::from_string(x)).collect();
-                let tuple = Tuple{contents: cells};
-                QueryResults{attributes: Rc::new(vec![]), results: Rc::new(vec![tuple])}
-            }
-        };
+        let source_tuples = read_source(self, &query.source)?;
 
         match query.finisher {
             Finisher::AllColumns => Result::Ok(source_tuples),
@@ -109,20 +101,7 @@ impl Database {
     }
 
     pub fn execute_mut_query(&mut self, query: &SelectQuery) -> Result<QueryResults, &str> {
-        let source_tuples = match &query.source {
-            Source::TableScan(name) => {
-                let rel = self.schema.find_relation(&name).ok_or("No such relation in schema")?;
-                let attributes = rel.columns.iter().map(|col| col.name.clone()).collect();
-                let values = self.objects.get(name).ok_or("Could not find the object")?;
-                let tuples = values.iter().map(|x| Tuple::from_bytes(x)).collect();
-                QueryResults{attributes: Rc::new(attributes), results: Rc::new(tuples)}
-            },
-            Source::Tuple(values) => {
-                let cells = values.iter().map(|x| Cell::from_string(x)).collect();
-                let tuple = Tuple{contents: cells};
-                QueryResults{attributes: Rc::new(vec![]), results: Rc::new(vec![tuple])}
-            }
-        };
+        let source_tuples = read_source(self, &query.source)?;
 
         match &query.finisher {
             Finisher::Insert(table) => {
@@ -138,7 +117,27 @@ impl Database {
             Finisher::Columns(_) => todo!(),
         }
     }
+
 }
+
+fn read_source(db: &Database, source: &Source) -> Result<QueryResults, &'static str> {
+    return match &source {
+        Source::TableScan(name) => {
+            let rel = db.schema.find_relation(&name).ok_or("No such relation in schema")?;
+            let attributes = rel.columns.iter().map(|col| col.name.clone()).collect();
+            let types: Vec<Type> = rel.columns.iter().map(|col| col.kind).collect();
+            let values = db.objects.get(name).ok_or("Could not find the object")?;
+            let tuples = values.iter().map(|x| Tuple::from_bytes(&types, x)).collect();
+            Ok(QueryResults{attributes: Rc::new(attributes), results: Rc::new(tuples)})
+        },
+        Source::Tuple(values) => {
+            let cells = values.iter().map(|x| Cell::from_string(x)).collect();
+            let tuple = Tuple{contents: cells};
+            Ok(QueryResults{attributes: Rc::new(vec![]), results: Rc::new(vec![tuple])})
+        }
+    }
+}
+
 
 impl QueryResults {
     pub fn empty(attributes: Vec<String>) -> Self {
@@ -215,7 +214,7 @@ mod tests {
         assert_eq!(tuples.size(), 1);
         let results = tuples.results();
         let tuple = results.iter().next().expect("fail");
-        assert_eq!(&tuple.contents[0].into_bytes(), &Vec::from(1_u8.to_be_bytes()));
+        assert_eq!(&tuple.contents[0].into_bytes(), &Vec::from(1_i32.to_be_bytes()));
         assert_eq!(&tuple.contents[1].into_string(), "something");
     }
 }
