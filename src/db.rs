@@ -5,7 +5,7 @@ use std::fmt;
 use std::iter::zip;
 
 use crate::select::{SelectQuery, Source, Finisher};
-use crate::schema::{Schema, Type};
+use crate::schema::{Column, Schema, Type};
 use crate::create::CreateRelationCommand;
 
 pub struct Database {
@@ -35,6 +35,10 @@ impl Tuple {
         let cells: Vec<Cell> = zip(types, bytes).map(|(t, b)| Cell::from_bytes(t.clone(), b)).collect();
         Tuple{contents: cells}
     }
+
+    fn len(&self) -> usize {
+        self.contents.len()
+    }
 }
 
 impl Cell {
@@ -53,7 +57,7 @@ impl Cell {
         if let Result::Ok(number) = source.parse::<i32>() {
             Cell{contents: Vec::from(number.to_be_bytes()), kind: Type::NUMBER}
         } else {
-            Cell{contents: Vec::from(source.as_bytes()), kind: Type::NUMBER}
+            Cell{contents: Vec::from(source.as_bytes()), kind: Type::TEXT}
         }
     }
 
@@ -105,9 +109,10 @@ impl Database {
 
         match &query.finisher {
             Finisher::Insert(table) => {
-                let _table_schema = self.schema.find_relation(table);
+                let table_schema = self.schema.find_relation(table).unwrap();
                 let object = self.objects.entry(table.to_string()).or_insert(Object::new());
                 for tuple in source_tuples.results().deref() {
+                    if !validate_with_schema(&table_schema.columns, tuple) { return Err("Invalid input") }
                     object.push(tuple.contents.iter().map(|x| x.into_bytes()).collect())
                 }
 
@@ -118,6 +123,14 @@ impl Database {
         }
     }
 
+}
+
+fn validate_with_schema(columns: &[Column], tuple: &Tuple) -> bool {
+    if columns.len() == tuple.len() {
+        zip(columns, &tuple.contents).all(|(col, cell)| col.kind == cell.kind)
+    } else {
+        false
+    }
 }
 
 fn read_source(db: &Database, source: &Source) -> Result<QueryResults, &'static str> {
@@ -216,5 +229,18 @@ mod tests {
         let tuple = results.iter().next().expect("fail");
         assert_eq!(&tuple.contents[0].into_bytes(), &Vec::from(1_i32.to_be_bytes()));
         assert_eq!(&tuple.contents[1].into_string(), "something");
+    }
+
+    #[test]
+    pub fn failed_insert() {
+        let mut db = Database::new();
+
+        let command = CreateRelationCommand::with_name("document")
+            .column("id", Type::NUMBER)
+            .column("content", Type::TEXT);
+        db.execute_create(&command);
+
+        let result = db.execute_mut_query(&SelectQuery::tuple(&["not-a-number".to_string(), "random-text".to_string()]).insert_into("document"));
+        assert!(result.is_err());
     }
 }
