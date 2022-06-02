@@ -1,4 +1,4 @@
-use crate::select::SelectQuery;
+use crate::select::{SelectQuery, Operator};
 use crate::create::CreateRelationCommand;
 use crate::schema::Type;
 
@@ -70,13 +70,20 @@ pub fn parse_query(query_str: &str) -> Result<SelectQuery, ParseError> {
             Token::Symbol(name) => match name.as_str() {
                 "select_all" => query = query.select_all(),
                 "insert_into" => query = query.insert_into(cursor.next().unwrap().to_string().as_str()),
+                "filter" => {
+                    let left = read_symbol(cursor.next())?;
+                    let op = read_operator(cursor.next())?;
+                    let right = read_symbol(cursor.next())?;
+                    if cursor.next() != Some(&Token::Pipe) { return Err(ParseError("Expected end of statement")); };
+                    query = query.filter(&left, op, &right);
+                },
                 _ => return Err(ParseError("Finisher not recognized"))
             },
             _ => return Err(ParseError("Expected a symbol"))
         }
     }
 
-    Result::Ok(query)
+    Ok(query)
 }
 
 fn read_source(cursor: &mut Cursor) -> Result<SelectQuery, ParseError> {
@@ -92,6 +99,28 @@ fn read_source(cursor: &mut Cursor) -> Result<SelectQuery, ParseError> {
             _ => { return Result::Err(ParseError("Unnokwn source function")); }
         },
         _ => return Err(ParseError("Expected a symbol"))
+    }
+}
+
+fn read_operator(t: Option<&Token>) -> Result<Operator, ParseError> {
+    if let Some(token) = t {
+        match token {
+            Token::Symbol(_) => Ok(Operator::EQ),
+            _ => Err(ParseError("Unknown operator")),
+        }
+    } else {
+        Err(ParseError("Unknown operator"))
+    }
+}
+
+fn read_symbol(t: Option<&Token>) -> Result<String, ParseError> {
+    if let Some(token) = t {
+        match token {
+            Token::Symbol(name) => Ok(name.clone()),
+            _ => Err(ParseError("Expected a symbol"))
+        }
+    } else {
+        Err(ParseError("Expected a symbol"))
     }
 }
 
@@ -193,6 +222,7 @@ mod tests {
         assert_parse("scan example | select_all");
         assert_parse("tuple 1 2 | select_all");
         assert_parse("tuple 1 2 | insert_into example");
+        assert_parse("scan example | filter id = 1 | select_all");
     }
 
     #[test]
