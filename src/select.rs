@@ -11,7 +11,7 @@ impl SelectQuery {
         SelectQuery{source:  Source::TableScan(String::from(table)), filters: Vec::new(), finisher: Finisher::AllColumns}
     }
 
-    pub fn tuple(values: &[String]) -> Self {
+    pub fn tuple<T: ToString>(values: &[T]) -> Self {
         SelectQuery{source: Source::Tuple(values.iter().map(|x| x.to_string()).collect()), filters: Vec::new(), finisher: Finisher::AllColumns}
     }
 
@@ -143,7 +143,7 @@ mod tests {
 
     #[test]
     fn source_is_tuple() {
-        let query = SelectQuery::tuple(&["1".to_string(), "example_value".to_string()]).insert_into("example");
+        let query = SelectQuery::tuple(&["1", "example_value"]).insert_into("example");
         assert_eq!(query.to_string(), "tuple 1 example_value | insert_into example");
     }
 }

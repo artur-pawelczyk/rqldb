@@ -87,8 +87,8 @@ fn read_source(cursor: &mut Cursor) -> Result<SelectQuery, ParseError> {
 
     match function {
         Token::Symbol(name) => match name.as_str() {
-            "scan" => Ok(read_table_scan(cursor)?),
-            "tuple" => Ok(read_tuple(cursor)),
+            "scan" => read_table_scan(cursor),
+            "tuple" => read_tuple(cursor),
             _ => { return Result::Err(ParseError("Unnokwn source function")); }
         },
         _ => return Err(ParseError("Expected a symbol"))
@@ -104,13 +104,16 @@ fn read_table_scan(cursor: &mut Cursor) -> Result<SelectQuery, ParseError> {
     }
 }
 
-fn read_tuple(cursor: &mut Cursor) -> SelectQuery {
-    let mut values = Vec::new();
+fn read_tuple(cursor: &mut Cursor) -> Result<SelectQuery, ParseError> {
+    let mut values: Vec<String> = Vec::new();
     for token in read_until_end(cursor) {
-        values.push(token.to_string());
+        match token {
+            Token::Symbol(name) => values.push(name),
+            _ => return Err(ParseError("Expected a symbol"))
+        }
     }
 
-    SelectQuery::tuple(&values)
+    Ok(SelectQuery::tuple(&values))
 }
 
 pub fn parse_command(source: &str) -> Result<CreateRelationCommand, ParseError> {
