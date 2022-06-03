@@ -17,7 +17,7 @@ impl SelectQuery {
 
     pub fn filter(mut self, left: &str, op: Operator, right: &str) -> Self {
         self.filters.push(Filter::Condition(left.to_string(), op, right.to_string()));
-        return self;
+        self
     }
 
     pub fn select_all(mut self) -> Self {

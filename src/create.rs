@@ -13,7 +13,7 @@ impl CreateRelationCommand {
     }
 
     pub fn column(mut self, name: &str, kind: Type) -> Self {
-        self.columns.push(Column{name: name.to_string(), kind: kind});
+        self.columns.push(Column{name: name.to_string(), kind});
         self
     }
 

@@ -38,7 +38,7 @@ impl fmt::Display for ParseError {
 
 impl Cursor {
     fn new(tokens: Vec<Token>) -> Self {
-        Self{tokens: tokens, pos: 0}
+        Self{tokens, pos: 0}
     }
 
     fn has_next(&self) -> bool {
@@ -96,9 +96,9 @@ fn read_source(cursor: &mut Cursor) -> Result<SelectQuery, ParseError> {
         Token::Symbol(name) => match name.as_str() {
             "scan" => read_table_scan(cursor),
             "tuple" => read_tuple(cursor),
-            _ => { return Result::Err(ParseError("Unnokwn source function")); }
+            _ => Result::Err(ParseError("Unnokwn source function")),
         },
-        _ => return Err(ParseError("Expected a symbol"))
+        _ => Err(ParseError("Expected a symbol"))
     }
 }
 
@@ -195,7 +195,7 @@ fn read_until_end(parser: &mut Cursor) -> Vec<Token> {
 
 fn tokenize(source: &str) -> Vec<Token> {
     source.split_ascii_whitespace()
-        .map(|x| match_token(x))
+        .map(match_token)
         .collect()
 }
 

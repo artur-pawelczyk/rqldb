@@ -1,3 +1,4 @@
+#[derive(Default)]
 pub struct Schema {
     pub relations: Vec<Relation>
 }
@@ -20,10 +21,6 @@ pub enum Type {
 }
 
 impl Schema {
-    pub fn new() -> Self{
-        Self{relations: Vec::new()}
-    }
-
     pub fn add_relation(&mut self, name: &str, columns: &[Column]) {
         let relation = Relation{name: name.to_string(), columns: columns.to_vec()};
         self.relations.push(relation);

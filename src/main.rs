@@ -12,7 +12,7 @@ use crate::parse::{parse_command, parse_query};
 
 fn main() {
     let mut input = String::new();
-    let mut db = Database::new();
+    let mut db = Database::default();
     loop {
         io::stdin().read_line(&mut input).expect("Failed to read line");
         

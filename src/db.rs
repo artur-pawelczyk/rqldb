@@ -32,7 +32,7 @@ pub struct Cell {
 
 impl Tuple {
     fn from_bytes(types: &[Type], bytes: &Vec<Vec<u8>>) -> Tuple {
-        let cells: Vec<Cell> = zip(types, bytes).map(|(t, b)| Cell::from_bytes(t.clone(), b)).collect();
+        let cells: Vec<Cell> = zip(types, bytes).map(|(t, b)| Cell::from_bytes(*t, b)).collect();
         Tuple{contents: cells}
     }
 
@@ -72,7 +72,7 @@ impl Cell {
         }
     }
 
-    fn into_bytes(&self) -> Vec<u8> {
+    fn as_bytes(&self) -> Vec<u8> {
         self.contents.clone()
     }
 }
@@ -84,11 +84,13 @@ impl fmt::Debug for Cell {
 }
 
 
-impl Database {
-    pub fn new() -> Self{
-        Self{schema: Schema::new(), objects: HashMap::new()}
+impl Default for Database {
+    fn default() -> Self {
+        Self{schema: Schema::default(), objects: HashMap::new()}
     }
+}
 
+impl Database {
     pub fn execute_create(&mut self, command: &CreateRelationCommand) {
         self.schema.add_relation(&command.name, &command.columns);
         self.objects.insert(command.name.clone(), Object::new());
@@ -113,7 +115,7 @@ impl Database {
                 let object = self.objects.entry(table.to_string()).or_insert(Object::new());
                 for tuple in source_tuples.results().deref() {
                     if !validate_with_schema(&table_schema.columns, tuple) { return Err("Invalid input") }
-                    object.push(tuple.contents.iter().map(|x| x.into_bytes()).collect())
+                    object.push(tuple.contents.iter().map(|x| x.as_bytes()).collect())
                 }
 
                 Result::Ok(source_tuples)
@@ -136,7 +138,7 @@ fn validate_with_schema(columns: &[Column], tuple: &Tuple) -> bool {
 fn read_source(db: &Database, source: &Source) -> Result<QueryResults, &'static str> {
     return match &source {
         Source::TableScan(name) => {
-            let rel = db.schema.find_relation(&name).ok_or("No such relation in schema")?;
+            let rel = db.schema.find_relation(name).ok_or("No such relation in schema")?;
             let attributes = rel.columns.iter().map(|col| col.name.clone()).collect();
             let types: Vec<Type> = rel.columns.iter().map(|col| col.kind).collect();
             let values = db.objects.get(name).ok_or("Could not find the object")?;
@@ -183,7 +185,7 @@ mod tests {
     #[test]
     fn query_not_existing_relation() {
         let query = SelectQuery::scan("not_real_relation").select_all();
-        let db = Database::new();
+        let db = Database::default();
         let result = db.execute_query(&query);
         assert!(!result.is_ok());
     }
