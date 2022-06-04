@@ -1,19 +1,17 @@
-use std::io;
-use std::ops::Deref;
+//use std::ops::Deref;
 
 use relational_nosql_lib::db::{Database, QueryResults};
 use relational_nosql_lib::parse::{parse_command, parse_query};
+use rustyline::Editor;
 
 fn main() {
-    let mut input = String::new();
     let mut db = Database::default();
+    let mut editor = Editor::<()>::new();
     loop {
-        io::stdin().read_line(&mut input).expect("Failed to read line");
-        
-        handle_command(&mut db, input.trim());
-
-        if input.trim() == "quit" { break; }
-        input.clear();
+        match editor.readline("query> ") {
+            Ok(line) => handle_command(&mut db, &line),
+            Err(e) => { println!("{:?}", e); break; }
+        }
     }
 }
 
@@ -39,7 +37,7 @@ fn handle_command(db: &mut Database, cmd: &str) {
 
 fn print_result(result: &QueryResults) {
     println!("{}", result.attributes.join(" | "));
-    for tuple in result.results.deref() {
+    for tuple in result.results.iter() {
         let values: Vec<String> = tuple.contents.iter().map(|cell| cell.into_string()).collect();
         println!("{}", values.join(" | "));
     }
