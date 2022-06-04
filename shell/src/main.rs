@@ -1,14 +1,8 @@
-pub mod create;
-pub mod db;
-pub mod parse;
-pub mod schema;
-pub mod select;
-
 use std::io;
 use std::ops::Deref;
 
-use crate::db::{Database, QueryResults};
-use crate::parse::{parse_command, parse_query};
+use relational_nosql_lib::db::{Database, QueryResults};
+use relational_nosql_lib::parse::{parse_command, parse_query};
 
 fn main() {
     let mut input = String::new();

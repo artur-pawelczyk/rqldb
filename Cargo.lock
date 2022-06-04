@@ -3,5 +3,12 @@
 version = 3
 
 [[package]]
-name = "rqldb"
+name = "relational-nosql-lib"
 version = "0.1.0"
+
+[[package]]
+name = "relational-nosql-shell"
+version = "0.1.0"
+dependencies = [
+ "relational-nosql-lib",
+]
