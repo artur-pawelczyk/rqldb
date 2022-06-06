@@ -8,6 +8,7 @@ use crate::select::{SelectQuery, Source, Finisher};
 use crate::schema::{Column, Schema, Type};
 use crate::create::CreateRelationCommand;
 
+#[derive(Default)]
 pub struct Database {
     schema: Schema,
     objects: HashMap<String, Object>
@@ -83,12 +84,6 @@ impl fmt::Debug for Cell {
     }
 }
 
-
-impl Default for Database {
-    fn default() -> Self {
-        Self{schema: Schema::default(), objects: HashMap::new()}
-    }
-}
 
 impl Database {
     pub fn execute_create(&mut self, command: &CreateRelationCommand) {
@@ -192,7 +187,7 @@ mod tests {
 
     #[test]
     fn query_empty_relation() {
-        let mut db = Database::new();
+        let mut db = Database::default();
         let command = CreateRelationCommand::with_name("document")
             .column("id", Type::NUMBER)
             .column("content", Type::TEXT);
@@ -211,7 +206,7 @@ mod tests {
 
     #[test]
     pub fn insert() {
-        let mut db = Database::new();
+        let mut db = Database::default();
 
         let command = CreateRelationCommand::with_name("document")
             .column("id", Type::NUMBER)
@@ -229,13 +224,13 @@ mod tests {
         assert_eq!(tuples.size(), 1);
         let results = tuples.results();
         let tuple = results.iter().next().expect("fail");
-        assert_eq!(&tuple.contents[0].into_bytes(), &Vec::from(1_i32.to_be_bytes()));
+        assert_eq!(&tuple.contents[0].as_bytes(), &Vec::from(1_i32.to_be_bytes()));
         assert_eq!(&tuple.contents[1].into_string(), "something");
     }
 
     #[test]
     pub fn failed_insert() {
-        let mut db = Database::new();
+        let mut db = Database::default();
 
         let command = CreateRelationCommand::with_name("document")
             .column("id", Type::NUMBER)

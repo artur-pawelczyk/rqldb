@@ -1,5 +1,3 @@
-//use std::ops::Deref;
-
 use relational_nosql_lib::db::{Database, QueryResults};
 use relational_nosql_lib::parse::{parse_command, parse_query};
 use rustyline::Editor;
