@@ -67,11 +67,10 @@ impl Cell {
         }
     }
 
-    pub fn into_string(&self) -> String {
+    pub fn as_string(&self) -> String {
         match self.kind {
             Type::NUMBER => {
-                let bytes: [u8; 4] = self.contents.clone().try_into().unwrap();
-                i32::from_be_bytes(bytes).to_string()
+                self.as_number().unwrap().to_string()
             },
             Type::TEXT => String::from_utf8(self.contents.clone()).unwrap(),
             _ => todo!(),
@@ -81,11 +80,24 @@ impl Cell {
     fn as_bytes(&self) -> Vec<u8> {
         self.contents.clone()
     }
+
+    pub fn as_number(&self) -> Option<i32> {
+        match self.kind {
+            Type::NUMBER => {
+                let bytes: Result<[u8; 4], _> = self.contents.clone().try_into();
+                match bytes {
+                    Ok(x) => Some(i32::from_be_bytes(x)),
+                    _ => None
+                }
+            },
+            _ => None
+        }
+    }
 }
 
 impl fmt::Debug for Cell {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.into_string())
+        f.write_str(&self.as_string())
     }
 }
 
@@ -157,22 +169,39 @@ fn read_source(db: &Database, source: &Source) -> Result<QueryResults, &'static 
 fn filter_tuples(source: QueryResults, filters: &[Filter]) -> QueryResults {
     match filters {
         [] => source,
-        [filter] => {
-            let filtered: Vec<Tuple> = Rc::try_unwrap(source.results).expect("I don't care").into_iter().filter(|t| test_filter(filter, t)).collect();
+        filters => {
+            let mut tuples = Rc::try_unwrap(source.results).expect("I don't care");
+            for filter in filters {
+                tuples = apply_filter(tuples, filter);
+            }
             
-            QueryResults{ results: Rc::new(filtered), attributes: source.attributes }
+            
+            QueryResults{ results: Rc::new(tuples), attributes: source.attributes }
         },
-        _ => todo!(),
     }
+}
+
+fn apply_filter(source: Vec<Tuple>, filter: &Filter) -> Vec<Tuple> {
+    source.into_iter()
+        .filter(|tuple| test_filter(filter, tuple))
+        .collect()
 }
 
 fn test_filter(filter: &Filter, tuple: &Tuple) -> bool {
     match filter {
         Filter::Condition(left, op, right) => {
             assert_eq!(left, "id");
-            assert_eq!(op, &Operator::EQ);
             let cell = tuple.cell_at(0).unwrap();
-            &cell.into_string() == right
+            let left_n = cell.as_number().unwrap();
+            let right_n: i32 = right.parse().unwrap();
+            match op {
+                Operator::EQ => left_n == right_n,
+                Operator::GT => left_n > right_n,
+                Operator::GE => left_n >= right_n,
+                Operator::LT => left_n < right_n,
+                Operator::LE => left_n <= right_n,
+                
+            }
         }
     }
 }
@@ -253,7 +282,7 @@ mod tests {
         let results = tuples.results();
         let tuple = results.iter().next().expect("fail");
         assert_eq!(&tuple.contents[0].as_bytes(), &Vec::from(1_i32.to_be_bytes()));
-        assert_eq!(&tuple.contents[1].into_string(), "something");
+        assert_eq!(&tuple.contents[1].as_string(), "something");
     }
 
     #[test]
@@ -278,7 +307,10 @@ mod tests {
             db.execute_mut_query(&SelectQuery::tuple(&[i.to_string(), "example".to_string()]).insert_into("document")).expect("Insert");
         }
 
-        let result = db.execute_query(&SelectQuery::scan("document").filter("id", Operator::EQ, "5")).unwrap();
+        let mut result = db.execute_query(&SelectQuery::scan("document").filter("id", Operator::EQ, "5")).unwrap();
         assert_eq!(result.size(), 1);
+
+        result = db.execute_query(&SelectQuery::scan("document").filter("id", Operator::GT, "5").filter("id", Operator::LT, "10")).unwrap();
+        assert_eq!(result.size(), 4);
     }
 }

@@ -60,14 +60,18 @@ impl fmt::Display for SelectQuery {
     
 #[derive(Debug, PartialEq)]
 pub enum Operator {
-    EQ
+    EQ, GT, GE, LT, LE
 }
 
 impl Operator {
     fn print(&self) -> String {
         match self {
-            Operator::EQ => "=".to_string()
-        }
+            Operator::EQ => "=",
+            Operator::GT => ">",
+            Operator::GE => ">=",
+            Operator::LT => "<",
+            Operator::LE => "<=",
+        }.to_string()
     }
 }
 
@@ -128,7 +132,7 @@ fn print_tokens(tokens: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::SelectQuery;
-    use super::Operator::EQ;
+    use super::Operator::*;
 
     #[test]
     fn select_all() {
@@ -137,9 +141,13 @@ mod tests {
     }
 
     #[test]
-    fn where_clause() {
-        let query = SelectQuery::scan("example").filter("id", EQ, "1").select(&["id", "a_column"]);
-        assert_eq!(query.to_string(), "scan example | filter id = 1 | select id a_column")
+    fn filter() {
+        assert_eq!(
+            SelectQuery::scan("example").filter("id", EQ, "1").select(&["id", "a_column"]).to_string(),
+            "scan example | filter id = 1 | select id a_column");
+        assert_eq!(
+            SelectQuery::scan("example").filter("id", GT, "2").select_all().to_string(), "scan example | filter id > 2 | select_all"
+        );
     }
 
     #[test]
