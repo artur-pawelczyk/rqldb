@@ -14,7 +14,7 @@ pub struct Column {
     pub kind: Type
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Type {
     BYTE(u8),
     NUMBER, TEXT

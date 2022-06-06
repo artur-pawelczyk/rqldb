@@ -58,6 +58,7 @@ impl fmt::Display for SelectQuery {
     }
 }
     
+#[derive(Debug, PartialEq)]
 pub enum Operator {
     EQ
 }

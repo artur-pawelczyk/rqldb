@@ -4,7 +4,7 @@ use std::ops::Deref;
 use std::fmt;
 use std::iter::zip;
 
-use crate::select::{SelectQuery, Source, Finisher};
+use crate::select::{SelectQuery, Source, Finisher, Operator, Filter};
 use crate::schema::{Column, Schema, Type};
 use crate::create::CreateRelationCommand;
 
@@ -22,6 +22,7 @@ pub struct QueryResults {
     pub attributes: Rc<Vec<String>>
 }
 
+#[derive(Debug)]
 pub struct Tuple {
     pub contents: Vec<Cell>
 }
@@ -39,6 +40,10 @@ impl Tuple {
 
     fn len(&self) -> usize {
         self.contents.len()
+    }
+
+    fn cell_at(&self, i: u32) -> Option<&Cell> {
+        self.contents.get(i as usize)
     }
 }
 
@@ -93,9 +98,10 @@ impl Database {
 
     pub fn execute_query(&self, query: &SelectQuery) -> Result<QueryResults, &str> {
         let source_tuples = read_source(self, &query.source)?;
+        let filtered_tuples = filter_tuples(source_tuples, &query.filters);
 
         match query.finisher {
-            Finisher::AllColumns => Result::Ok(source_tuples),
+            Finisher::AllColumns => Result::Ok(filtered_tuples),
             Finisher::Columns(_) => todo!(),
             Finisher::Insert(_) => Result::Err("Can't run a mutating query")
         }
@@ -148,6 +154,28 @@ fn read_source(db: &Database, source: &Source) -> Result<QueryResults, &'static 
     }
 }
 
+fn filter_tuples(source: QueryResults, filters: &[Filter]) -> QueryResults {
+    match filters {
+        [] => source,
+        [filter] => {
+            let filtered: Vec<Tuple> = Rc::try_unwrap(source.results).expect("I don't care").into_iter().filter(|t| test_filter(filter, t)).collect();
+            
+            QueryResults{ results: Rc::new(filtered), attributes: source.attributes }
+        },
+        _ => todo!(),
+    }
+}
+
+fn test_filter(filter: &Filter, tuple: &Tuple) -> bool {
+    match filter {
+        Filter::Condition(left, op, right) => {
+            assert_eq!(left, "id");
+            assert_eq!(op, &Operator::EQ);
+            let cell = tuple.cell_at(0).unwrap();
+            &cell.into_string() == right
+        }
+    }
+}
 
 impl QueryResults {
     pub fn empty(attributes: Vec<String>) -> Self {
@@ -239,5 +267,18 @@ mod tests {
 
         let result = db.execute_mut_query(&SelectQuery::tuple(&["not-a-number".to_string(), "random-text".to_string()]).insert_into("document"));
         assert!(result.is_err());
+    }
+
+    #[test]
+    pub fn filter() {
+        let mut db = Database::default();
+        db.execute_create(&CreateRelationCommand::with_name("document").column("id", Type::NUMBER).column("content", Type::TEXT));
+
+        for i in 1..20 {
+            db.execute_mut_query(&SelectQuery::tuple(&[i.to_string(), "example".to_string()]).insert_into("document")).expect("Insert");
+        }
+
+        let result = db.execute_query(&SelectQuery::scan("document").filter("id", Operator::EQ, "5")).unwrap();
+        assert_eq!(result.size(), 1);
     }
 }
