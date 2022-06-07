@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 relational-nosql-lib = { path = "../db" }
 rustyline = "9.1.2"
+clap = { version = "3.1.18", features = ["derive"] }
