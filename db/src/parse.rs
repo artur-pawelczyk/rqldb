@@ -54,11 +54,6 @@ impl Cursor {
             Option::None
         }
     }
-
-    fn _rewind(&mut self) {
-        assert!(self.pos > 0);
-        self.pos -= 1
-    }
 }
 
 pub fn parse_query(query_str: &str) -> Result<SelectQuery, ParseError> {
@@ -74,10 +69,21 @@ pub fn parse_query(query_str: &str) -> Result<SelectQuery, ParseError> {
                     let left = read_symbol(cursor.next())?;
                     let op = read_operator(cursor.next())?;
                     let right = read_symbol(cursor.next())?;
-                    if cursor.next() != Some(&Token::Pipe) { return Err(ParseError("Expected end of statement")); };
+                    if let Some(token) = cursor.next() {
+                        if token != &Token::Pipe { return Err(ParseError("Expected end of statement")); }
+                    }
                     query = query.filter(&left, op, &right);
                 },
-                _ => return Err(ParseError("Finisher not recognized"))
+                "join" => {
+                    let table = read_symbol(cursor.next())?;
+                    let left = read_symbol(cursor.next())?;
+                    let right = read_symbol(cursor.next())?;
+                    if let Some(token) = cursor.next() {
+                        if token != &Token::Pipe { return Err(ParseError("Expected end of statement")); }
+                    }
+                    query = query.join(&table, &left, &right);
+                }
+                _ => return Err(ParseError("Function not recognized"))
             },
             _ => return Err(ParseError("Expected a symbol"))
         }
@@ -223,6 +229,7 @@ mod tests {
         assert_parse("tuple 1 2 | select_all");
         assert_parse("tuple 1 2 | insert_into example");
         assert_parse("scan example | filter id = 1 | select_all");
+        assert_parse("scan example | join other example.other_id example.id | select_all")
     }
 
     #[test]

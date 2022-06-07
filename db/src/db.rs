@@ -140,19 +140,21 @@ impl Database {
 
     pub fn execute_mut_query(&mut self, query: &SelectQuery) -> Result<QueryResults, &str> {
         let source_tuples = read_source(self, &query.source)?;
+        let joined_tuples = execute_join(self, source_tuples, &query.join_sources)?;
+        let filtered_tuples = filter_tuples(joined_tuples, &query.filters);
 
         match &query.finisher {
             Finisher::Insert(table) => {
                 let table_schema = self.schema.find_relation(table).ok_or("No such table")?;
                 let object = self.objects.entry(table.to_string()).or_insert(Object::new());
-                for tuple in source_tuples.contents() {
+                for tuple in filtered_tuples.contents() {
                     if !validate_with_schema(&table_schema.columns, tuple) { return Err("Invalid input") }
                     object.push(tuple.contents.iter().map(|x| x.as_bytes()).collect())
                 }
 
-                Result::Ok(QueryResults::from(source_tuples))
+                Result::Ok(QueryResults::from(filtered_tuples))
             },
-            Finisher::AllColumns => Result::Ok(QueryResults::from(source_tuples)),
+            Finisher::AllColumns => Result::Ok(QueryResults::from(filtered_tuples)),
             Finisher::Columns(_) => todo!(),
         }
     }
