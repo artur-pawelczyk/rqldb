@@ -32,11 +32,12 @@ pub enum Attribute {
     Absolute(String, String),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Tuple {
     pub contents: Vec<Cell>
 }
 
+#[derive(Clone)]
 pub struct Cell {
     contents: Vec<u8>,
     kind: Type
@@ -54,6 +55,13 @@ impl Tuple {
 
     fn cell_at(&self, i: u32) -> Option<&Cell> {
         self.contents.get(i as usize)
+    }
+
+    fn join(mut self, other: &Tuple) -> Self {
+        for t in &other.contents {
+            self.contents.push(t.clone());
+        }
+        self
     }
 }
 
@@ -120,7 +128,7 @@ impl Database {
 
     pub fn execute_query(&self, query: &SelectQuery) -> Result<QueryResults, &str> {
         let source_tuples = read_source(self, &query.source)?;
-        let joined_tuples = execute_join(self, source_tuples, &query.join_sources);
+        let joined_tuples = execute_join(self, source_tuples, &query.join_sources)?;
         let filtered_tuples = filter_tuples(joined_tuples, &query.filters);
 
         match query.finisher {
@@ -135,7 +143,7 @@ impl Database {
 
         match &query.finisher {
             Finisher::Insert(table) => {
-                let table_schema = self.schema.find_relation(table).unwrap();
+                let table_schema = self.schema.find_relation(table).ok_or("No such table")?;
                 let object = self.objects.entry(table.to_string()).or_insert(Object::new());
                 for tuple in source_tuples.contents() {
                     if !validate_with_schema(&table_schema.columns, tuple) { return Err("Invalid input") }
@@ -149,6 +157,13 @@ impl Database {
         }
     }
 
+    fn scan_table(&self, name: &str) -> Result<TupleSet, &'static str> {
+        let rel = self.schema.find_relation(name).ok_or("No such relation in schema")?;
+        let attributes = rel.columns.iter().map(|col| col.name.clone()).map(|x| Attribute::Absolute(name.to_string(), x)).collect();
+        let types: Vec<Type> = rel.columns.iter().map(|col| col.kind).collect();
+        let values = self.objects.get(name).ok_or("Could not find the object")?;
+        let tuples = values.iter().map(|x| Tuple::from_bytes(&types, x)).collect();
+        Ok(TupleSet::Named(name.to_string(), attributes, tuples))    }
 }
 
 fn validate_with_schema(columns: &[Column], tuple: &Tuple) -> bool {
@@ -162,12 +177,7 @@ fn validate_with_schema(columns: &[Column], tuple: &Tuple) -> bool {
 fn read_source(db: &Database, source: &Source) -> Result<TupleSet, &'static str> {
     return match &source {
         Source::TableScan(name) => {
-            let rel = db.schema.find_relation(name).ok_or("No such relation in schema")?;
-            let attributes = rel.columns.iter().map(|col| col.name.clone()).map(|x| Attribute::Absolute(name.to_string(), x)).collect();
-            let types: Vec<Type> = rel.columns.iter().map(|col| col.kind).collect();
-            let values = db.objects.get(name).ok_or("Could not find the object")?;
-            let tuples = values.iter().map(|x| Tuple::from_bytes(&types, x)).collect();
-            Ok(TupleSet::Named(name.to_string(), attributes, tuples))
+            db.scan_table(name)
         },
         Source::Tuple(values) => {
             let cells = values.iter().map(|x| Cell::from_string(x)).collect();
@@ -177,23 +187,34 @@ fn read_source(db: &Database, source: &Source) -> Result<TupleSet, &'static str>
     }
 }
 
-fn execute_join(db: &Database, current_tuples: TupleSet, joins: &[JoinSource]) -> TupleSet {
+fn execute_join(db: &Database, mut current_tuples: TupleSet, joins: &[JoinSource]) -> Result<TupleSet, &'static str> {
     match joins {
-        [] => current_tuples,
+        [] => Ok(current_tuples),
         [join] => {
-            match current_tuples {
-                TupleSet::Named(name, mut current_attrs, contents) => {
-                    let rel = db.schema.find_relation(&join.table).unwrap();
-                    for col in &rel.columns {
-                        current_attrs.push(Attribute::Absolute(join.table.to_string(), col.name.to_string()));
-                    }
-                    TupleSet::Named(name, current_attrs, contents)
-                },
-                _ => todo!()
+            let our = current_tuples.take_contents();
+            let mut theirs = db.scan_table(&join.table)?;
+            let mut joined: Vec<Tuple> = Vec::with_capacity(our.len());
+            for our_tuple in our {
+                if let Some(their_tuple) = match_tuple_for_join(&our_tuple, &theirs) {
+                    joined.push(our_tuple.join(their_tuple));
+                }
             }
+
+            let mut our_attrs = current_tuples.take_attributes();
+            let their_attrs = theirs.take_attributes();
+            for attr in their_attrs {
+                our_attrs.push(attr);
+            }
+            
+            Ok(TupleSet::Unnamed(our_attrs, joined))
         }
         _ => todo!(),
     }
+}
+
+fn match_tuple_for_join<'a>(tuple: &Tuple, joined_table: &'a TupleSet) -> Option<&'a Tuple> {
+    let f_id = tuple.cell_at(1).map(|c| c.as_number())?;
+    joined_table.contents().iter().find(|t| t.cell_at(0).map(|c| c.as_number()) == Some(f_id))
 }
 
 fn filter_tuples(source: TupleSet, filters: &[Filter]) -> TupleSet {
@@ -292,10 +313,31 @@ fn simplify_attributes(attrs: Vec<Attribute>) -> Vec<Attribute> {
 }
 
 impl TupleSet {
+    fn take_attributes(&mut self) -> Vec<Attribute> {
+        match self {
+            TupleSet::Named(_, attrs, _) => std::mem::take(attrs),
+            _ => todo!(),
+        }
+    }
+
+    fn _attributes(&self) -> &[Attribute] {
+        match self {
+            TupleSet::Named(_, attrs, _) => attrs,
+            TupleSet::Unnamed(attrs, _) => attrs,
+        }
+    }
+
     fn contents(&self) -> &[Tuple] {
         match self {
             TupleSet::Named(_, _, x) => x,
             TupleSet::Unnamed(_, x) => x,
+        }
+    }
+
+    fn take_contents(&mut self) -> Vec<Tuple> {
+        match self {
+            TupleSet::Named(_, _, x) => std::mem::take(x),
+            TupleSet::Unnamed(_, x) => std::mem::take(x),
         }
     }
 }
@@ -415,7 +457,16 @@ mod tests {
         db.execute_create(&CreateRelationCommand::with_name("document").column("id", Type::NUMBER).column("type_id", Type::NUMBER));
         db.execute_create(&CreateRelationCommand::with_name("type").column("id", Type::NUMBER).column("name", Type::TEXT));
 
+        db.execute_mut_query(&SelectQuery::tuple(&["1", "2"]).insert_into("document")).unwrap();
+        db.execute_mut_query(&SelectQuery::tuple(&["1", "type_a"]).insert_into("type")).unwrap();
+        db.execute_mut_query(&SelectQuery::tuple(&["2", "type_b"]).insert_into("type")).unwrap();
+
         let result = db.execute_query(&SelectQuery::scan("document").join("type", "document.type_id", "type.id")).unwrap();
         assert_eq!(*result.attributes, ["document.id", "document.type_id", "type.id", "type.name"]);
+        let tuple = result.results.get(0).unwrap();
+        let document_id = tuple.cell_at(0).unwrap().as_string();
+        let type_name = tuple.cell_at(3).unwrap().as_string();
+        assert_eq!(document_id, "1");
+        assert_eq!(type_name, "type_b");
     }
 }
