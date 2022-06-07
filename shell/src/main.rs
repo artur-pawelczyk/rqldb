@@ -34,8 +34,8 @@ fn handle_command(db: &mut Database, cmd: &str) {
 }
 
 fn print_result(result: &QueryResults) {
-    println!("{}", result.attributes.join(" | "));
-    for tuple in result.results.iter() {
+    println!("{}", result.attributes().join(" | "));
+    for tuple in result.results().iter() {
         let values: Vec<String> = tuple.contents.iter().map(|cell| cell.as_string()).collect();
         println!("{}", values.join(" | "));
     }

@@ -2,17 +2,23 @@ use std::fmt;
 
 pub struct SelectQuery {
     pub source: Source,
+    pub join_sources: Vec<JoinSource>,
     pub filters: Vec<Filter>,
     pub finisher: Finisher
 }
 
 impl SelectQuery {
     pub fn scan(table: &str) -> Self {
-        SelectQuery{source:  Source::TableScan(String::from(table)), filters: Vec::new(), finisher: Finisher::AllColumns}
+        SelectQuery{source:  Source::TableScan(String::from(table)), join_sources: vec![], filters: vec![], finisher: Finisher::AllColumns}
     }
 
     pub fn tuple<T: ToString>(values: &[T]) -> Self {
-        SelectQuery{source: Source::Tuple(values.iter().map(|x| x.to_string()).collect()), filters: Vec::new(), finisher: Finisher::AllColumns}
+        SelectQuery{source: Source::Tuple(values.iter().map(|x| x.to_string()).collect()), join_sources: vec![], filters: Vec::new(), finisher: Finisher::AllColumns}
+    }
+
+    pub fn join(mut self, table: &str, left: &str, right: &str) -> Self {
+        self.join_sources.push(JoinSource{table: table.to_string(), left: left.to_string(), right: right.to_string()});
+        self
     }
 
     pub fn filter(mut self, left: &str, op: Operator, right: &str) -> Self {
@@ -39,6 +45,11 @@ impl SelectQuery {
         let mut s = String::new();
 
         s.push_str(&self.source.print());
+
+        for join in &self.join_sources {
+            s.push_str(" | ");
+            s.push_str(&join.print());
+        }
 
         for filter in &self.filters {
             s.push_str(" | ");
@@ -86,6 +97,21 @@ impl Source {
             Source::TableScan(table) => "scan ".to_owned() + table,
             Source::Tuple(values) => "tuple ".to_owned() + &print_tokens(values)
         }
+    }
+}
+
+pub struct JoinSource {
+    pub table: String,
+    pub left: String,
+    pub right: String,
+}
+
+impl JoinSource {
+    fn print(&self) -> String {
+        "join".to_string()
+            + " " + self.table.as_str()
+            + " " + self.left.as_str()
+            + " " + self.right.as_str()
     }
 }
 
@@ -154,5 +180,11 @@ mod tests {
     fn source_is_tuple() {
         let query = SelectQuery::tuple(&["1", "example_value"]).insert_into("example");
         assert_eq!(query.to_string(), "tuple 1 example_value | insert_into example");
+    }
+
+    #[test]
+    fn join() {
+        let query = SelectQuery::scan("example").join("type", "example.type_id", "type.id");
+        assert_eq!(query.to_string(), "scan example | join type example.type_id type.id | select_all");
     }
 }
