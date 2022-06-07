@@ -41,6 +41,11 @@ impl SelectQuery {
         self
     }
 
+    pub fn count(mut self) -> Self {
+        self.finisher = Finisher::Count;
+        self
+    }
+
     pub fn print(&self) -> String {
         let mut s = String::new();
 
@@ -130,7 +135,8 @@ impl Filter {
 pub enum Finisher {
     AllColumns,
     Columns(Vec<String>),
-    Insert(String)
+    Insert(String),
+    Count,
 }
 
 impl Finisher {
@@ -138,7 +144,8 @@ impl Finisher {
         match self {
             Finisher::AllColumns => "select_all".to_string(),
             Finisher::Columns(rows) => "select ".to_string() + &print_tokens(rows),
-            Finisher::Insert(name) => "insert_into ".to_string() + name
+            Finisher::Insert(name) => "insert_into ".to_string() + name,
+            Finisher::Count => "count".to_string(),
         }
     }
 }
@@ -186,5 +193,11 @@ mod tests {
     fn join() {
         let query = SelectQuery::scan("example").join("type", "example.type_id", "type.id");
         assert_eq!(query.to_string(), "scan example | join type example.type_id type.id | select_all");
+    }
+
+    #[test]
+    fn count() {
+        let query = SelectQuery::scan("example").count();
+        assert_eq!(query.to_string(), "scan example | count");
     }
 }

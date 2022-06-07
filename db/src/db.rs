@@ -17,8 +17,8 @@ type Object = Vec<ByteTuple>;
 type ByteTuple = Vec<Vec<u8>>;
 
 pub struct QueryResults {
+    attributes: Rc<Vec<String>>,
     results: Rc<Vec<Tuple>>,
-    attributes: Rc<Vec<String>>
 }
 
 pub enum TupleSet {
@@ -46,7 +46,11 @@ pub struct Cell {
 impl Tuple {
     fn from_bytes(types: &[Type], bytes: &Vec<Vec<u8>>) -> Tuple {
         let cells: Vec<Cell> = zip(types, bytes).map(|(t, b)| Cell::from_bytes(*t, b)).collect();
-        Tuple{contents: cells}
+        Self{contents: cells}
+    }
+
+    fn single_cell(cell: Cell) -> Self {
+        Self{ contents: vec![cell] }
     }
 
     fn len(&self) -> usize {
@@ -83,6 +87,10 @@ impl Cell {
         } else {
             Cell{contents: Vec::from(source.as_bytes()), kind: Type::TEXT}
         }
+    }
+
+    fn from_number(n: i32) -> Self {
+        Self{ contents: Vec::from(n.to_be_bytes()), kind: Type::NUMBER }
     }
 
     pub fn as_string(&self) -> String {
@@ -134,7 +142,8 @@ impl Database {
         match query.finisher {
             Finisher::AllColumns => Result::Ok(QueryResults::from(filtered_tuples)),
             Finisher::Columns(_) => todo!(),
-            Finisher::Insert(_) => Result::Err("Can't run a mutating query")
+            Finisher::Insert(_) => Result::Err("Can't run a mutating query"),
+            Finisher::Count => Ok(QueryResults::count(filtered_tuples.count())),
         }
     }
 
@@ -156,6 +165,7 @@ impl Database {
             },
             Finisher::AllColumns => Result::Ok(QueryResults::from(filtered_tuples)),
             Finisher::Columns(_) => todo!(),
+            Finisher::Count => Ok(QueryResults::count(filtered_tuples.count())),
         }
     }
 
@@ -289,6 +299,11 @@ impl QueryResults {
         }
     }
 
+    pub fn count(n: i32) -> Self {
+        let tuple = Tuple::single_cell(Cell::from_number(n));
+        Self{ attributes: Rc::new(vec!["count".to_string()]), results: Rc::new(vec![tuple])}
+    }
+
     pub fn size(&self) -> u32 {
         self.results.len() as u32
     }
@@ -333,6 +348,13 @@ impl TupleSet {
         match self {
             TupleSet::Named(_, _, x) => x,
             TupleSet::Unnamed(_, x) => x,
+        }
+    }
+
+    fn count(&self) -> i32 {
+        match self {
+            TupleSet::Named(_, _, x) => x.len() as i32,
+            TupleSet::Unnamed(_, x) => x.len() as i32,
         }
     }
 
@@ -470,5 +492,19 @@ mod tests {
         let type_name = tuple.cell_at(3).unwrap().as_string();
         assert_eq!(document_id, "1");
         assert_eq!(type_name, "type_b");
+    }
+
+    #[test]
+    pub fn count() {
+        let mut db = Database::default();
+        db.execute_create(&CreateRelationCommand::with_name("document").column("id", Type::NUMBER).column("content", Type::TEXT));
+
+        for i in 1..21 {
+            db.execute_mut_query(&SelectQuery::tuple(&[i.to_string(), "example".to_string()]).insert_into("document")).expect("Insert");
+        }
+
+        let result = db.execute_query(&SelectQuery::scan("document").count()).unwrap();
+        let count = result.results.get(0).map(|t| t.cell_at(0)).flatten().map(|c| c.as_number()).flatten().unwrap();
+        assert_eq!(count, 20);
     }
 }

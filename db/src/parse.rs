@@ -82,6 +82,12 @@ pub fn parse_query(query_str: &str) -> Result<SelectQuery, ParseError> {
                         if token != &Token::Pipe { return Err(ParseError("Expected end of statement")); }
                     }
                     query = query.join(&table, &left, &right);
+                },
+                "count" => {
+                    if let Some(token) = cursor.next() {
+                        if token != &Token::Pipe { return Err(ParseError("Expected end of statement")); }
+                    }
+                    query = query.count();
                 }
                 _ => return Err(ParseError("Function not recognized"))
             },
@@ -229,7 +235,8 @@ mod tests {
         assert_parse("tuple 1 2 | select_all");
         assert_parse("tuple 1 2 | insert_into example");
         assert_parse("scan example | filter id = 1 | select_all");
-        assert_parse("scan example | join other example.other_id example.id | select_all")
+        assert_parse("scan example | join other example.other_id example.id | select_all");
+        assert_parse("scan example | filter id > 1 | count");
     }
 
     #[test]
