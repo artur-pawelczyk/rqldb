@@ -117,8 +117,15 @@ fn read_source(cursor: &mut Cursor) -> Result<SelectQuery, ParseError> {
 fn read_operator(t: Option<&Token>) -> Result<Operator, ParseError> {
     if let Some(token) = t {
         match token {
-            Token::Symbol(_) => Ok(Operator::EQ),
-            _ => Err(ParseError("Unknown operator")),
+            Token::Symbol(s) => match s.as_str() {
+                "=" => Ok(Operator::EQ),
+                ">" => Ok(Operator::GT),
+                ">=" => Ok(Operator::GE),
+                "<" => Ok(Operator::LT),
+                "<=" => Ok(Operator::LE),
+                _ => Err(ParseError("Unknown operator")),
+            }
+            _ => Err(ParseError("Unexpected token")),
         }
     } else {
         Err(ParseError("Unknown operator"))
@@ -235,8 +242,9 @@ mod tests {
         assert_parse("tuple 1 2 | select_all");
         assert_parse("tuple 1 2 | insert_into example");
         assert_parse("scan example | filter id = 1 | select_all");
+        assert_parse("scan example | filter id > 1 | select_all");
         assert_parse("scan example | join other example.other_id example.id | select_all");
-        assert_parse("scan example | filter id > 1 | count");
+        assert_parse("scan example | count");
     }
 
     #[test]

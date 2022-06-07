@@ -53,11 +53,11 @@ impl Tuple {
         Self{ contents: vec![cell] }
     }
 
-    fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.contents.len()
     }
 
-    fn cell_at(&self, i: u32) -> Option<&Cell> {
+    pub fn cell_at(&self, i: u32) -> Option<&Cell> {
         self.contents.get(i as usize)
     }
 
