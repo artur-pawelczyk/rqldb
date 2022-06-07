@@ -15,12 +15,31 @@ fn create_database() -> Database {
     db
 }
 
+fn query_single_number(db: &Database, query: &SelectQuery) -> Option<i32> { let result =
+    db.execute_query(query).unwrap();
+    result.results().get(0).map(|t| t.cell_at(0)).flatten().map(|c|
+    c.as_number()).flatten() }
+
 fn benchmark_insert(c: &mut Criterion) {
     let mut db = create_database();
     let query = SelectQuery::tuple(&["1", "2", "example_doc", "the_content"]).insert_into("document");
     c.bench_function("insert", |b| b.iter(|| db.execute_mut_query(&query).unwrap()));
+
+    let count_query = SelectQuery::scan("document").count();
+    println!("count: {}", query_single_number(&db, &count_query).unwrap());
 }
 
-criterion_group!(benches, benchmark_insert);
-criterion_main!(benches);
+fn benchmark_count(c: &mut Criterion) {
+    let mut db = create_database();
 
+    let query = SelectQuery::tuple(&["1", "2", "example_doc", "the_content"]).insert_into("document");
+    for _ in 0..1000_000 {
+        db.execute_mut_query(&query).unwrap();
+    }
+
+    let count_query = SelectQuery::scan("document").count();
+    c.bench_function("count", |b| b.iter(|| query_single_number(&db, &count_query)));
+}
+
+criterion_group!(benches, benchmark_insert, benchmark_count);
+criterion_main!(benches);
