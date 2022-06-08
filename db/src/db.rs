@@ -23,15 +23,17 @@ pub struct QueryResults {
 
 pub struct TupleSet(Vec<Attribute>, Vec<Tuple>);
 
+#[derive(Clone, Debug)]
 pub enum Attribute {
-    Unnamed(i32),
-    Named(String),
-    Absolute(String, String),
+    Unnamed(Type, i32),
+    Named(Type, String),
+    Absolute(Type, String, String),
 }
 
 #[derive(Clone, Debug)]
 pub struct Tuple {
-    pub contents: Vec<Cell>
+    attributes: Vec<Attribute>,
+    contents: Vec<Cell>,
 }
 
 #[derive(Clone)]
@@ -41,13 +43,22 @@ pub struct Cell {
 }
 
 impl Tuple {
-    fn from_bytes(types: &[Type], bytes: &Vec<Vec<u8>>) -> Tuple {
-        let cells: Vec<Cell> = zip(types, bytes).map(|(t, b)| Cell::from_bytes(*t, b)).collect();
-        Self{contents: cells}
+    fn from_bytes(attrs: &[Attribute], bytes: &Vec<Vec<u8>>) -> Tuple {
+        let cells: Vec<Cell> = zip(attrs, bytes).map(|(attr, b)| Cell::from_bytes(attr.kind(), b)).collect();
+        Self{
+            attributes: attrs.iter().map(Attribute::clone).collect(),
+            contents: cells
+        }
     }
 
     fn single_cell(cell: Cell) -> Self {
-        Self{ contents: vec![cell] }
+        let kind = cell.kind;
+        Self{ attributes: vec![Attribute::Unnamed(kind, 0)], contents: vec![cell] }
+    }
+
+    fn from_cells(cells: Vec<Cell>) -> Self {
+        let attrs: Vec<Attribute> = cells.iter().enumerate().map(|(i, c)| Attribute::Unnamed(c.kind, i as i32)).collect();
+        Self{ attributes: attrs, contents: cells }
     }
 
     pub fn len(&self) -> usize {
@@ -58,7 +69,23 @@ impl Tuple {
         self.contents.get(i as usize)
     }
 
+    pub fn cell_by_name(&self, name: &str) -> Option<&Cell> {
+        if let Some((idx, _)) = self.attributes.iter().enumerate().find(|(_, attr)| attr.as_string() == name) {
+            self.cell_at(idx as u32)
+        } else {
+            None
+        }
+    }
+
+    pub fn contents(&self) -> &[Cell] {
+        &self.contents
+    }
+
     fn join(mut self, other: &Tuple) -> Self {
+        for attr in &other.attributes {
+            self.attributes.push(attr.clone());
+        }
+
         for t in &other.contents {
             self.contents.push(t.clone());
         }
@@ -168,10 +195,11 @@ impl Database {
 
     fn scan_table(&self, name: &str) -> Result<TupleSet, &'static str> {
         let rel = self.schema.find_relation(name).ok_or("No such relation in schema")?;
-        let attributes = rel.columns.iter().map(|col| col.name.clone()).map(|x| Attribute::Absolute(name.to_string(), x)).collect();
-        let types: Vec<Type> = rel.columns.iter().map(|col| col.kind).collect();
+        let attributes: Vec<Attribute> = rel.columns.iter()
+            .map(|col| (col.kind, col.name.clone()))
+            .map(|(col_kind, col_name)| Attribute::Absolute(col_kind, name.to_string(), col_name)).collect();
         let values = self.objects.get(name).ok_or("Could not find the object")?;
-        let tuples = values.iter().map(|x| Tuple::from_bytes(&types, x)).collect();
+        let tuples = values.iter().map(|x| Tuple::from_bytes(&attributes, x)).collect();
         Ok(TupleSet(attributes, tuples))
     }
 }
@@ -191,7 +219,7 @@ fn read_source(db: &Database, source: &Source) -> Result<TupleSet, &'static str>
         },
         Source::Tuple(values) => {
             let cells = values.iter().map(|x| Cell::from_string(x)).collect();
-            let tuple = Tuple{contents: cells};
+            let tuple = Tuple::from_cells(cells);
             Ok(TupleSet(vec![], vec![tuple]))
         }
     }
@@ -333,24 +361,32 @@ impl TupleSet {
 impl Attribute {
     fn as_string(&self) -> String {
         match self {
-            Attribute::Unnamed(i) => i.to_string(),
-            Attribute::Named(s) => s.to_string(),
-            Attribute::Absolute(t, s) => format!("{}.{}", t, s),
+            Attribute::Unnamed(_, i) => i.to_string(),
+            Attribute::Named(_, s) => s.to_string(),
+            Attribute::Absolute(_, t, s) => format!("{}.{}", t, s),
+        }
+    }
+
+    fn kind(&self) -> Type {
+        match self {
+            Attribute::Absolute(k, _, _) => *k,
+            Attribute::Unnamed(k, _) => *k,
+            Attribute::Named(k, _) => *k,
         }
     }
 
     fn table<'a>(&'a self) -> Option<&'a str> {
         match self {
-            Attribute::Absolute(t, _) => Some(t),
+            Attribute::Absolute(_, t, _) => Some(t),
             _ => None,
         }
     }
 
     fn into_named(self) -> Attribute {
         match self {
-            Attribute::Absolute(_, n) => Attribute::Named(n),
-            Attribute::Named(n) => Attribute::Named(n),
-            Attribute::Unnamed(i) => Attribute::Named(i.to_string()),
+            Attribute::Absolute(k, _, n) => Attribute::Named(k, n),
+            Attribute::Named(k, n) => Attribute::Named(k, n),
+            Attribute::Unnamed(k, i) => Attribute::Named(k, i.to_string()),
         }
     }
 }
@@ -452,8 +488,8 @@ mod tests {
         let result = db.execute_query(&SelectQuery::scan("document").join("type", "document.type_id", "type.id")).unwrap();
         assert_eq!(*result.attributes, ["document.id", "document.type_id", "type.id", "type.name"]);
         let tuple = result.results.get(0).unwrap();
-        let document_id = tuple.cell_at(0).unwrap().as_string();
-        let type_name = tuple.cell_at(3).unwrap().as_string();
+        let document_id = tuple.cell_by_name("document.id").unwrap().as_string();
+        let type_name = tuple.cell_by_name("type.name").unwrap().as_string();
         assert_eq!(document_id, "1");
         assert_eq!(type_name, "type_b");
     }
