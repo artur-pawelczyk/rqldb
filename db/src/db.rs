@@ -43,7 +43,7 @@ pub struct Cell {
 }
 
 impl Tuple {
-    fn from_bytes(attrs: &[Attribute], bytes: &Vec<Vec<u8>>) -> Tuple {
+    fn from_bytes(attrs: &[Attribute], bytes: &[Vec<u8>]) -> Tuple {
         let cells: Vec<Cell> = zip(attrs, bytes).map(|(attr, b)| Cell::from_bytes(attr.kind(), b)).collect();
         Self{
             attributes: attrs.iter().map(Attribute::clone).collect(),
@@ -199,8 +199,12 @@ impl Database {
             .map(|col| (col.kind, col.name.clone()))
             .map(|(col_kind, col_name)| Attribute::Absolute(col_kind, name.to_string(), col_name)).collect();
         let values = self.objects.get(name).ok_or("Could not find the object")?;
-        let tuples = values.iter().map(|x| Tuple::from_bytes(&attributes, x)).collect();
-        Ok(TupleSet(attributes, tuples))
+        let mut tuple_set = TupleSet::with_attributes(attributes);
+        for val in values {
+            tuple_set.add_tuple(val);
+        }
+
+        Ok(tuple_set)
     }
 }
 
@@ -219,8 +223,7 @@ fn read_source(db: &Database, source: &Source) -> Result<TupleSet, &'static str>
         },
         Source::Tuple(values) => {
             let cells = values.iter().map(|x| Cell::from_string(x)).collect();
-            let tuple = Tuple::from_cells(cells);
-            Ok(TupleSet(vec![], vec![tuple]))
+            Ok(TupleSet::single_from_cells(cells))
         }
     }
 }
@@ -341,6 +344,19 @@ fn simplify_attributes(attrs: Vec<Attribute>) -> Vec<Attribute> {
 
 // TODO: Turn into a trait
 impl TupleSet {
+    fn with_attributes(attributes: Vec<Attribute>) -> Self {
+        Self(attributes, vec![])
+    }
+
+    fn single_from_cells(cells: Vec<Cell>) -> Self {
+        let attrs: Vec<Attribute> = cells.iter().enumerate().map(|(i, c)| Attribute::Unnamed(c.kind, i as i32)).collect();
+        Self(attrs, vec![Tuple::from_cells(cells)])
+    }
+
+    fn add_tuple(&mut self, values: &[Vec<u8>]) {
+        self.1.push(Tuple::from_bytes(&self.0, values));
+    }
+
     fn take_attributes(&mut self) -> Vec<Attribute> {
         std::mem::take(&mut self.0)
     }
