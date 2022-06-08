@@ -1,8 +1,13 @@
-create_table document id::NUMBER type::NUMBER
+create_table document id::NUMBER content::TEXT type::NUMBER
 create_table type id::NUMBER name::TEXT
 
-tuple 1 type_a | insert_into type
-tuple 2 type_b | insert_into type
-tuple 1 2 | insert_into document
+tuple 1 article | insert_into type
+tuple 2 page | insert_into type
+tuple 3 contract | insert_into type
 
-scan document | join type document.type type.id | select_all
+tuple 1 example_page 2 | insert_into document
+tuple 2 other_page 2 | insert_into document
+tuple 3 some_contract 3 | insert_into document
+tuple 4 news_article 1 | insert_into document
+
+scan document | join type document.type type.id
