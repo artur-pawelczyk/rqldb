@@ -70,14 +70,11 @@ impl Tuple {
         self.contents
     }
 
-    fn join(mut self, other: &Tuple) -> Self {
-        for attr in &other.attributes {
-            self.attributes.push(attr.clone());
+    fn add_cells(mut self, cells: &[Cell]) -> Self {
+        for c in cells {
+            self.contents.push(c.clone());
         }
 
-        for t in &other.contents {
-            self.contents.push(t.clone());
-        }
         self
     }
 }
@@ -160,34 +157,21 @@ fn read_source(db: &Database, source: &Source) -> Result<TupleSet, &'static str>
     }
 }
 
-fn execute_join(db: &Database, mut current_tuples: TupleSet, joins: &[JoinSource]) -> Result<TupleSet, &'static str> {
+fn execute_join(db: &Database, current_tuples: TupleSet, joins: &[JoinSource]) -> Result<TupleSet, &'static str> {
     match joins {
         [] => Ok(current_tuples),
         [join] => {
-            let our = current_tuples.take_contents();
-            let mut theirs = db.scan_table(&join.table)?;
-            let mut joined: Vec<Tuple> = Vec::with_capacity(our.len());
-            for our_tuple in our {
-                if let Some(their_tuple) = match_tuple_for_join(&our_tuple, &theirs, join) {
-                    joined.push(our_tuple.join(their_tuple));
-                }
-            }
-
-            let mut our_attrs = current_tuples.take_attributes();
-            let their_attrs = theirs.take_attributes();
-            for attr in their_attrs {
-                our_attrs.push(attr);
-            }
-            
-            Ok(TupleSet(our_attrs, joined))
+            let joiner = db.scan_table(&join.table)?;
+            Ok(current_tuples.join(joiner, (&join.left, &join.right)))
         }
         _ => todo!(),
     }
 }
 
-fn match_tuple_for_join<'a>(tuple: &Tuple, joined_table: &'a TupleSet, join_spec: &JoinSource) -> Option<&'a Tuple> {
-    let f_id = tuple.cell_by_name(&join_spec.left).map(|c| c.as_number())?;
-    joined_table.contents().iter().find(|t| t.cell_by_name(&join_spec.right).map(|c| c.as_number()) == Some(f_id))
+fn join_with_matched_tuple(joinee: Tuple, joiner: &TupleSet, (left, right): (&str, &str)) -> Option<Tuple> {
+    let key = joinee.cell_by_name(&left).map(|c| c.as_number()).flatten()?;
+    let tuple = joiner.contents().iter().find(|t| t.cell_by_name(&right).map(|c| c.as_number()).flatten() == Some(key))?;
+    Some(joinee.add_cells(&tuple.contents))
 }
 
 fn filter_tuples(source: TupleSet, filters: &[Filter]) -> TupleSet {
@@ -257,6 +241,16 @@ impl TupleSet {
         self.1.push(Tuple::from_bytes(&self.0, values));
     }
 
+    fn join(mut self, mut other: TupleSet, join_spec: (&str, &str)) -> Self {
+        for attr in other.take_attributes() {
+            self.0.push(attr);
+        }
+
+        self.1 = self.1.into_iter().flat_map(|t| join_with_matched_tuple(t, &other, join_spec)).collect();
+
+        self
+    }
+
     fn take_attributes(&mut self) -> Vec<Attribute> {
         std::mem::take(&mut self.0)
     }
@@ -267,10 +261,6 @@ impl TupleSet {
 
     fn count(&self) -> i32 {
         self.1.len() as i32
-    }
-
-    fn take_contents(&mut self) -> Vec<Tuple> {
-        std::mem::take(&mut self.1)
     }
 
     fn into_query_results(self) -> QueryResults {
