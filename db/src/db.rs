@@ -21,10 +21,7 @@ pub struct QueryResults {
     results: Rc<Vec<Tuple>>,
 }
 
-pub enum TupleSet {
-    Named(String, Vec<Attribute>, Vec<Tuple>),
-    Unnamed(Vec<Attribute>, Vec<Tuple>),
-}
+pub struct TupleSet(Vec<Attribute>, Vec<Tuple>);
 
 pub enum Attribute {
     Unnamed(i32),
@@ -175,7 +172,8 @@ impl Database {
         let types: Vec<Type> = rel.columns.iter().map(|col| col.kind).collect();
         let values = self.objects.get(name).ok_or("Could not find the object")?;
         let tuples = values.iter().map(|x| Tuple::from_bytes(&types, x)).collect();
-        Ok(TupleSet::Named(name.to_string(), attributes, tuples))    }
+        Ok(TupleSet(attributes, tuples))
+    }
 }
 
 fn validate_with_schema(columns: &[Column], tuple: &Tuple) -> bool {
@@ -194,7 +192,7 @@ fn read_source(db: &Database, source: &Source) -> Result<TupleSet, &'static str>
         Source::Tuple(values) => {
             let cells = values.iter().map(|x| Cell::from_string(x)).collect();
             let tuple = Tuple{contents: cells};
-            Ok(TupleSet::Unnamed(vec![], vec![tuple]))
+            Ok(TupleSet(vec![], vec![tuple]))
         }
     }
 }
@@ -218,7 +216,7 @@ fn execute_join(db: &Database, mut current_tuples: TupleSet, joins: &[JoinSource
                 our_attrs.push(attr);
             }
             
-            Ok(TupleSet::Unnamed(our_attrs, joined))
+            Ok(TupleSet(our_attrs, joined))
         }
         _ => todo!(),
     }
@@ -233,22 +231,12 @@ fn filter_tuples(source: TupleSet, filters: &[Filter]) -> TupleSet {
     match filters {
         [] => source,
         filters => {
-            match source {
-                TupleSet::Named(name, attributes, mut tuples) => {
-                    for filter in filters {
-                        tuples = apply_filter(tuples, filter);
-                    }
-
-                    TupleSet::Named(name, attributes, tuples)
-                },
-                TupleSet::Unnamed(attributes, mut tuples) => {
-                    for filter in filters {
-                        tuples = apply_filter(tuples, filter);
-                    }
-
-                    TupleSet::Unnamed(attributes, tuples)
-                }
+            let mut tuples = source.1;
+            for filter in filters {
+                tuples = apply_filter(tuples, filter);
             }
+
+            TupleSet(source.0, tuples)
         },
     }
 }
@@ -287,15 +275,9 @@ impl QueryResults {
     }
 
     pub fn from(tuple_set: TupleSet) -> Self {
-        match tuple_set {
-            TupleSet::Named(_, attributes, contents) => Self{
-                attributes: Rc::new(simplify_attributes(attributes).iter().map(|x| x.as_string().to_string()).collect()),
-                results: Rc::new(contents)
-            },
-            TupleSet::Unnamed(attributes, contents) => Self{
-                attributes: Rc::new(simplify_attributes(attributes).iter().map(|x| x.as_string().to_string()).collect()),
-                results: Rc::new(contents)
-            },
+        Self{
+            attributes: Rc::new(simplify_attributes(tuple_set.0).iter().map(|x| x.as_string().to_string()).collect()),
+            results: Rc::new(tuple_set.1)
         }
     }
 
@@ -329,40 +311,22 @@ fn simplify_attributes(attrs: Vec<Attribute>) -> Vec<Attribute> {
     }
 }
 
+// TODO: Turn into a trait
 impl TupleSet {
     fn take_attributes(&mut self) -> Vec<Attribute> {
-        match self {
-            TupleSet::Named(_, attrs, _) => std::mem::take(attrs),
-            _ => todo!(),
-        }
-    }
-
-    fn _attributes(&self) -> &[Attribute] {
-        match self {
-            TupleSet::Named(_, attrs, _) => attrs,
-            TupleSet::Unnamed(attrs, _) => attrs,
-        }
+        std::mem::take(&mut self.0)
     }
 
     fn contents(&self) -> &[Tuple] {
-        match self {
-            TupleSet::Named(_, _, x) => x,
-            TupleSet::Unnamed(_, x) => x,
-        }
+        &self.1
     }
 
     fn count(&self) -> i32 {
-        match self {
-            TupleSet::Named(_, _, x) => x.len() as i32,
-            TupleSet::Unnamed(_, x) => x.len() as i32,
-        }
+        self.1.len() as i32
     }
 
     fn take_contents(&mut self) -> Vec<Tuple> {
-        match self {
-            TupleSet::Named(_, _, x) => std::mem::take(x),
-            TupleSet::Unnamed(_, x) => std::mem::take(x),
-        }
+        std::mem::take(&mut self.1)
     }
 }
 
