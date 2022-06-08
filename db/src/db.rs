@@ -1,11 +1,10 @@
 use std::collections::HashMap;
-use std::rc::Rc;
 use std::iter::zip;
 
 use crate::select::{SelectQuery, Source, Finisher, Operator, Filter, JoinSource};
 use crate::schema::{Column, Schema, Type};
 use crate::create::CreateRelationCommand;
-use crate::{Cell, QueryResults, Tuple as PubTuple};
+use crate::{Cell, QueryResults};
 
 #[derive(Default)]
 pub struct Database {
@@ -67,6 +66,10 @@ impl Tuple {
         &self.contents
     }
 
+    pub fn into_cells(self) -> Vec<Cell> {
+        self.contents
+    }
+
     fn join(mut self, other: &Tuple) -> Self {
         for attr in &other.attributes {
             self.attributes.push(attr.clone());
@@ -76,10 +79,6 @@ impl Tuple {
             self.contents.push(t.clone());
         }
         self
-    }
-
-    fn into_public(self) -> PubTuple {
-        PubTuple{contents: self.contents}
     }
 }
 
@@ -276,8 +275,8 @@ impl TupleSet {
 
     fn into_query_results(self) -> QueryResults {
         QueryResults{
-            attributes: Rc::new(simplify_attributes(self.0).iter().map(|x| x.as_string().to_string()).collect()),
-            results: Rc::new(self.1.into_iter().map(Tuple::into_public).collect()),
+            attributes: simplify_attributes(self.0).iter().map(|x| x.as_string().to_string()).collect(),
+            results: self.1.into_iter().map(Tuple::into_cells).collect()
         }
     }
 }
@@ -411,7 +410,7 @@ mod tests {
 
         let result = db.execute_query(&SelectQuery::scan("document").join("type", "document.type_id", "type.id")).unwrap();
         assert_eq!(*result.attributes, ["document.id", "document.content", "document.type_id", "type.id", "type.name"]);
-        let tuple = result.results.get(0).unwrap();
+        let tuple = result.tuple_at(0).unwrap();
         let document_id = tuple.cell_by_name("document.id").unwrap().as_string();
         let type_name = tuple.cell_by_name("type.name").unwrap().as_string();
         assert_eq!(document_id, "1");
@@ -428,7 +427,7 @@ mod tests {
         }
 
         let result = db.execute_query(&SelectQuery::scan("document").count()).unwrap();
-        let count = result.results.get(0).map(|t| t.cell_at(0)).flatten().map(|c| c.as_number()).flatten().unwrap();
+        let count = result.results().get(0).map(|t| t.cell_at(0)).flatten().map(|c| c.as_number()).flatten().unwrap();
         assert_eq!(count, 20);
     }
 }

@@ -4,31 +4,35 @@ pub mod parse;
 pub mod schema;
 pub mod select;
 
-use std::rc::Rc;
 use std::fmt;
 
 use crate::schema::Type;
 
 pub struct QueryResults {
-    attributes: Rc<Vec<String>>,
-    results: Rc<Vec<Tuple>>,
+    attributes: Vec<String>,
+    results: Vec<Vec<Cell>>
 }
 
-pub struct Tuple {
-    contents: Vec<Cell>,
+pub struct Tuple<'a> {
+    attributes: &'a [String],
+    contents: &'a [Cell],
 }
 
-impl Tuple {
-    fn single_cell(cell: Cell) -> Self {
-        Self{ contents: vec![cell] }
-    }
-
+impl<'a> Tuple<'a> {
     pub fn len(&self) -> usize {
         self.contents.len()
     }
 
     pub fn cell_at(&self, i: u32) -> Option<&Cell> {
         self.contents.get(i as usize)
+    }
+
+    pub fn cell_by_name(&self, name: &str) -> Option<&Cell> {
+        if let Some((i, _)) = self.attributes.iter().enumerate().find(|(_, n)| n == &name) {
+            self.contents.get(i)
+        } else {
+            None
+        }
     }
 
     pub fn contents(&self) -> &[Cell] {
@@ -62,6 +66,7 @@ impl Cell {
         }
     }
 
+    
     fn from_number(n: i32) -> Self {
         Self{ contents: Vec::from(n.to_be_bytes()), kind: Type::NUMBER }
     }
@@ -102,19 +107,23 @@ impl fmt::Debug for Cell {
 
 impl QueryResults {
     fn count(n: i32) -> Self {
-        let tuple = Tuple::single_cell(Cell::from_number(n));
-        Self{ attributes: Rc::new(vec!["count".to_string()]), results: Rc::new(vec![tuple])}
+        let tuple = vec![Cell::from_number(n)];
+        Self{ attributes: vec!["count".to_string()], results: vec![tuple]}
     }
 
     pub fn size(&self) -> u32 {
         self.results.len() as u32
     }
 
-    pub fn attributes(&self) -> Rc<Vec<String>> {
-        Rc::clone(&self.attributes)
+    pub fn attributes(&self) -> &Vec<String> {
+        &self.attributes
     }
 
-    pub fn results(&self) -> Rc<Vec<Tuple>> {
-        Rc::clone(&self.results)
+    pub fn results(&self) -> Vec<Tuple> {
+        self.results.iter().map(|x| Tuple{ attributes: &self.attributes, contents: x}).collect()
+    }
+
+    pub fn tuple_at(&self, i: i32) -> Option<Tuple> {
+        self.results.get(i as usize).map(|cells| Tuple{ attributes: &self.attributes, contents: cells })
     }
 }
