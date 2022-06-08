@@ -15,7 +15,15 @@ pub struct Database {
 type Object = Vec<ByteTuple>;
 type ByteTuple = Vec<Vec<u8>>;
 
-pub struct TupleSet(Vec<Attribute>, Vec<Tuple>);
+struct TupleSet(Vec<Attribute>, Vec<Tuple>);
+struct TupleView<'a> {
+    attributes: &'a [Attribute],
+    raw: &'a Tuple,
+}
+struct TupleIter<'a> {
+    tuple_set: &'a TupleSet,
+    pos: usize,
+}
 
 #[derive(Clone, Debug)]
 pub enum Attribute {
@@ -167,9 +175,9 @@ fn execute_join(db: &Database, current_tuples: TupleSet, joins: &[JoinSource]) -
 }
 
 fn join_with_matched_tuple(joinee: Tuple, joiner: &TupleSet, (left, right): (&str, &str)) -> Option<Tuple> {
-    let key = joinee.cell_by_name(&left).map(|c| c.as_number()).flatten()?;
-    let tuple = joiner.contents().iter().find(|t| t.cell_by_name(&right).map(|c| c.as_number()).flatten() == Some(key))?;
-    Some(joinee.add_cells(&tuple.contents))
+    let key = joinee.cell_by_name(&left)?;
+    let tuple = joiner.iter().find(|t| t.cell_by_name(&right).expect("Expected a cell") == key)?;
+    Some(joinee.add_cells(&tuple.contents()))
 }
 
 fn filter_tuples(source: TupleSet, filters: &[Filter]) -> TupleSet {
@@ -235,12 +243,10 @@ impl TupleSet {
     }
 
     fn join(mut self, mut other: TupleSet, join_spec: (&str, &str)) -> Self {
+        self.1 = self.1.into_iter().flat_map(|t| join_with_matched_tuple(t, &other, join_spec)).collect();
         for attr in other.take_attributes() {
             self.0.push(attr);
         }
-
-        self.1 = self.1.into_iter().flat_map(|t| join_with_matched_tuple(t, &other, join_spec)).collect();
-
         self
     }
 
@@ -248,8 +254,13 @@ impl TupleSet {
         std::mem::take(&mut self.0)
     }
 
+    #[deprecated]
     fn contents(&self) -> &[Tuple] {
         &self.1
+    }
+
+    fn iter(&self) -> TupleIter {
+        TupleIter{tuple_set: &self, pos: 0}
     }
 
     fn count(&self) -> i32 {
@@ -261,6 +272,30 @@ impl TupleSet {
             attributes: simplify_attributes(self.0).iter().map(|x| x.as_string().to_string()).collect(),
             results: self.1.into_iter().map(Tuple::into_cells).collect()
         }
+    }
+}
+
+impl<'a> Iterator for TupleIter<'a> {
+    type Item = TupleView<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let raw_tuple = self.tuple_set.1.get(self.pos);
+        self.pos = self.pos + 1;
+        raw_tuple.map(|t| TupleView{attributes: &self.tuple_set.0, raw: t})
+    }
+}
+
+impl<'a> TupleView<'a> {
+    pub fn cell_by_name(&self, name: &str) -> Option<&Cell> {
+        if let Some((idx, _)) = self.attributes.iter().enumerate().find(|(_, attr)| attr.as_string() == name) {
+            self.raw.cell_at(idx as u32)
+        } else {
+            None
+        }
+    }
+
+    pub fn contents(&self) -> &[Cell] {
+        &self.raw.contents
     }
 }
 
