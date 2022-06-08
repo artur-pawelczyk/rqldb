@@ -15,8 +15,6 @@ pub struct Database {
 type Object = Vec<ByteTuple>;
 type ByteTuple = Vec<Vec<u8>>;
 
-
-
 pub struct TupleSet(Vec<Attribute>, Vec<Tuple>);
 
 #[derive(Clone, Debug)]
@@ -197,22 +195,18 @@ fn apply_filter(source: Vec<Tuple>, filter: &Filter) -> Vec<Tuple> {
 fn test_filter(filter: &Filter, tuple: &Tuple) -> bool {
     match filter {
         Filter::Condition(left, op, right) => {
-            assert_eq!(left, "id");
-            let cell = tuple.cell_at(0).unwrap();
-            let left_n = cell.as_number().unwrap();
-            let right_n: i32 = right.parse().unwrap();
+            let cell = tuple.cell_by_name(left).unwrap();
+            let right_as_cell = Cell::from_string(right);
             match op {
-                Operator::EQ => left_n == right_n,
-                Operator::GT => left_n > right_n,
-                Operator::GE => left_n >= right_n,
-                Operator::LT => left_n < right_n,
-                Operator::LE => left_n <= right_n,
+                Operator::EQ => cell == &right_as_cell,
+                Operator::GT => cell > &right_as_cell,
+                Operator::GE => cell >= &right_as_cell,
+                Operator::LT => cell < &right_as_cell,
+                Operator::LE => cell <= &right_as_cell,
             }
         }
     }
 }
-
-
 
 /// If all the attributes are in the same table, make them all non-absolute
 fn simplify_attributes(attrs: Vec<Attribute>) -> Vec<Attribute> {
@@ -226,7 +220,6 @@ fn simplify_attributes(attrs: Vec<Attribute>) -> Vec<Attribute> {
     }
 }
 
-// TODO: Turn into a trait
 impl TupleSet {
     fn with_attributes(attributes: Vec<Attribute>) -> Self {
         Self(attributes, vec![])
@@ -378,14 +371,19 @@ mod tests {
         db.execute_create(&CreateRelationCommand::with_name("document").column("id", Type::NUMBER).column("content", Type::TEXT));
 
         for i in 1..20 {
-            db.execute_mut_query(&SelectQuery::tuple(&[i.to_string(), "example".to_string()]).insert_into("document")).expect("Insert");
+            let content = format!("example{}", i);
+            db.execute_mut_query(&SelectQuery::tuple(&[i.to_string(), content]).insert_into("document")).expect("Insert");
         }
 
-        let mut result = db.execute_query(&SelectQuery::scan("document").filter("id", Operator::EQ, "5")).unwrap();
+        let mut result = db.execute_query(&SelectQuery::scan("document").filter("document.id", Operator::EQ, "5")).unwrap();
         assert_eq!(result.size(), 1);
 
-        result = db.execute_query(&SelectQuery::scan("document").filter("id", Operator::GT, "5").filter("id", Operator::LT, "10")).unwrap();
+        result = db.execute_query(&SelectQuery::scan("document").filter("document.id", Operator::GT, "5").filter("document.id", Operator::LT, "10")).unwrap();
         assert_eq!(result.size(), 4);
+
+        result = db.execute_query(&SelectQuery::scan("document").filter("document.content", Operator::EQ, "example1")).unwrap();
+
+        assert_eq!(result.size(), 1);
     }
 
     #[test]

@@ -5,6 +5,7 @@ pub mod schema;
 pub mod select;
 
 use std::fmt;
+use std::cmp::Ordering;
 
 use crate::schema::Type;
 
@@ -40,7 +41,7 @@ impl<'a> Tuple<'a> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct Cell {
     contents: Vec<u8>,
     kind: Type
@@ -95,6 +96,22 @@ impl Cell {
                 }
             },
             _ => None
+        }
+    }
+}
+
+impl PartialOrd for Cell {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        if self.kind == other.kind {
+            if self.contents > other.contents {
+                Some(Ordering::Greater)
+            } else if self.contents == other.contents {
+                Some(Ordering::Equal)
+            } else {
+                Some(Ordering::Less)
+            }
+        } else {
+            None
         }
     }
 }
