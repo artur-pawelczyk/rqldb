@@ -4,3 +4,5 @@ create_table type id::NUMBER name::TEXT
 tuple 1 type_a | insert_into type
 tuple 2 type_b | insert_into type
 tuple 1 2 | insert_into document
+
+scan document | join type document.type type.id | select_all

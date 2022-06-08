@@ -233,7 +233,7 @@ fn execute_join(db: &Database, mut current_tuples: TupleSet, joins: &[JoinSource
             let mut theirs = db.scan_table(&join.table)?;
             let mut joined: Vec<Tuple> = Vec::with_capacity(our.len());
             for our_tuple in our {
-                if let Some(their_tuple) = match_tuple_for_join(&our_tuple, &theirs) {
+                if let Some(their_tuple) = match_tuple_for_join(&our_tuple, &theirs, join) {
                     joined.push(our_tuple.join(their_tuple));
                 }
             }
@@ -250,9 +250,9 @@ fn execute_join(db: &Database, mut current_tuples: TupleSet, joins: &[JoinSource
     }
 }
 
-fn match_tuple_for_join<'a>(tuple: &Tuple, joined_table: &'a TupleSet) -> Option<&'a Tuple> {
-    let f_id = tuple.cell_at(1).map(|c| c.as_number())?;
-    joined_table.contents().iter().find(|t| t.cell_at(0).map(|c| c.as_number()) == Some(f_id))
+fn match_tuple_for_join<'a>(tuple: &Tuple, joined_table: &'a TupleSet, join_spec: &JoinSource) -> Option<&'a Tuple> {
+    let f_id = tuple.cell_by_name(&join_spec.left).map(|c| c.as_number())?;
+    joined_table.contents().iter().find(|t| t.cell_by_name(&join_spec.right).map(|c| c.as_number()) == Some(f_id))
 }
 
 fn filter_tuples(source: TupleSet, filters: &[Filter]) -> TupleSet {
@@ -478,15 +478,15 @@ mod tests {
     #[test]
     pub fn join() {
         let mut db = Database::default();
-        db.execute_create(&CreateRelationCommand::with_name("document").column("id", Type::NUMBER).column("type_id", Type::NUMBER));
+        db.execute_create(&CreateRelationCommand::with_name("document").column("id", Type::NUMBER).column("content", Type::TEXT).column("type_id", Type::NUMBER));
         db.execute_create(&CreateRelationCommand::with_name("type").column("id", Type::NUMBER).column("name", Type::TEXT));
 
-        db.execute_mut_query(&SelectQuery::tuple(&["1", "2"]).insert_into("document")).unwrap();
+        db.execute_mut_query(&SelectQuery::tuple(&["1", "example", "2"]).insert_into("document")).unwrap();
         db.execute_mut_query(&SelectQuery::tuple(&["1", "type_a"]).insert_into("type")).unwrap();
         db.execute_mut_query(&SelectQuery::tuple(&["2", "type_b"]).insert_into("type")).unwrap();
 
         let result = db.execute_query(&SelectQuery::scan("document").join("type", "document.type_id", "type.id")).unwrap();
-        assert_eq!(*result.attributes, ["document.id", "document.type_id", "type.id", "type.name"]);
+        assert_eq!(*result.attributes, ["document.id", "document.content", "document.type_id", "type.id", "type.name"]);
         let tuple = result.results.get(0).unwrap();
         let document_id = tuple.cell_by_name("document.id").unwrap().as_string();
         let type_name = tuple.cell_by_name("type.name").unwrap().as_string();
