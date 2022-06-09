@@ -15,10 +15,15 @@ pub struct Database {
 type Object = Vec<ByteTuple>;
 type ByteTuple = Vec<Vec<u8>>;
 
+#[derive(Debug)]
 struct TupleSet(Vec<Attribute>, Vec<Tuple>);
 struct TupleView<'a> {
     attributes: &'a [Attribute],
     raw: &'a Tuple,
+}
+struct TupleViewMut<'a> {
+    attributes: &'a [Attribute],
+    raw: &'a mut Tuple,
 }
 struct TupleIter<'a> {
     tuple_set: &'a TupleSet,
@@ -34,7 +39,6 @@ pub enum Attribute {
 
 #[derive(Clone, Debug)]
 pub struct Tuple {
-    attributes: Vec<Attribute>,
     contents: Vec<Cell>,
 }
 
@@ -42,14 +46,12 @@ impl Tuple {
     fn from_bytes(attrs: &[Attribute], bytes: &[Vec<u8>]) -> Tuple {
         let cells: Vec<Cell> = zip(attrs, bytes).map(|(attr, b)| Cell::from_bytes(attr.kind(), b)).collect();
         Self{
-            attributes: attrs.iter().map(Attribute::clone).collect(),
             contents: cells
         }
     }
 
     fn from_cells(cells: Vec<Cell>) -> Self {
-        let attrs: Vec<Attribute> = cells.iter().enumerate().map(|(i, c)| Attribute::Unnamed(c.kind, i as i32)).collect();
-        Self{ attributes: attrs, contents: cells }
+        Self{ contents: cells }
     }
 
     pub fn len(&self) -> usize {
@@ -60,28 +62,12 @@ impl Tuple {
         self.contents.get(i as usize)
     }
 
-    pub fn cell_by_name(&self, name: &str) -> Option<&Cell> {
-        if let Some((idx, _)) = self.attributes.iter().enumerate().find(|(_, attr)| attr.as_string() == name) {
-            self.cell_at(idx as u32)
-        } else {
-            None
-        }
-    }
-
     pub fn contents(&self) -> &[Cell] {
         &self.contents
     }
 
     pub fn into_cells(self) -> Vec<Cell> {
         self.contents
-    }
-
-    fn add_cells(mut self, cells: &[Cell]) -> Self {
-        for c in cells {
-            self.contents.push(c.clone());
-        }
-
-        self
     }
 }
 
@@ -163,44 +149,46 @@ fn read_source(db: &Database, source: &Source) -> Result<TupleSet, &'static str>
     }
 }
 
-fn execute_join(db: &Database, current_tuples: TupleSet, joins: &[JoinSource]) -> Result<TupleSet, &'static str> {
+fn execute_join(db: &Database, mut current_tuples: TupleSet, joins: &[JoinSource]) -> Result<TupleSet, &'static str> {
     match joins {
         [] => Ok(current_tuples),
         [join] => {
             let joiner = db.scan_table(&join.table)?;
-            Ok(current_tuples.join(joiner, (&join.left, &join.right)))
+
+            for attr in &joiner.0 {
+                current_tuples.0.push(attr.clone());
+            }
+
+            let joined = current_tuples.map_mut(|joinee| {
+                let key = joinee.cell_by_name(&join.left)?;
+                let tuple: TupleView = joiner.iter().find(|t| t.cell_by_name(&join.right).expect("Expected a cell") == key)?;
+                Some(joinee.add_cells(tuple))
+            });
+
+            Ok(joined)
         }
         _ => todo!(),
     }
 }
 
-fn join_with_matched_tuple(joinee: Tuple, joiner: &TupleSet, (left, right): (&str, &str)) -> Option<Tuple> {
-    let key = joinee.cell_by_name(&left)?;
-    let tuple = joiner.iter().find(|t| t.cell_by_name(&right).expect("Expected a cell") == key)?;
-    Some(joinee.add_cells(&tuple.contents()))
-}
-
-fn filter_tuples(source: TupleSet, filters: &[Filter]) -> TupleSet {
+fn filter_tuples(mut source: TupleSet, filters: &[Filter]) -> TupleSet {
     match filters {
         [] => source,
         filters => {
-            let mut tuples = source.1;
             for filter in filters {
-                tuples = apply_filter(tuples, filter);
+                source = apply_filter(source, filter);
             }
 
-            TupleSet(source.0, tuples)
+            source
         },
     }
 }
 
-fn apply_filter(source: Vec<Tuple>, filter: &Filter) -> Vec<Tuple> {
-    source.into_iter()
-        .filter(|tuple| test_filter(filter, tuple))
-        .collect()
+fn apply_filter(source: TupleSet, filter: &Filter) -> TupleSet {
+    source.filter(|tuple| test_filter(filter, tuple))
 }
 
-fn test_filter(filter: &Filter, tuple: &Tuple) -> bool {
+fn test_filter(filter: &Filter, tuple: TupleView) -> bool {
     match filter {
         Filter::Condition(left, op, right) => {
             let cell = tuple.cell_by_name(left).unwrap();
@@ -242,19 +230,34 @@ impl TupleSet {
         self.1.push(Tuple::from_bytes(&self.0, values));
     }
 
-    fn join(mut self, mut other: TupleSet, join_spec: (&str, &str)) -> Self {
-        self.1 = self.1.into_iter().flat_map(|t| join_with_matched_tuple(t, &other, join_spec)).collect();
-        for attr in other.take_attributes() {
-            self.0.push(attr);
+    fn filter<F>(mut self, predicate: F) -> Self
+    where F: Fn(TupleView) -> bool {
+        let mut filtered = vec![];
+
+        for raw_tuple in self.1 {
+            if predicate(TupleView{attributes: &self.0, raw: &raw_tuple}) {
+                filtered.push(raw_tuple);
+            }
         }
+
+        self.1 = filtered;
         self
     }
 
-    fn take_attributes(&mut self) -> Vec<Attribute> {
-        std::mem::take(&mut self.0)
+    fn map_mut<F>(mut self, func: F) -> Self
+    where F: Fn(TupleViewMut) -> Option<TupleViewMut> {
+        let mut mapped = vec![];
+
+        for mut raw_tuple in self.1 {
+            if let Some(_) = func(TupleViewMut{attributes: &self.0, raw: &mut raw_tuple}) {
+                mapped.push(raw_tuple);
+            }
+        }
+        
+        self.1 = mapped;
+        self
     }
 
-    #[deprecated]
     fn contents(&self) -> &[Tuple] {
         &self.1
     }
@@ -293,10 +296,24 @@ impl<'a> TupleView<'a> {
             None
         }
     }
+}
 
-    pub fn contents(&self) -> &[Cell] {
-        &self.raw.contents
+impl<'a> TupleViewMut<'a> {
+    fn cell_by_name(&self, name: &str) -> Option<&Cell> {
+        if let Some((idx, _)) = self.attributes.iter().enumerate().find(|(_, attr)| attr.as_string() == name) {
+            self.raw.cell_at(idx as u32)
+        } else {
+            None
+        }
     }
+
+    fn add_cells(self, other: TupleView) -> Self {
+        for c in &other.raw.contents {
+            self.raw.contents.push(c.clone());
+        }
+
+        self
+    }    
 }
 
 impl Attribute {
