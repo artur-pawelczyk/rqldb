@@ -3,6 +3,7 @@ use crate::create::CreateRelationCommand;
 use crate::schema::Type;
 
 use std::fmt;
+use std::collections::VecDeque;
 
 #[derive(PartialEq, Clone)]
 pub enum Token {
@@ -14,21 +15,19 @@ pub enum Token {
 impl Token {
     fn to_string(&self) -> String {
         match self {
-            Token::Symbol(x) => String::from(x),
-            Token::SymbolWithType(x, y) => x.clone() + "::" + y,
+            Token::Symbol(x) => x.to_string(),
+            Token::SymbolWithType(x, y) => x.to_string() + "::" + y,
             Token::Pipe => String::from("|"),
         }
     }
 }
 
 struct Cursor {
-    tokens: Vec<Token>,
-    pos: usize
+    tokens: VecDeque<Token>,
 }
 
 #[derive(Debug)]
 pub struct ParseError(&'static str);
-
 
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -37,22 +36,16 @@ impl fmt::Display for ParseError {
 }
 
 impl Cursor {
-    fn new(tokens: Vec<Token>) -> Self {
-        Self{tokens, pos: 0}
+    fn new(tokens: VecDeque<Token>) -> Self {
+        Self{ tokens }
     }
 
     fn has_next(&self) -> bool {
-        self.pos < self.tokens.len()
+        !self.tokens.is_empty()
     }
 
-    fn next(&mut self) -> Option<&Token> {
-        if self.has_next() {
-            let next = &self.tokens[self.pos];
-            self.pos += 1;
-            Option::Some(next)
-        } else {
-            Option::None
-        }
+    fn next(&mut self) -> Option<Token> {
+        self.tokens.pop_front()
     }
 }
 
@@ -70,7 +63,7 @@ pub fn parse_query(query_str: &str) -> Result<SelectQuery, ParseError> {
                     let op = read_operator(cursor.next())?;
                     let right = read_symbol(cursor.next())?;
                     if let Some(token) = cursor.next() {
-                        if token != &Token::Pipe { return Err(ParseError("Expected end of statement")); }
+                        if token != Token::Pipe { return Err(ParseError("Expected end of statement")); }
                     }
                     query = query.filter(&left, op, &right);
                 },
@@ -79,13 +72,13 @@ pub fn parse_query(query_str: &str) -> Result<SelectQuery, ParseError> {
                     let left = read_symbol(cursor.next())?;
                     let right = read_symbol(cursor.next())?;
                     if let Some(token) = cursor.next() {
-                        if token != &Token::Pipe { return Err(ParseError("Expected end of statement")); }
+                        if token != Token::Pipe { return Err(ParseError("Expected end of statement")); }
                     }
                     query = query.join(&table, &left, &right);
                 },
                 "count" => {
                     if let Some(token) = cursor.next() {
-                        if token != &Token::Pipe { return Err(ParseError("Expected end of statement")); }
+                        if token != Token::Pipe { return Err(ParseError("Expected end of statement")); }
                     }
                     query = query.count();
                 }
@@ -114,7 +107,7 @@ fn read_source(cursor: &mut Cursor) -> Result<SelectQuery, ParseError> {
     }
 }
 
-fn read_operator(t: Option<&Token>) -> Result<Operator, ParseError> {
+fn read_operator(t: Option<Token>) -> Result<Operator, ParseError> {
     if let Some(token) = t {
         match token {
             Token::Symbol(s) => match s.as_str() {
@@ -132,10 +125,10 @@ fn read_operator(t: Option<&Token>) -> Result<Operator, ParseError> {
     }
 }
 
-fn read_symbol(t: Option<&Token>) -> Result<String, ParseError> {
+fn read_symbol(t: Option<Token>) -> Result<String, ParseError> {
     if let Some(token) = t {
         match token {
-            Token::Symbol(name) => Ok(name.clone()),
+            Token::Symbol(name) => Ok(name.to_string()),
             _ => Err(ParseError("Expected a symbol"))
         }
     } else {
@@ -156,7 +149,7 @@ fn read_tuple(cursor: &mut Cursor) -> Result<SelectQuery, ParseError> {
     let mut values: Vec<String> = Vec::new();
     for token in read_until_end(cursor) {
         match token {
-            Token::Symbol(name) => values.push(name),
+            Token::Symbol(name) => values.push(name.to_string()),
             _ => return Err(ParseError("Expected a symbol"))
         }
     }
@@ -175,7 +168,7 @@ pub fn parse_command(source: &str) -> Result<CreateRelationCommand, ParseError> 
                     Some(Token::Symbol(name)) => name,
                     _ => return Err(ParseError("Expected table name"))
                 };
-                command = CreateRelationCommand::with_name(name);
+                command = CreateRelationCommand::with_name(name.as_str());
 
                 for arg in read_until_end(&mut parser) {
                     match arg {
@@ -199,20 +192,24 @@ fn str_to_type(name: &str) -> Type {
     }
 }
 
-fn read_until_end(parser: &mut Cursor) -> Vec<Token> {
+fn read_until_end(cursor: &mut Cursor) -> Vec<Token> {
     let mut args: Vec<Token> = Vec::new();
 
-    while let Some(token) = parser.next() {
+    while let Some(token) = cursor.next() {
         match token {
             Token::Pipe => { break },
-            _ => args.push(token.clone())
+            _ => args.push(token)
         }
     }
 
     args
 }
 
-fn tokenize(source: &str) -> Vec<Token> {
+fn next(cursor: &mut Cursor) -> Option<Token> {
+    cursor.tokens.pop_front()
+}
+
+fn tokenize(source: &str) -> VecDeque<Token> {
     source.split_ascii_whitespace()
         .map(match_token)
         .collect()
@@ -225,9 +222,9 @@ fn match_token(source: &str) -> Token {
         let mut parts = source.split("::");
         let name = parts.next().unwrap();
         let kind = parts.next().unwrap();
-        Token::SymbolWithType(String::from(name), String::from(kind))
+        Token::SymbolWithType(name.to_string(), kind.to_string())
     } else {
-        Token::Symbol(String::from(source))
+        Token::Symbol(source.to_string())
     }
 }
 
