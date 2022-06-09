@@ -3,6 +3,7 @@ use relational_nosql_lib::create::CreateRelationCommand;
 use relational_nosql_lib::select::SelectQuery;
 use relational_nosql_lib::schema::Type;
 use relational_nosql_lib::db::Database;
+use relational_nosql_lib::parse::parse_query;
 
 fn create_database() -> Database {
     let mut db = Database::default();
@@ -41,5 +42,11 @@ fn benchmark_count(c: &mut Criterion) {
     c.bench_function("count", |b| b.iter(|| query_single_number(&db, &count_query)));
 }
 
-criterion_group!(benches, benchmark_insert, benchmark_count);
+fn benchmark_parse(c: &mut Criterion) {
+    let query = "scan example | join other example.id other.id | filter example.value > 5 | insert_into foo";
+
+    c.bench_function("parse query", |b| b.iter(|| parse_query(query)));
+}
+
+criterion_group!(benches, benchmark_insert, benchmark_count, benchmark_parse);
 criterion_main!(benches);
