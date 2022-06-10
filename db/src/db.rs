@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::iter::zip;
+use std::cell::RefCell;
 
 use crate::select::{SelectQuery, Source, Finisher, Operator, Filter, JoinSource};
 use crate::schema::{Column, Schema, Type};
@@ -9,14 +10,18 @@ use crate::{Cell, QueryResults};
 #[derive(Default)]
 pub struct Database {
     schema: Schema,
-    objects: HashMap<String, Object>
+    objects: HashMap<String, RefCell<Object>>
 }
 
 type Object = Vec<ByteTuple>;
 type ByteTuple = Vec<Vec<u8>>;
 
 #[derive(Debug)]
-struct TupleSet(Vec<Attribute>, Vec<Tuple>);
+struct TupleSet {
+    attributes: Vec<Attribute>,
+    raw_tuples: Vec<Tuple>,
+}
+
 struct TupleView<'a> {
     attributes: &'a [Attribute],
     raw: &'a Tuple,
@@ -38,7 +43,7 @@ pub enum Attribute {
 }
 
 #[derive(Clone, Debug)]
-pub struct Tuple {
+struct Tuple {
     contents: Vec<Cell>,
 }
 
@@ -62,21 +67,15 @@ impl Tuple {
         self.contents.get(i as usize)
     }
 
-    pub fn contents(&self) -> &[Cell] {
-        &self.contents
-    }
-
     pub fn into_cells(self) -> Vec<Cell> {
         self.contents
     }
 }
 
-
-
 impl Database {
     pub fn execute_create(&mut self, command: &CreateRelationCommand) {
         self.schema.add_relation(&command.name, &command.columns);
-        self.objects.insert(command.name.clone(), Object::new());
+        self.objects.insert(command.name.clone(), RefCell::new(Object::new()));
     }
 
     pub fn execute_query(&self, query: &SelectQuery) -> Result<QueryResults, &str> {
@@ -100,7 +99,7 @@ impl Database {
         match &query.finisher {
             Finisher::Insert(table) => {
                 let table_schema = self.schema.find_relation(table).ok_or("No such table")?;
-                let object = self.objects.entry(table.to_string()).or_insert(Object::new());
+                let mut object = self.objects.get(table).expect("This shouldn't happen").borrow_mut();
                 for tuple in filtered_tuples.contents() {
                     if !validate_with_schema(&table_schema.columns, tuple) { return Err("Invalid input") }
                     object.push(tuple.contents.iter().map(|x| x.as_bytes()).collect())
@@ -119,11 +118,8 @@ impl Database {
         let attributes: Vec<Attribute> = rel.columns.iter()
             .map(|col| (col.kind, col.name.clone()))
             .map(|(col_kind, col_name)| Attribute::Absolute(col_kind, name.to_string(), col_name)).collect();
-        let values = self.objects.get(name).ok_or("Could not find the object")?;
         let mut tuple_set = TupleSet::with_attributes(attributes);
-        for val in values {
-            tuple_set.add_tuple(val);
-        }
+        tuple_set.read_object(&self.objects.get(name).ok_or("Could not find the object")?.borrow());
 
         Ok(tuple_set)
     }
@@ -155,8 +151,8 @@ fn execute_join(db: &Database, mut current_tuples: TupleSet, joins: &[JoinSource
         [join] => {
             let joiner = db.scan_table(&join.table)?;
 
-            for attr in &joiner.0 {
-                current_tuples.0.push(attr.clone());
+            for attr in &joiner.attributes {
+                current_tuples.attributes.push(attr.clone());
             }
 
             let joined = current_tuples.map_mut(|joinee| {
@@ -218,29 +214,29 @@ fn simplify_attributes(attrs: Vec<Attribute>) -> Vec<Attribute> {
 
 impl TupleSet {
     fn with_attributes(attributes: Vec<Attribute>) -> Self {
-        Self(attributes, vec![])
+        Self{ attributes, raw_tuples: vec![] }
     }
 
     fn single_from_cells(cells: Vec<Cell>) -> Self {
-        let attrs: Vec<Attribute> = cells.iter().enumerate().map(|(i, c)| Attribute::Unnamed(c.kind, i as i32)).collect();
-        Self(attrs, vec![Tuple::from_cells(cells)])
+        let attributes: Vec<Attribute> = cells.iter().enumerate().map(|(i, c)| Attribute::Unnamed(c.kind, i as i32)).collect();
+        Self{ attributes, raw_tuples: vec![Tuple::from_cells(cells)] }
     }
 
-    fn add_tuple(&mut self, values: &[Vec<u8>]) {
-        self.1.push(Tuple::from_bytes(&self.0, values));
+    fn read_object(&mut self, object: &Object) {
+        self.raw_tuples = object.iter().map(|val| Tuple::from_bytes(&self.attributes, val)).collect();
     }
 
     fn filter<F>(mut self, predicate: F) -> Self
     where F: Fn(TupleView) -> bool {
         let mut filtered = vec![];
 
-        for raw_tuple in self.1 {
-            if predicate(TupleView{attributes: &self.0, raw: &raw_tuple}) {
+        for raw_tuple in self.raw_tuples {
+            if predicate(TupleView{attributes: &self.attributes, raw: &raw_tuple}) {
                 filtered.push(raw_tuple);
             }
         }
 
-        self.1 = filtered;
+        self.raw_tuples = filtered;
         self
     }
 
@@ -248,18 +244,18 @@ impl TupleSet {
     where F: Fn(TupleViewMut) -> Option<TupleViewMut> {
         let mut mapped = vec![];
 
-        for mut raw_tuple in self.1 {
-            if let Some(_) = func(TupleViewMut{attributes: &self.0, raw: &mut raw_tuple}) {
+        for mut raw_tuple in self.raw_tuples {
+            if let Some(_) = func(TupleViewMut{attributes: &self.attributes, raw: &mut raw_tuple}) {
                 mapped.push(raw_tuple);
             }
         }
         
-        self.1 = mapped;
+        self.raw_tuples = mapped;
         self
     }
 
     fn contents(&self) -> &[Tuple] {
-        &self.1
+        &self.raw_tuples
     }
 
     fn iter(&self) -> TupleIter {
@@ -267,13 +263,13 @@ impl TupleSet {
     }
 
     fn count(&self) -> i32 {
-        self.1.len() as i32
+        self.raw_tuples.len() as i32
     }
 
     fn into_query_results(self) -> QueryResults {
         QueryResults{
-            attributes: simplify_attributes(self.0).iter().map(|x| x.as_string().to_string()).collect(),
-            results: self.1.into_iter().map(Tuple::into_cells).collect()
+            attributes: simplify_attributes(self.attributes).iter().map(|x| x.as_string().to_string()).collect(),
+            results: self.raw_tuples.into_iter().map(Tuple::into_cells).collect()
         }
     }
 }
@@ -282,9 +278,9 @@ impl<'a> Iterator for TupleIter<'a> {
     type Item = TupleView<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let raw_tuple = self.tuple_set.1.get(self.pos);
+        let raw_tuple = self.tuple_set.raw_tuples.get(self.pos);
         self.pos = self.pos + 1;
-        raw_tuple.map(|t| TupleView{attributes: &self.tuple_set.0, raw: t})
+        raw_tuple.map(|t| TupleView{attributes: &self.tuple_set.attributes, raw: t})
     }
 }
 
