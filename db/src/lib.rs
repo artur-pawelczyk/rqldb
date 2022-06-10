@@ -1,6 +1,7 @@
 pub mod create;
 pub mod db;
 pub mod parse;
+pub mod tokenize;
 pub mod schema;
 pub mod select;
 
