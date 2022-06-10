@@ -81,7 +81,7 @@ impl Database {
     pub fn execute_query(&self, query: &SelectQuery) -> Result<QueryResults, &str> {
         let source_tuples = read_source(self, &query.source)?;
         let joined_tuples = execute_join(self, source_tuples, &query.join_sources)?;
-        let filtered_tuples = filter_tuples(joined_tuples, &query.filters);
+        let filtered_tuples = filter_tuples(joined_tuples, &query.filters)?;
 
         match query.finisher {
             Finisher::AllColumns => Result::Ok(filtered_tuples.into_query_results()),
@@ -94,7 +94,7 @@ impl Database {
     pub fn execute_mut_query(&mut self, query: &SelectQuery) -> Result<QueryResults, &str> {
         let source_tuples = read_source(self, &query.source)?;
         let joined_tuples = execute_join(self, source_tuples, &query.join_sources)?;
-        let filtered_tuples = filter_tuples(joined_tuples, &query.filters);
+        let filtered_tuples = filter_tuples(joined_tuples, &query.filters)?;
 
         match &query.finisher {
             Finisher::Insert(table) => {
@@ -167,16 +167,29 @@ fn execute_join(db: &Database, mut current_tuples: TupleSet, joins: &[JoinSource
     }
 }
 
-fn filter_tuples(mut source: TupleSet, filters: &[Filter]) -> TupleSet {
+fn filter_tuples(mut source: TupleSet, filters: &[Filter]) -> Result<TupleSet, &'static str> {
     match filters {
-        [] => source,
+        [] => Ok(source),
         filters => {
             for filter in filters {
+                if let Some(err) = validate_filter(&source, filter) {
+                    return Err(err);
+                }
+
                 source = apply_filter(source, filter);
             }
 
-            source
+            Ok(source)
         },
+    }
+}
+
+fn validate_filter(source: &TupleSet, filter: &Filter) -> Option<&'static str> {
+    let Filter::Condition(left, _, _) = filter;
+    if !source.has_attribute(left) {
+        Some("Attribute not found")
+    } else {
+        None
     }
 }
 
@@ -256,6 +269,10 @@ impl TupleSet {
 
     fn contents(&self) -> &[Tuple] {
         &self.raw_tuples
+    }
+
+    fn has_attribute(&self, attr: &str) -> bool {
+        self.attributes.iter().any(|x| x.as_string() == attr)
     }
 
     fn iter(&self) -> TupleIter {
@@ -430,8 +447,9 @@ mod tests {
         assert_eq!(result.size(), 4);
 
         result = db.execute_query(&SelectQuery::scan("document").filter("document.content", Operator::EQ, "example1")).unwrap();
-
         assert_eq!(result.size(), 1);
+
+        assert!(db.execute_query(&SelectQuery::scan("document").filter("not_a_field", Operator::EQ, "1")).is_err());
     }
 
     #[test]
