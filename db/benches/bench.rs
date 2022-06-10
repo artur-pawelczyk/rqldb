@@ -26,6 +26,16 @@ fn benchmark_insert(c: &mut Criterion) {
     println!("count: {}", query_single_number(&db, &count_query).unwrap());
 }
 
+fn benchmark_filter(c: &mut Criterion) {
+    let mut db = create_database();
+    for i in 1..1000000 {
+        db.execute_mut_query(&SelectQuery::tuple(&[i.to_string().as_str(), "12", "example_doc", "the content"]).insert_into("document")).unwrap();
+    }
+
+    let query = SelectQuery::scan("document").filter("document.id", Operator::EQ, "100");
+    c.bench_function("filter", |b| b.iter(|| db.execute_query(&query).unwrap()));
+}
+
 fn benchmark_count(c: &mut Criterion) {
     let mut db = create_database();
 
@@ -44,5 +54,5 @@ fn benchmark_parse(c: &mut Criterion) {
     c.bench_function("parse query", |b| b.iter(|| parse_query(query)));
 }
 
-criterion_group!(benches, benchmark_insert, benchmark_count, benchmark_parse);
+criterion_group!(benches, benchmark_insert, benchmark_count, benchmark_parse, benchmark_filter);
 criterion_main!(benches);

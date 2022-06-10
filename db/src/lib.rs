@@ -10,7 +10,7 @@ use std::cmp::Ordering;
 
 pub use crate::schema::Type;
 pub use crate::db::Database;
-pub use crate::select::SelectQuery;
+pub use crate::select::{SelectQuery, Operator};
 pub use crate::create::CreateRelationCommand;
 pub use crate::parse::{parse_command, parse_query};
 
