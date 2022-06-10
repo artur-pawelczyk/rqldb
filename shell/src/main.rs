@@ -1,4 +1,4 @@
-use relational_nosql_lib::*;
+use rqldb::*;
 use rustyline::Editor;
 use clap::Parser;
 

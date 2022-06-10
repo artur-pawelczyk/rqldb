@@ -1,9 +1,5 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use relational_nosql_lib::create::CreateRelationCommand;
-use relational_nosql_lib::select::SelectQuery;
-use relational_nosql_lib::schema::Type;
-use relational_nosql_lib::db::Database;
-use relational_nosql_lib::parse::parse_query;
+use criterion::{criterion_group, criterion_main, Criterion};
+use rqldb::*;
 
 fn create_database() -> Database {
     let mut db = Database::default();
