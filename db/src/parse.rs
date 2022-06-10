@@ -173,7 +173,6 @@ fn read_until_end(tokenizer: &mut Tokenizer) -> Vec<Token> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
 
     #[test]
     fn test_parse_query() {

@@ -59,10 +59,6 @@ impl Tuple {
         Self{ contents: cells }
     }
 
-    pub fn len(&self) -> usize {
-        self.contents.len()
-    }
-
     pub fn cell_at(&self, i: u32) -> Option<&Cell> {
         self.contents.get(i as usize)
     }
@@ -100,9 +96,9 @@ impl Database {
             Finisher::Insert(table) => {
                 let table_schema = self.schema.find_relation(table).ok_or("No such table")?;
                 let mut object = self.objects.get(table).expect("This shouldn't happen").borrow_mut();
-                for tuple in filtered_tuples.contents() {
-                    if !validate_with_schema(&table_schema.columns, tuple) { return Err("Invalid input") }
-                    object.push(tuple.contents.iter().map(|x| x.as_bytes()).collect())
+                for tuple in filtered_tuples.iter() {
+                    if !validate_with_schema(&table_schema.columns, &tuple) { return Err("Invalid input") }
+                    object.push(tuple.contents().iter().map(|x| x.as_bytes()).collect())
                 }
 
                 Result::Ok(filtered_tuples.into_query_results())
@@ -125,9 +121,9 @@ impl Database {
     }
 }
 
-fn validate_with_schema(columns: &[Column], tuple: &Tuple) -> bool {
-    if columns.len() == tuple.len() {
-        zip(columns, &tuple.contents).all(|(col, cell)| col.kind == cell.kind)
+fn validate_with_schema(columns: &[Column], tuple: &TupleView) -> bool {
+    if columns.len() == tuple.contents().len() {
+        zip(columns, tuple.contents()).all(|(col, cell)| col.kind == cell.kind)
     } else {
         false
     }
@@ -267,10 +263,6 @@ impl TupleSet {
         self
     }
 
-    fn contents(&self) -> &[Tuple] {
-        &self.raw_tuples
-    }
-
     fn has_attribute(&self, attr: &str) -> bool {
         self.attributes.iter().any(|x| x.as_string() == attr)
     }
@@ -308,6 +300,10 @@ impl<'a> TupleView<'a> {
         } else {
             None
         }
+    }
+
+    pub fn contents(&self) -> &[Cell] {
+        &self.raw.contents
     }
 }
 
