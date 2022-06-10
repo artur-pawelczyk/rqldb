@@ -8,7 +8,9 @@ pub mod select;
 use std::fmt;
 use std::cmp::Ordering;
 
-use crate::schema::Type;
+pub use crate::schema::Type;
+pub use crate::db::Database;
+pub use crate::parse::{parse_command, parse_query};
 
 pub struct QueryResults {
     attributes: Vec<String>,
