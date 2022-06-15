@@ -2,9 +2,8 @@ use std::collections::HashMap;
 use std::iter::zip;
 use std::cell::RefCell;
 
-use crate::select::{SelectQuery, Source, Finisher, Operator, Filter, JoinSource};
+use crate::dsl::{Command, Query, Source, Finisher, Operator, Filter, JoinSource};
 use crate::schema::{Column, Schema, Type};
-use crate::create::CreateRelationCommand;
 use crate::{Cell, QueryResults};
 
 #[derive(Default)]
@@ -69,12 +68,12 @@ impl Tuple {
 }
 
 impl Database {
-    pub fn execute_create(&mut self, command: &CreateRelationCommand) {
+    pub fn execute_create(&mut self, command: &Command) {
         self.schema.add_relation(&command.name, &command.columns);
         self.objects.insert(command.name.clone(), RefCell::new(Object::new()));
     }
 
-    pub fn execute_query(&self, query: &SelectQuery) -> Result<QueryResults, &str> {
+    pub fn execute_query(&self, query: &Query) -> Result<QueryResults, &str> {
         let source_tuples = read_source(self, &query.source)?;
         let joined_tuples = execute_join(self, source_tuples, &query.join_sources)?;
         let filtered_tuples = filter_tuples(joined_tuples, &query.filters)?;
@@ -87,7 +86,7 @@ impl Database {
         }
     }
 
-    pub fn execute_mut_query(&mut self, query: &SelectQuery) -> Result<QueryResults, &str> {
+    pub fn execute_mut_query(&mut self, query: &Query) -> Result<QueryResults, &str> {
         let source_tuples = read_source(self, &query.source)?;
         let joined_tuples = execute_join(self, source_tuples, &query.join_sources)?;
         let filtered_tuples = filter_tuples(joined_tuples, &query.filters)?;
@@ -364,7 +363,7 @@ mod tests {
 
     #[test]
     fn query_not_existing_relation() {
-        let query = SelectQuery::scan("not_real_relation").select_all();
+        let query = Query::scan("not_real_relation").select_all();
         let db = Database::default();
         let result = db.execute_query(&query);
         assert!(!result.is_ok());
@@ -373,13 +372,13 @@ mod tests {
     #[test]
     fn query_empty_relation() {
         let mut db = Database::default();
-        let command = CreateRelationCommand::with_name("document")
+        let command = Command::create_table("document")
             .column("id", Type::NUMBER)
             .column("content", Type::TEXT);
 
         db.execute_create(&command);
 
-        let query = SelectQuery::scan("document").select_all();
+        let query = Query::scan("document").select_all();
         let result = db.execute_query(&query);
 
         assert!(result.is_ok());
@@ -393,16 +392,16 @@ mod tests {
     pub fn insert() {
         let mut db = Database::default();
 
-        let command = CreateRelationCommand::with_name("document")
+        let command = Command::create_table("document")
             .column("id", Type::NUMBER)
             .column("content", Type::TEXT);
         db.execute_create(&command);
 
-        let insert_query = SelectQuery::tuple(&["1".to_string(), "something".to_string()]).insert_into("document");
+        let insert_query = Query::tuple(&["1".to_string(), "something".to_string()]).insert_into("document");
         let insert_result = db.execute_mut_query(&insert_query);
         assert!(insert_result.is_ok());
 
-        let query = SelectQuery::scan("document").select_all();
+        let query = Query::scan("document").select_all();
         let result = db.execute_query(&query);
         assert!(result.is_ok());
         let tuples = result.unwrap();
@@ -417,48 +416,48 @@ mod tests {
     pub fn failed_insert() {
         let mut db = Database::default();
 
-        let command = CreateRelationCommand::with_name("document")
+        let command = Command::create_table("document")
             .column("id", Type::NUMBER)
             .column("content", Type::TEXT);
         db.execute_create(&command);
 
-        let result = db.execute_mut_query(&SelectQuery::tuple(&["not-a-number".to_string(), "random-text".to_string()]).insert_into("document"));
+        let result = db.execute_mut_query(&Query::tuple(&["not-a-number".to_string(), "random-text".to_string()]).insert_into("document"));
         assert!(result.is_err());
     }
 
     #[test]
     pub fn filter() {
         let mut db = Database::default();
-        db.execute_create(&CreateRelationCommand::with_name("document").column("id", Type::NUMBER).column("content", Type::TEXT));
+        db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT));
 
         for i in 1..20 {
             let content = format!("example{}", i);
-            db.execute_mut_query(&SelectQuery::tuple(&[i.to_string(), content]).insert_into("document")).expect("Insert");
+            db.execute_mut_query(&Query::tuple(&[i.to_string(), content]).insert_into("document")).expect("Insert");
         }
 
-        let mut result = db.execute_query(&SelectQuery::scan("document").filter("document.id", Operator::EQ, "5")).unwrap();
+        let mut result = db.execute_query(&Query::scan("document").filter("document.id", Operator::EQ, "5")).unwrap();
         assert_eq!(result.size(), 1);
 
-        result = db.execute_query(&SelectQuery::scan("document").filter("document.id", Operator::GT, "5").filter("document.id", Operator::LT, "10")).unwrap();
+        result = db.execute_query(&Query::scan("document").filter("document.id", Operator::GT, "5").filter("document.id", Operator::LT, "10")).unwrap();
         assert_eq!(result.size(), 4);
 
-        result = db.execute_query(&SelectQuery::scan("document").filter("document.content", Operator::EQ, "example1")).unwrap();
+        result = db.execute_query(&Query::scan("document").filter("document.content", Operator::EQ, "example1")).unwrap();
         assert_eq!(result.size(), 1);
 
-        assert!(db.execute_query(&SelectQuery::scan("document").filter("not_a_field", Operator::EQ, "1")).is_err());
+        assert!(db.execute_query(&Query::scan("document").filter("not_a_field", Operator::EQ, "1")).is_err());
     }
 
     #[test]
     pub fn join() {
         let mut db = Database::default();
-        db.execute_create(&CreateRelationCommand::with_name("document").column("id", Type::NUMBER).column("content", Type::TEXT).column("type_id", Type::NUMBER));
-        db.execute_create(&CreateRelationCommand::with_name("type").column("id", Type::NUMBER).column("name", Type::TEXT));
+        db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT).column("type_id", Type::NUMBER));
+        db.execute_create(&Command::create_table("type").column("id", Type::NUMBER).column("name", Type::TEXT));
 
-        db.execute_mut_query(&SelectQuery::tuple(&["1", "example", "2"]).insert_into("document")).unwrap();
-        db.execute_mut_query(&SelectQuery::tuple(&["1", "type_a"]).insert_into("type")).unwrap();
-        db.execute_mut_query(&SelectQuery::tuple(&["2", "type_b"]).insert_into("type")).unwrap();
+        db.execute_mut_query(&Query::tuple(&["1", "example", "2"]).insert_into("document")).unwrap();
+        db.execute_mut_query(&Query::tuple(&["1", "type_a"]).insert_into("type")).unwrap();
+        db.execute_mut_query(&Query::tuple(&["2", "type_b"]).insert_into("type")).unwrap();
 
-        let result = db.execute_query(&SelectQuery::scan("document").join("type", "document.type_id", "type.id")).unwrap();
+        let result = db.execute_query(&Query::scan("document").join("type", "document.type_id", "type.id")).unwrap();
         assert_eq!(*result.attributes, ["document.id", "document.content", "document.type_id", "type.id", "type.name"]);
         let tuple = result.tuple_at(0).unwrap();
         let document_id = tuple.cell_by_name("document.id").unwrap().as_string();
@@ -470,13 +469,13 @@ mod tests {
     #[test]
     pub fn count() {
         let mut db = Database::default();
-        db.execute_create(&CreateRelationCommand::with_name("document").column("id", Type::NUMBER).column("content", Type::TEXT));
+        db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT));
 
         for i in 1..21 {
-            db.execute_mut_query(&SelectQuery::tuple(&[i.to_string(), "example".to_string()]).insert_into("document")).expect("Insert");
+            db.execute_mut_query(&Query::tuple(&[i.to_string(), "example".to_string()]).insert_into("document")).expect("Insert");
         }
 
-        let result = db.execute_query(&SelectQuery::scan("document").count()).unwrap();
+        let result = db.execute_query(&Query::scan("document").count()).unwrap();
         let count = result.results().get(0).map(|t| t.cell_at(0)).flatten().map(|c| c.as_number()).flatten().unwrap();
         assert_eq!(count, 20);
     }

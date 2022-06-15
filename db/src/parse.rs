@@ -1,5 +1,4 @@
-use crate::select::{SelectQuery, Operator};
-use crate::create::CreateRelationCommand;
+use crate::dsl::{Command, Query, Operator};
 use crate::schema::Type;
 use crate::tokenize::{Token, Tokenizer};
 
@@ -14,7 +13,7 @@ impl fmt::Display for ParseError {
     }
 }
 
-pub fn parse_query(query_str: &str) -> Result<SelectQuery, ParseError> {
+pub fn parse_query(query_str: &str) -> Result<Query, ParseError> {
     let mut tokenizer = Tokenizer::from_str(query_str);
     let mut query = read_source(&mut tokenizer)?;
 
@@ -56,7 +55,7 @@ pub fn parse_query(query_str: &str) -> Result<SelectQuery, ParseError> {
     Ok(query)
 }
 
-fn read_source(tokenizer: &mut Tokenizer) -> Result<SelectQuery, ParseError> {
+fn read_source(tokenizer: &mut Tokenizer) -> Result<Query, ParseError> {
     let function = match tokenizer.next() {
         Some(x) => x,
         None => return Err(ParseError("Expected source function"))
@@ -101,16 +100,16 @@ fn read_symbol(t: Option<&Token>) -> Result<String, ParseError> {
     }
 }
 
-fn read_table_scan(tokenizer: &mut Tokenizer) -> Result<SelectQuery, ParseError> {
+fn read_table_scan(tokenizer: &mut Tokenizer) -> Result<Query, ParseError> {
     let args = read_until_end(tokenizer);
     if args.len() == 1 {
-        Ok(SelectQuery::scan(&args[0].to_string()))
+        Ok(Query::scan(&args[0].to_string()))
     } else {
         Err(ParseError("'scan' expects exactly one argument"))
     }
 }
 
-fn read_tuple(tokenizer: &mut Tokenizer) -> Result<SelectQuery, ParseError> {
+fn read_tuple(tokenizer: &mut Tokenizer) -> Result<Query, ParseError> {
     let mut values: Vec<String> = Vec::new();
     for token in read_until_end(tokenizer) {
         match token {
@@ -119,12 +118,12 @@ fn read_tuple(tokenizer: &mut Tokenizer) -> Result<SelectQuery, ParseError> {
         }
     }
 
-    Ok(SelectQuery::tuple(&values))
+    Ok(Query::tuple(&values))
 }
 
-pub fn parse_command(source: &str) -> Result<CreateRelationCommand, ParseError> {
+pub fn parse_command(source: &str) -> Result<Command, ParseError> {
     let mut tokenizer = Tokenizer::from_str(source);
-    let mut command = CreateRelationCommand::with_name("");
+    let mut command = Command::create_table("");
 
     while let Some(token) = tokenizer.next() {
         match token {
@@ -133,7 +132,7 @@ pub fn parse_command(source: &str) -> Result<CreateRelationCommand, ParseError> 
                     Some(Token::Symbol(name)) => name,
                     _ => return Err(ParseError("Expected table name"))
                 };
-                command = CreateRelationCommand::with_name(name.as_str());
+                command = Command::create_table(name.as_str());
 
                 for arg in read_until_end(&mut tokenizer) {
                     match arg {

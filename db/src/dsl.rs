@@ -1,19 +1,21 @@
 use std::fmt;
 
-pub struct SelectQuery {
+use crate::schema::{Column, Type};
+
+pub struct Query {
     pub source: Source,
     pub join_sources: Vec<JoinSource>,
     pub filters: Vec<Filter>,
     pub finisher: Finisher
 }
 
-impl SelectQuery {
+impl Query {
     pub fn scan(table: &str) -> Self {
-        SelectQuery{source:  Source::TableScan(String::from(table)), join_sources: vec![], filters: vec![], finisher: Finisher::AllColumns}
+        Self{source:  Source::TableScan(String::from(table)), join_sources: vec![], filters: vec![], finisher: Finisher::AllColumns}
     }
 
     pub fn tuple<T: ToString>(values: &[T]) -> Self {
-        SelectQuery{source: Source::Tuple(values.iter().map(|x| x.to_string()).collect()), join_sources: vec![], filters: Vec::new(), finisher: Finisher::AllColumns}
+        Self{source: Source::Tuple(values.iter().map(|x| x.to_string()).collect()), join_sources: vec![], filters: Vec::new(), finisher: Finisher::AllColumns}
     }
 
     pub fn join(mut self, table: &str, left: &str, right: &str) -> Self {
@@ -68,7 +70,7 @@ impl SelectQuery {
     }
 }
 
-impl fmt::Display for SelectQuery {
+impl fmt::Display for Query {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.print())
     }
@@ -162,42 +164,104 @@ fn print_tokens(tokens: &[String]) -> String {
     s
 }
 
+pub struct Command {
+    pub name: String,
+    pub columns: Vec<Column>
+}
+
+impl Command {
+    pub fn create_table(name: &str) -> Self {
+        Command{name: name.to_string(), columns: Vec::new()}
+    }
+
+    pub fn column(mut self, name: &str, kind: Type) -> Self {
+        self.columns.push(Column{name: name.to_string(), kind});
+        self
+    }
+
+    pub fn print(&self) -> String {
+        let mut s = String::new();
+        s.push_str("create_table ");
+        s.push_str(&self.name);
+        s.push(' ');
+
+        for col in &self.columns {
+            s.push_str(&col.print());
+            s.push(' ');
+        }
+        s.pop();
+
+        s
+    }
+}
+
+impl fmt::Display for Command {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.print())
+    }
+}
+
+impl Column {
+    fn print(&self) -> String {
+        self.name.clone() + "::" + self.kind.print()
+    }
+}
+
+impl Type {
+    fn print(&self) -> &'static str {
+        match self {
+            Type::NUMBER => "NUMBER",
+            Type::TEXT => "TEXT",
+            Type::BYTE(n) => if n == &1 { "UINT8" } else if n == &2 { "UINT16" } else if n == &4 { "UINT36" } else { panic!() }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::SelectQuery;
+    use super::*;
     use super::Operator::*;
 
     #[test]
     fn select_all() {
-         let query = SelectQuery::scan("example").select_all();
+         let query = Query::scan("example").select_all();
         assert_eq!(query.to_string(), "scan example | select_all")
     }
 
     #[test]
     fn filter() {
         assert_eq!(
-            SelectQuery::scan("example").filter("id", EQ, "1").select(&["id", "a_column"]).to_string(),
+            Query::scan("example").filter("id", EQ, "1").select(&["id", "a_column"]).to_string(),
             "scan example | filter id = 1 | select id a_column");
         assert_eq!(
-            SelectQuery::scan("example").filter("id", GT, "2").select_all().to_string(), "scan example | filter id > 2 | select_all"
+            Query::scan("example").filter("id", GT, "2").select_all().to_string(), "scan example | filter id > 2 | select_all"
         );
     }
 
     #[test]
     fn source_is_tuple() {
-        let query = SelectQuery::tuple(&["1", "example_value"]).insert_into("example");
+        let query = Query::tuple(&["1", "example_value"]).insert_into("example");
         assert_eq!(query.to_string(), "tuple 1 example_value | insert_into example");
     }
 
     #[test]
     fn join() {
-        let query = SelectQuery::scan("example").join("type", "example.type_id", "type.id");
+        let query = Query::scan("example").join("type", "example.type_id", "type.id");
         assert_eq!(query.to_string(), "scan example | join type example.type_id type.id | select_all");
     }
 
     #[test]
     fn count() {
-        let query = SelectQuery::scan("example").count();
+        let query = Query::scan("example").count();
         assert_eq!(query.to_string(), "scan example | count");
+    }
+
+    #[test]
+    fn create_table() {
+        let query = Command::create_table("example")
+            .column("id", Type::NUMBER)
+            .column("contents", Type::TEXT);
+
+        assert_eq!("create_table example id::NUMBER contents::TEXT", query.to_string());
     }
 }
