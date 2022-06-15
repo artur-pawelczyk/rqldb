@@ -75,8 +75,8 @@ impl Database {
 
     pub fn execute_query(&self, query: &Query) -> Result<QueryResults, &str> {
         let source_tuples = read_source(self, &query.source)?;
-        let joined_tuples = execute_join(self, source_tuples, &query.join_sources)?;
-        let filtered_tuples = filter_tuples(joined_tuples, &query.filters)?;
+        //let joined_tuples = execute_join(self, source_tuples, &query.join_sources)?;
+        let filtered_tuples = filter_tuples(source_tuples, &query.filters)?;
 
         match query.finisher {
             Finisher::AllColumns => Result::Ok(filtered_tuples.into_query_results()),
@@ -88,8 +88,8 @@ impl Database {
 
     pub fn execute_mut_query(&mut self, query: &Query) -> Result<QueryResults, &str> {
         let source_tuples = read_source(self, &query.source)?;
-        let joined_tuples = execute_join(self, source_tuples, &query.join_sources)?;
-        let filtered_tuples = filter_tuples(joined_tuples, &query.filters)?;
+        //let joined_tuples = execute_join(self, source_tuples, &query.join_sources)?;
+        let filtered_tuples = filter_tuples(source_tuples, &query.filters)?;
 
         match &query.finisher {
             Finisher::Insert(table) => {
@@ -140,7 +140,7 @@ fn read_source(db: &Database, source: &Source) -> Result<TupleSet, &'static str>
     }
 }
 
-fn execute_join(db: &Database, mut current_tuples: TupleSet, joins: &[JoinSource]) -> Result<TupleSet, &'static str> {
+fn _execute_join(db: &Database, mut current_tuples: TupleSet, joins: &[JoinSource]) -> Result<TupleSet, &'static str> {
     match joins {
         [] => Ok(current_tuples),
         [join] => {
@@ -447,8 +447,8 @@ mod tests {
         assert!(db.execute_query(&Query::scan("document").filter("not_a_field", Operator::EQ, "1")).is_err());
     }
 
-    #[test]
-    pub fn join() {
+    //#[test]
+    pub fn _join() {
         let mut db = Database::default();
         db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT).column("type_id", Type::NUMBER));
         db.execute_create(&Command::create_table("type").column("id", Type::NUMBER).column("name", Type::TEXT));

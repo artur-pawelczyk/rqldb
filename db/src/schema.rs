@@ -31,3 +31,13 @@ impl Schema {
             .find(|x| x.name == name)
     }
 }
+
+impl Relation {
+    pub fn column_position(&self, name: &str) -> Option<u32> {
+        if let Some((pos, _)) = self.columns.iter().enumerate().find(|(_, col)| col.name == name) {
+            Some(pos as u32)
+        } else {
+            None
+        }
+    }
+}
