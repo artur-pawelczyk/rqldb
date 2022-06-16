@@ -98,7 +98,7 @@ impl Database {
     pub fn execute_mut_query(&mut self, query: &Query) -> Result<QueryResults, &str> {
         let source_tuples = read_source(self, &query.source)?;
         //let joined_tuples = execute_join(self, source_tuples, &query.join_sources)?;
-                let planned_filters = plan::compute_filters(&self.schema, query)?;
+        let planned_filters = plan::compute_filters(&self.schema, query)?;
         let filtered_tuples = filter_tuples(source_tuples, &planned_filters)?;
 
         match &query.finisher {
@@ -150,20 +150,19 @@ fn read_source(db: &Database, source: &Source) -> Result<TupleSet, &'static str>
     }
 }
 
-fn _execute_join(db: &Database, mut current_tuples: TupleSet, joins: &[JoinSource]) -> Result<TupleSet, &'static str> {
+fn execute_join(db: &Database, mut current_tuples: TupleSet, joins: &[plan::Join]) -> Result<TupleSet, &'static str> {
     match joins {
         [] => Ok(current_tuples),
         [join] => {
-            let joiner = db.scan_table(&join.table)?;
+            let joiner = db.scan_table(join.source_table())?;
 
             for attr in &joiner.attributes {
                 current_tuples.attributes.push(attr.clone());
             }
 
             let joined = current_tuples.map_mut(|joinee| {
-                let key = joinee.cell_by_name(&join.left)?;
-                let tuple: TupleView = joiner.iter().find(|t| t.cell_by_name(&join.right).expect("Expected a cell") == key)?;
-                Some(joinee.add_cells(tuple))
+                //let matched_tuple = join.find_match(joiner.raw_tuples, &joinee);
+                Some(joinee)
             });
 
             Ok(joined)
@@ -224,6 +223,11 @@ fn simplify_attributes(attrs: Vec<Attribute>) -> Vec<Attribute> {
     } else {
         attrs
     }
+}
+
+pub trait TupleSearch {
+    fn search<F>(&self, fun: F) -> Option<&dyn TupleTrait>
+    where F: Fn(&dyn TupleTrait) -> bool;
 }
 
 impl TupleSet {
@@ -321,13 +325,21 @@ impl<'a> TupleViewMut<'a> {
         }
     }
 
-    fn add_cells(self, other: TupleView) -> Self {
-        for c in &other.raw.contents {
-            self.raw.contents.push(c.clone());
+    fn add_cells(self, other: &impl TupleTrait) -> Self {
+        let mut i = 0;
+        while let Some(cell) = other.cell_at(i) {
+            i += 1;
+            self.raw.contents.push(cell.clone());
         }
 
         self
     }    
+}
+
+impl<'a> TupleTrait for TupleViewMut<'a> {
+    fn cell_at(&self, pos: u32) -> Option<&Cell> {
+        self.raw.contents.get(pos as usize)
+    }
 }
 
 impl Attribute {
