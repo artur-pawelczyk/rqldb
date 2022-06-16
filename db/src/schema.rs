@@ -40,4 +40,8 @@ impl Relation {
             None
         }
     }
+
+    pub fn column_type(&self, name: &str) -> Option<Type> {
+        self.columns.iter().find(|col| col.name == name).map(|col| col.kind)
+    }
 }

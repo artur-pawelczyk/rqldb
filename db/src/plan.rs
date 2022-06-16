@@ -1,6 +1,6 @@
 use crate::Cell;
 use crate::dsl;
-use crate::schema::{Schema, Relation};
+use crate::schema::{Schema, Relation, Type};
 use crate::db::TupleTrait;
 
 pub struct Filter {
@@ -28,7 +28,7 @@ pub fn compute_filters(schema: &Schema, query: &dsl::Query) -> Result<Vec<Filter
     let mut filters = Vec::with_capacity(query.filters.len());
     for dsl_filter in &query.filters {
         if let Some(pos) = find_left_position(rel, &dsl_filter) {
-            filters.push(Filter{ cell_pos: pos, right: right_as_cell(dsl_filter) });
+            filters.push(Filter{ cell_pos: pos, right: right_as_cell(rel, dsl_filter) });
         } else {
             return Err("Column not found");
         }
@@ -43,12 +43,16 @@ fn find_left_position(rel: &Relation, dsl_filter: &dsl::Filter) -> Option<u32> {
     }
 }
 
-fn right_as_cell(dsl_filter: &dsl::Filter) -> Cell {
-    let as_num: i32 = match dsl_filter {
-        dsl::Filter::Condition(_, _, right) => right.parse().unwrap()
+fn right_as_cell(rel: &Relation, dsl_filter: &dsl::Filter) -> Cell {
+    let (kind, right_str) = match dsl_filter {
+        dsl::Filter::Condition(left, _, right) => (rel.column_type(left).unwrap(), right)
     };
 
-    Cell::from_number(as_num)
+    match kind {
+        Type::NUMBER => Cell::from_number(right_str.parse().unwrap()),
+        Type::TEXT => Cell::from_string(right_str),
+        _ => todo!()
+    }
 }
 
 #[cfg(test)]
@@ -74,13 +78,16 @@ mod tests {
     fn test_apply_filter() {
         let mut schema = Schema::default();
         schema.add_relation("example", &[col("id", Type::NUMBER), col("content", Type::TEXT), col("type", Type::NUMBER)]);
+        let tuple_1 = MockTuple(vec![Cell::from_number(1), Cell::from_string("content1"), Cell::from_number(11)]);
+        let tuple_2 = MockTuple(vec![Cell::from_number(2), Cell::from_string("content2"), Cell::from_number(12)]);
 
-        let filter = expect_filter(compute_filters(&schema, &dsl::Query::scan("example").filter("id", EQ, "1")));
-        let matching_tuple = MockTuple(vec![Cell::from_number(1)]);
-        let not_matching_tuple = MockTuple(vec![Cell::from_number(2)]);
+        let id_filter = expect_filter(compute_filters(&schema, &dsl::Query::scan("example").filter("id", EQ, "1")));
+        assert!(id_filter.matches_tuple(&tuple_1));
+        assert!(!id_filter.matches_tuple(&tuple_2));
 
-        assert!(filter.matches_tuple(&matching_tuple));
-        assert!(!filter.matches_tuple(&not_matching_tuple));
+        let content_filter = expect_filter(compute_filters(&schema, &dsl::Query::scan("example").filter("content", EQ, "content1")));
+        assert!(content_filter.matches_tuple(&tuple_1));
+        assert!(!content_filter.matches_tuple(&tuple_2));
     }
 
     fn expect_filters(result: Result<Vec<Filter>, &'static str>, n: usize) -> Vec<Filter> {
