@@ -431,7 +431,8 @@ mod tests {
         assert!(result.is_err());
     }
 
-    pub fn _filter() {
+    #[test]
+    pub fn filter() {
         let mut db = Database::default();
         db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT));
 

@@ -76,7 +76,7 @@ impl fmt::Display for Query {
     }
 }
     
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Operator {
     EQ, GT, GE, LT, LE
 }

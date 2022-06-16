@@ -6,12 +6,13 @@ use crate::db::TupleTrait;
 pub struct Filter {
     cell_pos: u32,
     right: Cell,
+    comp: Box<dyn Fn(&Cell, &Cell) -> bool>,
 }
 
 impl Filter {
     pub fn matches_tuple(&self, tuple: &impl TupleTrait) -> bool {
         let left = tuple.cell_at(self.cell_pos).expect("Already validated");
-        left == &self.right
+        (self.comp)(left, &self.right)
     }
 }
 
@@ -28,7 +29,18 @@ pub fn compute_filters(schema: &Schema, query: &dsl::Query) -> Result<Vec<Filter
     let mut filters = Vec::with_capacity(query.filters.len());
     for dsl_filter in &query.filters {
         if let Some(pos) = find_left_position(rel, &dsl_filter) {
-            filters.push(Filter{ cell_pos: pos, right: right_as_cell(rel, dsl_filter) });
+            let op = filter_operator(dsl_filter);
+            filters.push(Filter{
+                cell_pos: pos,
+                right: right_as_cell(rel, dsl_filter),
+                comp: Box::new(move |a, b| match op {
+                    dsl::Operator::EQ => a == b,
+                    dsl::Operator::GT => a > b,
+                    dsl::Operator::GE => a >= b,
+                    dsl::Operator::LT => a < b,
+                    dsl::Operator::LE => a <= b,
+                })
+            });
         } else {
             return Err("Column not found");
         }
@@ -55,10 +67,16 @@ fn right_as_cell(rel: &Relation, dsl_filter: &dsl::Filter) -> Cell {
     }
 }
 
+fn filter_operator(filter: &dsl::Filter) -> dsl::Operator {
+    match filter {
+        dsl::Filter::Condition(_, op, _) => *op
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dsl::Operator::EQ;
+    use crate::dsl::Operator::{EQ, GT};
     use crate::schema::{Column, Type};
 
     #[test]
@@ -88,6 +106,10 @@ mod tests {
         let content_filter = expect_filter(compute_filters(&schema, &dsl::Query::scan("example").filter("content", EQ, "content1")));
         assert!(content_filter.matches_tuple(&tuple_1));
         assert!(!content_filter.matches_tuple(&tuple_2));
+
+        let comp_filter = expect_filter(compute_filters(&schema, &dsl::Query::scan("example").filter("id", GT, "1")));
+        assert!(!comp_filter.matches_tuple(&tuple_1));
+        assert!(comp_filter.matches_tuple(&tuple_2));
     }
 
     fn expect_filters(result: Result<Vec<Filter>, &'static str>, n: usize) -> Vec<Filter> {
