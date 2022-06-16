@@ -66,7 +66,7 @@ mod tests {
         let mut schema = Schema::default();
         schema.add_relation("example", &[col("id", Type::NUMBER), col("content", Type::TEXT), col("type", Type::NUMBER)]);
 
-        let filters = expect_filters(compute_filters(&schema, &dsl::Query::scan("example").filter("id", EQ, "1").filter("type", EQ, "2")), 2);
+        let filters = expect_filters(compute_filters(&schema, &dsl::Query::scan("example").filter("id", EQ, "1").filter("example.type", EQ, "2")), 2);
         assert_eq!(filters.get(0).map(|x| x.cell_pos), Some(0));
         assert_eq!(filters.get(1).map(|x| x.cell_pos), Some(2));
 
