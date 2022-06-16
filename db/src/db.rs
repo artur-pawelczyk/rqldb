@@ -5,6 +5,11 @@ use std::cell::RefCell;
 use crate::dsl::{Command, Query, Source, Finisher, Operator, Filter, JoinSource};
 use crate::schema::{Column, Schema, Type};
 use crate::{Cell, QueryResults};
+use crate::plan;
+
+pub trait TupleTrait {
+    fn cell_at(&self, pos: u32) -> Option<&Cell>;
+}
 
 #[derive(Default)]
 pub struct Database {
@@ -58,12 +63,15 @@ impl Tuple {
         Self{ contents: cells }
     }
 
-    pub fn cell_at(&self, i: u32) -> Option<&Cell> {
-        self.contents.get(i as usize)
-    }
 
     pub fn into_cells(self) -> Vec<Cell> {
         self.contents
+    }
+}
+
+impl TupleTrait for Tuple {
+    fn cell_at(&self, i: u32) -> Option<&Cell> {
+        self.contents.get(i as usize)
     }
 }
 
@@ -76,7 +84,8 @@ impl Database {
     pub fn execute_query(&self, query: &Query) -> Result<QueryResults, &str> {
         let source_tuples = read_source(self, &query.source)?;
         //let joined_tuples = execute_join(self, source_tuples, &query.join_sources)?;
-        let filtered_tuples = filter_tuples(source_tuples, &query.filters)?;
+        let planned_filters = plan::compute_filters(&self.schema, query)?;
+        let filtered_tuples = filter_tuples(source_tuples, &planned_filters)?;
 
         match query.finisher {
             Finisher::AllColumns => Result::Ok(filtered_tuples.into_query_results()),
@@ -89,7 +98,8 @@ impl Database {
     pub fn execute_mut_query(&mut self, query: &Query) -> Result<QueryResults, &str> {
         let source_tuples = read_source(self, &query.source)?;
         //let joined_tuples = execute_join(self, source_tuples, &query.join_sources)?;
-        let filtered_tuples = filter_tuples(source_tuples, &query.filters)?;
+                let planned_filters = plan::compute_filters(&self.schema, query)?;
+        let filtered_tuples = filter_tuples(source_tuples, &planned_filters)?;
 
         match &query.finisher {
             Finisher::Insert(table) => {
@@ -162,15 +172,11 @@ fn _execute_join(db: &Database, mut current_tuples: TupleSet, joins: &[JoinSourc
     }
 }
 
-fn filter_tuples(mut source: TupleSet, filters: &[Filter]) -> Result<TupleSet, &'static str> {
+fn filter_tuples(mut source: TupleSet, filters: &[plan::Filter]) -> Result<TupleSet, &'static str> {
     match filters {
         [] => Ok(source),
         filters => {
             for filter in filters {
-                if let Some(err) = validate_filter(&source, filter) {
-                    return Err(err);
-                }
-
                 source = apply_filter(source, filter);
             }
 
@@ -188,8 +194,8 @@ fn validate_filter(source: &TupleSet, filter: &Filter) -> Option<&'static str> {
     }
 }
 
-fn apply_filter(source: TupleSet, filter: &Filter) -> TupleSet {
-    source.filter(|tuple| test_filter(filter, tuple))
+fn apply_filter(source: TupleSet, filter: &plan::Filter) -> TupleSet {
+    source.filter(|tuple| filter.matches_tuple(tuple))
 }
 
 fn test_filter(filter: &Filter, tuple: TupleView) -> bool {
@@ -235,11 +241,11 @@ impl TupleSet {
     }
 
     fn filter<F>(mut self, predicate: F) -> Self
-    where F: Fn(TupleView) -> bool {
+    where F: Fn(&Tuple) -> bool {
         let mut filtered = vec![];
 
         for raw_tuple in self.raw_tuples {
-            if predicate(TupleView{attributes: &self.attributes, raw: &raw_tuple}) {
+            if predicate(&raw_tuple) {
                 filtered.push(raw_tuple);
             }
         }
@@ -425,8 +431,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[test]
-    pub fn filter() {
+    pub fn _filter() {
         let mut db = Database::default();
         db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT));
 
