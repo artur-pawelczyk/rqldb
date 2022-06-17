@@ -26,13 +26,17 @@ pub fn compute_filters(schema: &Schema, query: &dsl::Query) -> Result<Vec<Filter
         _ => todo!(),
     };
 
+    let default_attributes = rel.full_attribute_names();
+    let joins = compute_joins(schema, query)?;
+    let attributes = joins.iter().last().map_or(&default_attributes, |join| &join.attributes);
+
     let mut filters = Vec::with_capacity(query.filters.len());
     for dsl_filter in &query.filters {
-        if let Some(pos) = find_left_position(rel, dsl_filter) {
+        if let Some(pos) = attributes.iter().enumerate().find(|(_, attr)| attr.as_str() == filter_left(dsl_filter)).map(|(i, _)| i) {
             let op = filter_operator(dsl_filter);
             filters.push(Filter{
-                cell_pos: pos,
-                right: right_as_cell(rel, dsl_filter),
+                cell_pos: pos as u32,
+                right: right_as_cell(dsl_filter),
                 comp: Box::new(move |a, b| match op {
                     dsl::Operator::EQ => a == b,
                     dsl::Operator::GT => a > b,
@@ -49,27 +53,24 @@ pub fn compute_filters(schema: &Schema, query: &dsl::Query) -> Result<Vec<Filter
     Ok(filters)
 }
 
-fn find_left_position(rel: &Relation, dsl_filter: &dsl::Filter) -> Option<u32> {
-    match dsl_filter {
-        dsl::Filter::Condition(left, _, _) => rel.column_position(left)
-    }
-}
-
-fn right_as_cell(rel: &Relation, dsl_filter: &dsl::Filter) -> Cell {
-    let (kind, right_str) = match dsl_filter {
-        dsl::Filter::Condition(left, _, right) => (rel.column_type(left).unwrap(), right)
+fn right_as_cell(dsl_filter: &dsl::Filter) -> Cell {
+    let right = match dsl_filter {
+        dsl::Filter::Condition(_, _, right) => right
     };
+    
+    Cell::from_string(right)
 
-    match kind {
-        Type::NUMBER => Cell::from_number(right_str.parse().unwrap()),
-        Type::TEXT => Cell::from_string(right_str),
-        _ => todo!()
-    }
 }
 
 fn filter_operator(filter: &dsl::Filter) -> dsl::Operator {
     match filter {
         dsl::Filter::Condition(_, op, _) => *op
+    }
+}
+
+fn filter_left(filter: &dsl::Filter) -> &str {
+    match filter {
+        dsl::Filter::Condition(left, _, _) => left
     }
 }
 
@@ -95,6 +96,10 @@ impl Join {
 }
 
 pub fn compute_joins(schema: &Schema, query: &dsl::Query) -> Result<Vec<Join>, &'static str> {
+    if query.join_sources.is_empty() {
+        return Ok(vec![]);
+    }
+
     let mut joins = Vec::with_capacity(query.join_sources.len());
     let joinee_table = match &query.source {
         dsl::Source::TableScan(name) => Some(name),
@@ -142,7 +147,7 @@ mod tests {
         let mut schema = Schema::default();
         schema.add_relation("example", &[col("id", Type::NUMBER), col("content", Type::TEXT), col("type", Type::NUMBER)]);
 
-        let filters = expect_filters(compute_filters(&schema, &dsl::Query::scan("example").filter("id", EQ, "1").filter("example.type", EQ, "2")), 2);
+        let filters = expect_filters(compute_filters(&schema, &dsl::Query::scan("example").filter("example.id", EQ, "1").filter("example.type", EQ, "2")), 2);
         assert_eq!(filters.get(0).map(|x| x.cell_pos), Some(0));
         assert_eq!(filters.get(1).map(|x| x.cell_pos), Some(2));
 
@@ -157,24 +162,27 @@ mod tests {
         let tuple_1 = MockTuple(vec![Cell::from_number(1), Cell::from_string("content1"), Cell::from_number(11)]);
         let tuple_2 = MockTuple(vec![Cell::from_number(2), Cell::from_string("content2"), Cell::from_number(12)]);
 
-        let id_filter = expect_filter(compute_filters(&schema, &dsl::Query::scan("example").filter("id", EQ, "1")));
+        let id_filter = expect_filter(compute_filters(&schema, &dsl::Query::scan("example").filter("example.id", EQ, "1")));
         assert!(id_filter.matches_tuple(&tuple_1));
         assert!(!id_filter.matches_tuple(&tuple_2));
 
-        let content_filter = expect_filter(compute_filters(&schema, &dsl::Query::scan("example").filter("content", EQ, "content1")));
+        let content_filter = expect_filter(compute_filters(&schema, &dsl::Query::scan("example").filter("example.content", EQ, "content1")));
         assert!(content_filter.matches_tuple(&tuple_1));
         assert!(!content_filter.matches_tuple(&tuple_2));
 
-        let comp_filter = expect_filter(compute_filters(&schema, &dsl::Query::scan("example").filter("id", GT, "1")));
+        let comp_filter = expect_filter(compute_filters(&schema, &dsl::Query::scan("example").filter("example.id", GT, "1")));
         assert!(!comp_filter.matches_tuple(&tuple_1));
         assert!(comp_filter.matches_tuple(&tuple_2));
     }
 
     fn expect_filters(result: Result<Vec<Filter>, &'static str>, n: usize) -> Vec<Filter> {
-        assert!(result.is_ok());
-        let filters = result.unwrap();
-        assert_eq!(filters.len(), n);
-        filters
+        match result {
+            Ok(filters) => {
+                assert_eq!(filters.len(), n);
+                filters
+            },
+            Err(msg) => panic!("{}", msg)
+        }
     }
 
     fn expect_filter(result: Result<Vec<Filter>, &'static str>) -> Filter {
@@ -217,8 +225,8 @@ mod tests {
         assert_eq!(join.find_match(&[type_1.clone(), type_2.clone()], &document_2), None);
     }
 
-    //#[test]
-    fn _test_filter_after_join() {
+    #[test]
+    fn test_filter_after_join() {
         let mut schema = Schema::default();
         schema.add_relation("document", &[col("name", Type::TEXT), col("type_id", Type::NUMBER)]);
         schema.add_relation("type", &[col("id", Type::TEXT), col("name", Type::NUMBER)]);

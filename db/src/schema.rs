@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 #[derive(Default)]
 pub struct Schema {
     pub relations: Vec<Relation>

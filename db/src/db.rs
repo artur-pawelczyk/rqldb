@@ -96,9 +96,10 @@ impl Database {
 
     pub fn execute_mut_query(&mut self, query: &Query) -> Result<QueryResults, &str> {
         let source_tuples = read_source(self, &query.source)?;
-        //let joined_tuples = execute_join(self, source_tuples, &query.join_sources)?;
+        let planned_joins = plan::compute_joins(&self.schema, query);
+        let joined_tuples = execute_join(self, source_tuples, &planned_joins?)?;
         let planned_filters = plan::compute_filters(&self.schema, query)?;
-        let filtered_tuples = filter_tuples(source_tuples, &planned_filters)?;
+        let filtered_tuples = filter_tuples(joined_tuples, &planned_filters)?;
 
         match &query.finisher {
             Finisher::Insert(table) => {
