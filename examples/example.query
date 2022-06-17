@@ -10,4 +10,4 @@ tuple 2 other_page 2 | insert_into document
 tuple 3 some_contract 3 | insert_into document
 tuple 4 news_article 1 | insert_into document
 
-scan document | join type document.type type.id | filter type.name = page
+scan document | join type document.type type.id
