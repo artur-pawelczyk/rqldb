@@ -83,9 +83,10 @@ impl Database {
 
     pub fn execute_query(&self, query: &Query) -> Result<QueryResults, &str> {
         let source_tuples = read_source(self, &query.source)?;
-        //let joined_tuples = execute_join(self, source_tuples, &query.join_sources)?;
+        let planned_joins = plan::compute_joins(&self.schema, query);
+        let joined_tuples = execute_join(self, source_tuples, &planned_joins?)?;
         let planned_filters = plan::compute_filters(&self.schema, query)?;
-        let filtered_tuples = filter_tuples(source_tuples, &planned_filters)?;
+        let filtered_tuples = filter_tuples(joined_tuples, &planned_filters)?;
 
         match query.finisher {
             Finisher::AllColumns => Result::Ok(filtered_tuples.into_query_results()),
@@ -161,8 +162,7 @@ fn execute_join(db: &Database, mut current_tuples: TupleSet, joins: &[plan::Join
             }
 
             let joined = current_tuples.map_mut(|joinee| {
-                //let matched_tuple = join.find_match(joiner.raw_tuples, &joinee);
-                Some(joinee)
+                join.find_match(&joiner.raw_tuples, &joinee).map(|t| joinee.add_cells(t))
             });
 
             Ok(joined)
@@ -465,8 +465,8 @@ mod tests {
         assert!(db.execute_query(&Query::scan("document").filter("not_a_field", Operator::EQ, "1")).is_err());
     }
 
-    //#[test]
-    pub fn _join() {
+    #[test]
+    pub fn join() {
         let mut db = Database::default();
         db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT).column("type_id", Type::NUMBER));
         db.execute_create(&Command::create_table("type").column("id", Type::NUMBER).column("name", Type::TEXT));
