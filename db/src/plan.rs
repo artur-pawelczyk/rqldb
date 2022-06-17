@@ -1,6 +1,6 @@
 use crate::Cell;
 use crate::dsl;
-use crate::schema::{Schema, Relation, Type};
+use crate::schema::{Schema, Relation};
 use crate::db::TupleTrait;
 
 pub struct Filter {

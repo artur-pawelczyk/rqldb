@@ -26,17 +26,6 @@ struct TupleSet {
     raw_tuples: Vec<Tuple>,
 }
 
-struct TupleView<'a> {
-    raw: &'a Tuple,
-}
-struct TupleViewMut<'a> {
-    raw: &'a mut Tuple,
-}
-struct TupleIter<'a> {
-    tuple_set: &'a TupleSet,
-    pos: usize,
-}
-
 #[derive(Clone, Debug)]
 pub enum Attribute {
     Unnamed(Type, i32),
@@ -65,7 +54,22 @@ impl Tuple {
     pub fn into_cells(self) -> Vec<Cell> {
         self.contents
     }
+
+    pub fn contents(&self) -> &[Cell] {
+        &self.contents
+    }
+
+    fn add_cells(mut self, other: &impl TupleTrait) -> Self {
+        let mut i = 0;
+        while let Some(cell) = other.cell_at(i) {
+            i += 1;
+            self.contents.push(cell.clone());
+        }
+
+        self
+    }    
 }
+
 
 impl TupleTrait for Tuple {
     fn cell_at(&self, i: u32) -> Option<&Cell> {
@@ -106,7 +110,7 @@ impl Database {
                 let table_schema = self.schema.find_relation(table).ok_or("No such table")?;
                 let mut object = self.objects.get(table).expect("This shouldn't happen").borrow_mut();
                 for tuple in filtered_tuples.iter() {
-                    if !validate_with_schema(&table_schema.columns, &tuple) { return Err("Invalid input") }
+                    if !validate_with_schema(&table_schema.columns, tuple) { return Err("Invalid input") }
                     object.push(tuple.contents().iter().map(|x| x.as_bytes()).collect())
                 }
 
@@ -130,7 +134,7 @@ impl Database {
     }
 }
 
-fn validate_with_schema(columns: &[Column], tuple: &TupleView) -> bool {
+fn validate_with_schema(columns: &[Column], tuple: &Tuple) -> bool {
     if columns.len() == tuple.contents().len() {
         zip(columns, tuple.contents()).all(|(col, cell)| col.kind == cell.kind)
     } else {
@@ -233,21 +237,19 @@ impl TupleSet {
     }
 
     fn map_mut<F>(mut self, func: F) -> Self
-    where F: Fn(TupleViewMut) -> Option<TupleViewMut> {
+    where F: Fn(Tuple) -> Option<Tuple> {
         let mut mapped = vec![];
 
-        for mut raw_tuple in self.raw_tuples {
-            if func(TupleViewMut{raw: &mut raw_tuple}).is_some() {
-                mapped.push(raw_tuple);
-            }
+        for raw_tuple in self.raw_tuples {
+            func(raw_tuple).into_iter().for_each(|t| mapped.push(t));
         }
         
         self.raw_tuples = mapped;
         self
     }
 
-    fn iter(&self) -> TupleIter {
-        TupleIter{tuple_set: self, pos: 0}
+    fn iter(&self) -> std::slice::Iter<Tuple> {
+        self.raw_tuples.iter()
     }
 
     fn count(&self) -> i32 {
@@ -259,40 +261,6 @@ impl TupleSet {
             attributes: simplify_attributes(self.attributes).iter().map(|x| x.as_string()).collect(),
             results: self.raw_tuples.into_iter().map(Tuple::into_cells).collect()
         }
-    }
-}
-
-impl<'a> Iterator for TupleIter<'a> {
-    type Item = TupleView<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let raw_tuple = self.tuple_set.raw_tuples.get(self.pos);
-        self.pos += 1;
-        raw_tuple.map(|t| TupleView{raw: t})
-    }
-}
-
-impl<'a> TupleView<'a> {
-    pub fn contents(&self) -> &[Cell] {
-        &self.raw.contents
-    }
-}
-
-impl<'a> TupleViewMut<'a> {
-    fn add_cells(self, other: &impl TupleTrait) -> Self {
-        let mut i = 0;
-        while let Some(cell) = other.cell_at(i) {
-            i += 1;
-            self.raw.contents.push(cell.clone());
-        }
-
-        self
-    }    
-}
-
-impl<'a> TupleTrait for TupleViewMut<'a> {
-    fn cell_at(&self, pos: u32) -> Option<&Cell> {
-        self.raw.contents.get(pos as usize)
     }
 }
 
@@ -380,7 +348,7 @@ mod tests {
         let tuples = result.unwrap();
         assert_eq!(tuples.size(), 1);
         let results = tuples.results();
-        let tuple = results.iter().next().expect("fail");
+        let tuple = results.get(0).expect("fail");
         assert_eq!(&tuple.contents[0].as_bytes(), &Vec::from(1_i32.to_be_bytes()));
         assert_eq!(&tuple.contents[1].as_string(), "something");
     }
@@ -449,7 +417,10 @@ mod tests {
         }
 
         let result = db.execute_query(&Query::scan("document").count()).unwrap();
-        let count = result.results().get(0).map(|t| t.cell_at(0)).flatten().map(|c| c.as_number()).flatten().unwrap();
+        let count = result.results().get(0)
+            .and_then(|t| t.cell_at(0))
+            .and_then(|c| c.as_number())
+            .unwrap();
         assert_eq!(count, 20);
     }
 }

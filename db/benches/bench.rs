@@ -12,10 +12,12 @@ fn create_database() -> Database {
     db
 }
 
-fn query_single_number(db: &Database, query: &Query) -> Option<i32> { let result =
-    db.execute_query(query).unwrap();
-    result.results().get(0).map(|t| t.cell_at(0)).flatten().map(|c|
-    c.as_number()).flatten() }
+fn query_single_number(db: &Database, query: &Query) -> Option<i32> {
+    let result = db.execute_query(query).unwrap();
+    result.results().get(0)
+        .and_then(|t| t.cell_at(0))
+        .and_then(|c| c.as_number())
+}
 
 fn benchmark_insert(c: &mut Criterion) {
     let mut db = create_database();
@@ -40,7 +42,7 @@ fn benchmark_count(c: &mut Criterion) {
     let mut db = create_database();
 
     let query = Query::tuple(&["1", "2", "example_doc", "the_content"]).insert_into("document");
-    for _ in 0..1000_000 {
+    for _ in 0..1_000_000 {
         db.execute_mut_query(&query).unwrap();
     }
 
