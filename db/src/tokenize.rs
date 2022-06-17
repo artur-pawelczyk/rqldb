@@ -43,7 +43,7 @@ impl Scanner {
     }
 
     fn next(&mut self) -> Option<char> {
-        let next = self.chars.get(self.pos).map(|ch| *ch);
+        let next = self.chars.get(self.pos).copied();
         self.pos += 1;
         next
     }

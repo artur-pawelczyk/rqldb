@@ -22,13 +22,13 @@ pub fn compute_filters(schema: &Schema, query: &dsl::Query) -> Result<Vec<Filter
     }
 
     let rel = match &query.source {
-        dsl::Source::TableScan(name) => schema.find_relation(&name).unwrap(),
+        dsl::Source::TableScan(name) => schema.find_relation(name).unwrap(),
         _ => todo!(),
     };
 
     let mut filters = Vec::with_capacity(query.filters.len());
     for dsl_filter in &query.filters {
-        if let Some(pos) = find_left_position(rel, &dsl_filter) {
+        if let Some(pos) = find_left_position(rel, dsl_filter) {
             let op = filter_operator(dsl_filter);
             filters.push(Filter{
                 cell_pos: pos,
@@ -98,8 +98,7 @@ pub fn compute_joins(schema: &Schema, query: &dsl::Query) -> Result<Vec<Join>, &
     let joinee_table = match &query.source {
         dsl::Source::TableScan(name) => Some(name),
         _ => todo!(),
-    }.map(|name| schema.find_relation(&name))
-        .flatten().ok_or("No such table")?;
+    }.and_then(|name| schema.find_relation(name)).ok_or("No such table")?;
     
     for join_source in &query.join_sources {
         let joiner_table = match schema.find_relation(&join_source.table) {

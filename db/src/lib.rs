@@ -41,7 +41,7 @@ impl<'a> Tuple<'a> {
     }
 
     pub fn contents(&self) -> &[Cell] {
-        &self.contents
+        self.contents
     }
 }
 

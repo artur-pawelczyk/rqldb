@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::iter::zip;
 use std::cell::RefCell;
 
-use crate::dsl::{Command, Query, Source, Finisher, Operator, Filter, JoinSource};
+use crate::dsl::{Command, Query, Source, Finisher};
 use crate::schema::{Column, Schema, Type};
 use crate::{Cell, QueryResults};
 use crate::plan;
@@ -27,11 +27,9 @@ struct TupleSet {
 }
 
 struct TupleView<'a> {
-    attributes: &'a [Attribute],
     raw: &'a Tuple,
 }
 struct TupleViewMut<'a> {
-    attributes: &'a [Attribute],
     raw: &'a mut Tuple,
 }
 struct TupleIter<'a> {
@@ -184,33 +182,8 @@ fn filter_tuples(mut source: TupleSet, filters: &[plan::Filter]) -> Result<Tuple
     }
 }
 
-fn validate_filter(source: &TupleSet, filter: &Filter) -> Option<&'static str> {
-    let Filter::Condition(left, _, _) = filter;
-    if !source.has_attribute(left) {
-        Some("Attribute not found")
-    } else {
-        None
-    }
-}
-
 fn apply_filter(source: TupleSet, filter: &plan::Filter) -> TupleSet {
     source.filter(|tuple| filter.matches_tuple(tuple))
-}
-
-fn test_filter(filter: &Filter, tuple: TupleView) -> bool {
-    match filter {
-        Filter::Condition(left, op, right) => {
-            let cell = tuple.cell_by_name(left).unwrap();
-            let right_as_cell = Cell::from_string(right);
-            match op {
-                Operator::EQ => cell == &right_as_cell,
-                Operator::GT => cell > &right_as_cell,
-                Operator::GE => cell >= &right_as_cell,
-                Operator::LT => cell < &right_as_cell,
-                Operator::LE => cell <= &right_as_cell,
-            }
-        }
-    }
 }
 
 /// If all the attributes are in the same table, make them all non-absolute
@@ -263,7 +236,7 @@ impl TupleSet {
         let mut mapped = vec![];
 
         for mut raw_tuple in self.raw_tuples {
-            if let Some(_) = func(TupleViewMut{attributes: &self.attributes, raw: &mut raw_tuple}) {
+            if func(TupleViewMut{raw: &mut raw_tuple}).is_some() {
                 mapped.push(raw_tuple);
             }
         }
@@ -272,12 +245,8 @@ impl TupleSet {
         self
     }
 
-    fn has_attribute(&self, attr: &str) -> bool {
-        self.attributes.iter().any(|x| x.as_string() == attr)
-    }
-
     fn iter(&self) -> TupleIter {
-        TupleIter{tuple_set: &self, pos: 0}
+        TupleIter{tuple_set: self, pos: 0}
     }
 
     fn count(&self) -> i32 {
@@ -286,7 +255,7 @@ impl TupleSet {
 
     fn into_query_results(self) -> QueryResults {
         QueryResults{
-            attributes: simplify_attributes(self.attributes).iter().map(|x| x.as_string().to_string()).collect(),
+            attributes: simplify_attributes(self.attributes).iter().map(|x| x.as_string()).collect(),
             results: self.raw_tuples.into_iter().map(Tuple::into_cells).collect()
         }
     }
@@ -297,34 +266,18 @@ impl<'a> Iterator for TupleIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let raw_tuple = self.tuple_set.raw_tuples.get(self.pos);
-        self.pos = self.pos + 1;
-        raw_tuple.map(|t| TupleView{attributes: &self.tuple_set.attributes, raw: t})
+        self.pos += 1;
+        raw_tuple.map(|t| TupleView{raw: t})
     }
 }
 
 impl<'a> TupleView<'a> {
-    pub fn cell_by_name(&self, name: &str) -> Option<&Cell> {
-        if let Some((idx, _)) = self.attributes.iter().enumerate().find(|(_, attr)| attr.as_string() == name) {
-            self.raw.cell_at(idx as u32)
-        } else {
-            None
-        }
-    }
-
     pub fn contents(&self) -> &[Cell] {
         &self.raw.contents
     }
 }
 
 impl<'a> TupleViewMut<'a> {
-    fn cell_by_name(&self, name: &str) -> Option<&Cell> {
-        if let Some((idx, _)) = self.attributes.iter().enumerate().find(|(_, attr)| attr.as_string() == name) {
-            self.raw.cell_at(idx as u32)
-        } else {
-            None
-        }
-    }
-
     fn add_cells(self, other: &impl TupleTrait) -> Self {
         let mut i = 0;
         while let Some(cell) = other.cell_at(i) {
@@ -359,7 +312,7 @@ impl Attribute {
         }
     }
 
-    fn table<'a>(&'a self) -> Option<&'a str> {
+    fn table(&self) -> Option<&str> {
         match self {
             Attribute::Absolute(_, t, _) => Some(t),
             _ => None,
@@ -378,6 +331,7 @@ impl Attribute {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dsl::Operator;
 
     #[test]
     fn query_not_existing_relation() {
