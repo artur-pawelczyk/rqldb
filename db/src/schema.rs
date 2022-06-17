@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 #[derive(Default)]
 pub struct Schema {
     pub relations: Vec<Relation>
@@ -80,6 +82,10 @@ impl Relation {
     /// ```
     pub fn column_type(&self, name: &str) -> Option<Type> {
         self.columns.iter().find(|col| self.column_name_matches(col, name)).map(|col| col.kind)
+    }
+
+    pub fn full_attribute_names(&self) -> Vec<String> {
+        self.columns.iter().map(|col| format!("{}.{}", self.name, col.name)).collect()
     }
 
     fn column_name_matches(&self, col: &Column, name: &str) -> bool {

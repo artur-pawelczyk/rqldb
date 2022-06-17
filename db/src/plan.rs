@@ -77,6 +77,7 @@ pub struct Join {
     table: String,
     joinee_key_pos: u32,
     joiner_key_pos: u32,
+    attributes: Vec<String>,
 }
 
 impl Join {
@@ -108,7 +109,11 @@ pub fn compute_joins(schema: &Schema, query: &dsl::Query) -> Result<Vec<Join>, &
 
         if let Some(joinee_key_pos) = joinee_table.column_position(&join_source.left) {
             if let Some(joiner_key_pos) = joiner_table.column_position(&join_source.right) {
-                joins.push(Join{ table: joiner_table.name.to_string(), joinee_key_pos, joiner_key_pos })
+                joins.push(Join{
+                    table: joiner_table.name.to_string(),
+                    joinee_key_pos, joiner_key_pos,
+                    attributes: compute_attributes(joinee_table, joiner_table),
+                })
             } else {
                 return Err("Join: no such column")
             }
@@ -118,6 +123,12 @@ pub fn compute_joins(schema: &Schema, query: &dsl::Query) -> Result<Vec<Join>, &
     }
 
     Ok(joins)
+}
+
+fn compute_attributes(joinee: &Relation, joiner: &Relation) -> Vec<String> {
+    let mut combined = joinee.full_attribute_names();
+    combined.extend(joiner.full_attribute_names());
+    combined
 }
 
 #[cfg(test)]
@@ -177,8 +188,9 @@ mod tests {
         schema.add_relation("document", &[col("name", Type::TEXT), col("type_id", Type::NUMBER)]);
         schema.add_relation("type", &[col("id", Type::TEXT), col("name", Type::NUMBER)]);
 
-        let joins = compute_joins(&schema, &dsl::Query::scan("document").join("type", "document.type_id", "type.id"));
-        assert_eq!(joins.unwrap().get(0).map(|x| x.source_table()), Some("type"));
+        let joins = expect_join(compute_joins(&schema, &dsl::Query::scan("document").join("type", "document.type_id", "type.id")));
+        assert_eq!(joins.source_table(), "type");
+        assert_eq!(joins.attributes, vec!["document.name", "document.type_id", "type.id", "type.name"]);
 
         let missing_source_table = compute_joins(&schema, &dsl::Query::scan("nothing").join("type", "a", "b"));
         assert!(missing_source_table.is_err());
@@ -203,6 +215,16 @@ mod tests {
         let join = expect_join(compute_joins(&schema, &dsl::Query::scan("document").join("type", "document.type_id", "type.id")));
         assert_eq!(join.find_match(&[type_1.clone(), type_2.clone()], &document_1), Some(&type_2));
         assert_eq!(join.find_match(&[type_1.clone(), type_2.clone()], &document_2), None);
+    }
+
+    //#[test]
+    fn _test_filter_after_join() {
+        let mut schema = Schema::default();
+        schema.add_relation("document", &[col("name", Type::TEXT), col("type_id", Type::NUMBER)]);
+        schema.add_relation("type", &[col("id", Type::TEXT), col("name", Type::NUMBER)]);
+
+        let filter = expect_filter(compute_filters(&schema, &dsl::Query::scan("document").join("type", "document.type_id", "type.id").filter("type.name", EQ, "b")));
+        assert_eq!(filter.cell_pos, 3);
     }
 
     fn expect_join(result: Result<Vec<Join>, &str>) -> Join {
