@@ -17,7 +17,14 @@ pub struct Column {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Type {
     BYTE(u8),
-    NUMBER, TEXT
+    NUMBER, TEXT,
+    NONE
+}
+
+impl Default for Type {
+    fn default() -> Self {
+        Self::NONE
+    }
 }
 
 impl Schema {
@@ -84,6 +91,10 @@ impl Relation {
 
     pub fn full_attribute_names(&self) -> Vec<String> {
         self.columns.iter().map(|col| format!("{}.{}", self.name, col.name)).collect()
+    }
+
+    pub fn types(&self) -> Vec<Type> {
+        self.columns.iter().map(|col| col.kind).collect()
     }
 
     fn column_name_matches(&self, col: &Column, name: &str) -> bool {

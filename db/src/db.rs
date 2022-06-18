@@ -3,7 +3,7 @@ use std::iter::zip;
 use std::cell::RefCell;
 
 use crate::dsl::{Command, Query, Source, Finisher};
-use crate::schema::{Column, Schema, Type};
+use crate::schema::{Column, Schema, Type, Relation};
 use crate::{Cell, QueryResults};
 use crate::plan;
 
@@ -39,8 +39,8 @@ struct Tuple {
 }
 
 impl Tuple {
-    fn from_bytes(attrs: &[Attribute], bytes: &[Vec<u8>]) -> Tuple {
-        let cells: Vec<Cell> = zip(attrs, bytes).map(|(attr, b)| Cell::from_bytes(attr.kind(), b)).collect();
+    fn from_bytes(types: &[Type], bytes: &[Vec<u8>]) -> Tuple {
+        let cells: Vec<Cell> = zip(types, bytes).map(|(kind, b)| Cell::from_bytes(*kind, b)).collect();
         Self{
             contents: cells
         }
@@ -85,13 +85,22 @@ impl Database {
 
     pub fn execute_query(&self, query: &Query) -> Result<QueryResults, &str> {
         let source_tuples = read_source(self, &query.source)?;
-        let planned_joins = plan::compute_joins(&self.schema, query);
-        let joined_tuples = execute_join(self, source_tuples, &planned_joins?)?;
+        let planned_joins = plan::compute_joins(&self.schema, query)?;
+        let joined_tuples = execute_join(self, source_tuples, &planned_joins)?;
         let planned_filters = plan::compute_filters(&self.schema, query)?;
         let filtered_tuples = filter_tuples(joined_tuples, &planned_filters)?;
+        let final_attributes: Vec<Attribute> = if planned_joins.is_empty() {
+            match &query.source {
+                Source::TableScan(table) => Some(table),
+                _ => None,
+            }.and_then(|table| self.schema.find_relation(&table))
+                .map_or(vec![], |rel| rel.full_attribute_names().iter().map(|attr| Attribute::Named(Type::default(), attr.to_string())).collect())
+        } else {
+            planned_joins.into_iter().next().unwrap().take_attributes().iter().map(|attr| Attribute::from_full_name(attr)).collect()
+        };
 
         match query.finisher {
-            Finisher::AllColumns => Result::Ok(filtered_tuples.into_query_results()),
+            Finisher::AllColumns => Result::Ok(filtered_tuples.into_query_results(final_attributes)),
             Finisher::Columns(_) => todo!(),
             Finisher::Insert(_) => Result::Err("Can't run a mutating query"),
             Finisher::Count => Ok(QueryResults::count(filtered_tuples.count())),
@@ -114,9 +123,9 @@ impl Database {
                     object.push(tuple.contents().iter().map(|x| x.as_bytes()).collect())
                 }
 
-                Result::Ok(filtered_tuples.into_query_results())
+                Result::Ok(filtered_tuples.into_query_results(vec![]))
             },
-            Finisher::AllColumns => Result::Ok(filtered_tuples.into_query_results()),
+            Finisher::AllColumns => Result::Ok(filtered_tuples.into_query_results(vec![])),
             Finisher::Columns(_) => todo!(),
             Finisher::Count => Ok(QueryResults::count(filtered_tuples.count())),
         }
@@ -124,11 +133,7 @@ impl Database {
 
     fn scan_table(&self, name: &str) -> Result<TupleSet, &'static str> {
         let rel = self.schema.find_relation(name).ok_or("No such relation in schema")?;
-        let attributes: Vec<Attribute> = rel.columns.iter()
-            .map(|col| (col.kind, col.name.clone()))
-            .map(|(col_kind, col_name)| Attribute::Absolute(col_kind, name.to_string(), col_name)).collect();
-        let mut tuple_set = TupleSet::with_attributes(attributes);
-        tuple_set.read_object(&self.objects.get(name).ok_or("Could not find the object")?.borrow());
+        let tuple_set = TupleSet::from_object(&rel, &self.objects.get(name).ok_or("Could not find the object")?.borrow());
 
         Ok(tuple_set)
     }
@@ -191,35 +196,21 @@ fn apply_filter(source: TupleSet, filter: &plan::Filter) -> TupleSet {
     source.filter(|tuple| filter.matches_tuple(tuple))
 }
 
-/// If all the attributes are in the same table, make them all non-absolute
-fn simplify_attributes(attrs: Vec<Attribute>) -> Vec<Attribute> {
-    let mut tables: Vec<&str> = attrs.iter().flat_map(|attr| attr.table()).collect();
-    tables.dedup();
-
-    if tables.len() == 1 {
-        attrs.into_iter().map(|attr| attr.into_named()).collect()
-    } else {
-        attrs
-    }
-}
-
 pub trait TupleSearch {
     fn search<F>(&self, fun: F) -> Option<&dyn TupleTrait>
     where F: Fn(&dyn TupleTrait) -> bool;
 }
 
 impl TupleSet {
-    fn with_attributes(attributes: Vec<Attribute>) -> Self {
-        Self{ attributes, raw_tuples: vec![] }
-    }
-
     fn single_from_cells(cells: Vec<Cell>) -> Self {
         let attributes: Vec<Attribute> = cells.iter().enumerate().map(|(i, c)| Attribute::Unnamed(c.kind, i as i32)).collect();
         Self{ attributes, raw_tuples: vec![Tuple::from_cells(cells)] }
     }
 
-    fn read_object(&mut self, object: &Object) {
-        self.raw_tuples = object.iter().map(|val| Tuple::from_bytes(&self.attributes, val)).collect();
+    fn from_object(rel: &Relation, object: &Object) -> Self {
+        let types = rel.types();
+        let raw_tuples = object.iter().map(|val| Tuple::from_bytes(&types, val)).collect();
+        Self{ raw_tuples, attributes: vec![] }
     }
 
     fn filter<F>(mut self, predicate: F) -> Self
@@ -256,43 +247,29 @@ impl TupleSet {
         self.raw_tuples.len() as i32
     }
 
-    fn into_query_results(self) -> QueryResults {
+    fn into_query_results(self, attributes: Vec<Attribute>) -> QueryResults {
         QueryResults{
-            attributes: simplify_attributes(self.attributes).iter().map(|x| x.as_string()).collect(),
+            attributes: attributes.into_iter().map(|x| x.as_string()).collect(),
             results: self.raw_tuples.into_iter().map(Tuple::into_cells).collect()
         }
     }
 }
 
 impl Attribute {
+    fn from_full_name(s: &str) -> Self {
+        let parts: Vec<_> = s.split('.').collect();
+        match parts[..] {
+            [a] => Self::Named(Type::default(), a.to_string()),
+            [a, b] => Self::Absolute(Type::default(), a.to_string(), b.to_string()),
+            _ => panic!(),
+        }
+    }
+
     fn as_string(&self) -> String {
         match self {
             Attribute::Unnamed(_, i) => i.to_string(),
             Attribute::Named(_, s) => s.to_string(),
             Attribute::Absolute(_, t, s) => format!("{}.{}", t, s),
-        }
-    }
-
-    fn kind(&self) -> Type {
-        match self {
-            Attribute::Absolute(k, _, _) => *k,
-            Attribute::Unnamed(k, _) => *k,
-            Attribute::Named(k, _) => *k,
-        }
-    }
-
-    fn table(&self) -> Option<&str> {
-        match self {
-            Attribute::Absolute(_, t, _) => Some(t),
-            _ => None,
-        }
-    }
-
-    fn into_named(self) -> Attribute {
-        match self {
-            Attribute::Absolute(k, _, n) => Attribute::Named(k, n),
-            Attribute::Named(k, n) => Attribute::Named(k, n),
-            Attribute::Unnamed(k, i) => Attribute::Named(k, i.to_string()),
         }
     }
 }
@@ -326,7 +303,7 @@ mod tests {
         let tuples = result.unwrap();
         assert_eq!(tuples.size(), 0);
         let attrs = tuples.attributes();
-        assert_eq!(attrs.as_slice(), ["id".to_string(), "content".to_string()]);
+        assert_eq!(attrs.as_slice(), ["document.id".to_string(), "document.content".to_string()]);
     }
 
     #[test]

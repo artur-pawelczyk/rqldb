@@ -16,6 +16,31 @@ impl Filter {
     }
 }
 
+pub struct Join {
+    table: String,
+    joinee_key_pos: u32,
+    joiner_key_pos: u32,
+    attributes: Vec<String>,
+}
+
+impl Join {
+    pub fn find_match<'a, T: TupleTrait>(&self, joiner_tuples: &'a [T], joinee: &impl TupleTrait) -> Option<&'a T> {
+        let joinee_key = joinee.cell_at(self.joinee_key_pos);
+        assert!(joinee_key.is_some());
+
+        joiner_tuples.iter()
+            .find(|tuple| tuple.cell_at(self.joiner_key_pos) == joinee_key)
+    }
+
+    pub fn source_table(&self) -> &str {
+        &self.table
+    }
+
+    pub fn take_attributes(self) -> Vec<String> {
+        self.attributes
+    }
+}
+
 pub fn compute_filters(schema: &Schema, query: &dsl::Query) -> Result<Vec<Filter>, &'static str> {
     if query.filters.is_empty() {
         return Ok(vec![]);
@@ -74,26 +99,7 @@ fn filter_left(filter: &dsl::Filter) -> &str {
     }
 }
 
-pub struct Join {
-    table: String,
-    joinee_key_pos: u32,
-    joiner_key_pos: u32,
-    attributes: Vec<String>,
-}
 
-impl Join {
-    pub fn find_match<'a, T: TupleTrait>(&self, joiner_tuples: &'a [T], joinee: &impl TupleTrait) -> Option<&'a T> {
-        let joinee_key = joinee.cell_at(self.joinee_key_pos);
-        assert!(joinee_key.is_some());
-
-        joiner_tuples.iter()
-            .find(|tuple| tuple.cell_at(self.joiner_key_pos) == joinee_key)
-    }
-
-    pub fn source_table(&self) -> &str {
-        &self.table
-    }
-}
 
 pub fn compute_joins(schema: &Schema, query: &dsl::Query) -> Result<Vec<Join>, &'static str> {
     if query.join_sources.is_empty() {
