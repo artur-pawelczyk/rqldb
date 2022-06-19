@@ -22,7 +22,6 @@ type ByteTuple = Vec<Vec<u8>>;
 
 #[derive(Debug)]
 struct TupleSet {
-    attributes: Vec<Attribute>,
     raw_tuples: Vec<Tuple>,
 }
 
@@ -90,21 +89,10 @@ impl Database {
         let filtered_tuples = filter_tuples(joined_tuples, &plan.filters)?;
         let final_attributes: Vec<Attribute> = plan.final_attributes.iter().map(|name| Attribute::from_full_name(name)).collect();
 
-        match query.finisher {
+        match &query.finisher {
             Finisher::AllColumns => Result::Ok(filtered_tuples.into_query_results(final_attributes)),
             Finisher::Columns(_) => todo!(),
-            Finisher::Insert(_) => Result::Err("Can't run a mutating query"),
             Finisher::Count => Ok(QueryResults::count(filtered_tuples.count())),
-        }
-    }
-
-    pub fn execute_mut_query(&mut self, query: &Query) -> Result<QueryResults, &str> {
-        let plan = plan::compute_plan(&self.schema, query)?;
-        let source_tuples = read_source(self, &query.source)?;
-        let joined_tuples = execute_join(self, source_tuples, &plan.joins)?;
-        let filtered_tuples = filter_tuples(joined_tuples, &plan.filters)?;
-
-        match &query.finisher {
             Finisher::Insert(table) => {
                 let table_schema = self.schema.find_relation(table).ok_or("No such table")?;
                 let mut object = self.objects.get(table).expect("This shouldn't happen").borrow_mut();
@@ -114,10 +102,7 @@ impl Database {
                 }
 
                 Result::Ok(filtered_tuples.into_query_results(vec![]))
-            },
-            Finisher::AllColumns => Result::Ok(filtered_tuples.into_query_results(vec![])),
-            Finisher::Columns(_) => todo!(),
-            Finisher::Count => Ok(QueryResults::count(filtered_tuples.count())),
+            }
         }
     }
 
@@ -149,16 +134,11 @@ fn read_source(db: &Database, source: &Source) -> Result<TupleSet, &'static str>
     }
 }
 
-fn execute_join(db: &Database, mut current_tuples: TupleSet, joins: &[plan::Join]) -> Result<TupleSet, &'static str> {
+fn execute_join(db: &Database, current_tuples: TupleSet, joins: &[plan::Join]) -> Result<TupleSet, &'static str> {
     match joins {
         [] => Ok(current_tuples),
         [join] => {
             let joiner = db.scan_table(join.source_table())?;
-
-            for attr in &joiner.attributes {
-                current_tuples.attributes.push(attr.clone());
-            }
-
             let joined = current_tuples.map_mut(|joinee| {
                 join.find_match(&joiner.raw_tuples, &joinee).map(|t| joinee.add_cells(t))
             });
@@ -193,14 +173,13 @@ pub trait TupleSearch {
 
 impl TupleSet {
     fn single_from_cells(cells: Vec<Cell>) -> Self {
-        let attributes: Vec<Attribute> = cells.iter().enumerate().map(|(i, c)| Attribute::Unnamed(c.kind, i as i32)).collect();
-        Self{ attributes, raw_tuples: vec![Tuple::from_cells(cells)] }
+        Self{ raw_tuples: vec![Tuple::from_cells(cells)] }
     }
 
     fn from_object(rel: &Relation, object: &Object) -> Self {
         let types = rel.types();
         let raw_tuples = object.iter().map(|val| Tuple::from_bytes(&types, val)).collect();
-        Self{ raw_tuples, attributes: vec![] }
+        Self{ raw_tuples }
     }
 
     fn filter<F>(mut self, predicate: F) -> Self
@@ -274,7 +253,7 @@ mod tests {
         let query = Query::scan("not_real_relation").select_all();
         let db = Database::default();
         let result = db.execute_query(&query);
-        assert!(!result.is_ok());
+        assert!(result.is_err());
     }
 
     #[test]
@@ -306,7 +285,7 @@ mod tests {
         db.execute_create(&command);
 
         let insert_query = Query::tuple(&["1".to_string(), "something".to_string()]).insert_into("document");
-        let insert_result = db.execute_mut_query(&insert_query);
+        let insert_result = db.execute_query(&insert_query);
         assert!(insert_result.is_ok());
 
         let query = Query::scan("document").select_all();
@@ -329,7 +308,7 @@ mod tests {
             .column("content", Type::TEXT);
         db.execute_create(&command);
 
-        let result = db.execute_mut_query(&Query::tuple(&["not-a-number".to_string(), "random-text".to_string()]).insert_into("document"));
+        let result = db.execute_query(&Query::tuple(&["not-a-number".to_string(), "random-text".to_string()]).insert_into("document"));
         assert!(result.is_err());
     }
 
@@ -340,7 +319,7 @@ mod tests {
 
         for i in 1..20 {
             let content = format!("example{}", i);
-            db.execute_mut_query(&Query::tuple(&[i.to_string(), content]).insert_into("document")).expect("Insert");
+            db.execute_query(&Query::tuple(&[i.to_string(), content]).insert_into("document")).expect("Insert");
         }
 
         let mut result = db.execute_query(&Query::scan("document").filter("document.id", Operator::EQ, "5")).unwrap();
@@ -361,9 +340,9 @@ mod tests {
         db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT).column("type_id", Type::NUMBER));
         db.execute_create(&Command::create_table("type").column("id", Type::NUMBER).column("name", Type::TEXT));
 
-        db.execute_mut_query(&Query::tuple(&["1", "example", "2"]).insert_into("document")).unwrap();
-        db.execute_mut_query(&Query::tuple(&["1", "type_a"]).insert_into("type")).unwrap();
-        db.execute_mut_query(&Query::tuple(&["2", "type_b"]).insert_into("type")).unwrap();
+        db.execute_query(&Query::tuple(&["1", "example", "2"]).insert_into("document")).unwrap();
+        db.execute_query(&Query::tuple(&["1", "type_a"]).insert_into("type")).unwrap();
+        db.execute_query(&Query::tuple(&["2", "type_b"]).insert_into("type")).unwrap();
 
         let result = db.execute_query(&Query::scan("document").join("type", "document.type_id", "type.id")).unwrap();
         assert_eq!(*result.attributes, ["document.id", "document.content", "document.type_id", "type.id", "type.name"]);
@@ -380,7 +359,7 @@ mod tests {
         db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT));
 
         for i in 1..21 {
-            db.execute_mut_query(&Query::tuple(&[i.to_string(), "example".to_string()]).insert_into("document")).expect("Insert");
+            db.execute_query(&Query::tuple(&[i.to_string(), "example".to_string()]).insert_into("document")).expect("Insert");
         }
 
         let result = db.execute_query(&Query::scan("document").count()).unwrap();

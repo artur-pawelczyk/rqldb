@@ -49,7 +49,7 @@ fn handle_command(db: &mut Database, cmd: &str) {
             Err(error) => { println!("{}", error); return; }
         };
 
-        match db.execute_mut_query(&query) {
+        match db.execute_query(&query) {
             Result::Ok(response) => print_result(&response),
             Result::Err(err) => println!("{}", err),
         }

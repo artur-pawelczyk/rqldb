@@ -20,18 +20,18 @@ fn query_single_number(db: &Database, query: &Query) -> Option<i32> {
 }
 
 fn benchmark_insert(c: &mut Criterion) {
-    let mut db = create_database();
+    let db = create_database();
     let query = Query::tuple(&["1", "2", "example_doc", "the_content"]).insert_into("document");
-    c.bench_function("insert", |b| b.iter(|| db.execute_mut_query(&query).unwrap()));
+    c.bench_function("insert", |b| b.iter(|| db.execute_query(&query).unwrap()));
 
     let count_query = Query::scan("document").count();
     println!("count: {}", query_single_number(&db, &count_query).unwrap());
 }
 
 fn benchmark_filter(c: &mut Criterion) {
-    let mut db = create_database();
+    let db = create_database();
     for i in 1..1000000 {
-        db.execute_mut_query(&Query::tuple(&[i.to_string().as_str(), "12", "example_doc", "the content"]).insert_into("document")).unwrap();
+        db.execute_query(&Query::tuple(&[i.to_string().as_str(), "12", "example_doc", "the content"]).insert_into("document")).unwrap();
     }
 
     let query = Query::scan("document").filter("document.id", Operator::EQ, "100");
@@ -39,11 +39,11 @@ fn benchmark_filter(c: &mut Criterion) {
 }
 
 fn benchmark_count(c: &mut Criterion) {
-    let mut db = create_database();
+    let db = create_database();
 
     let query = Query::tuple(&["1", "2", "example_doc", "the_content"]).insert_into("document");
     for _ in 0..1_000_000 {
-        db.execute_mut_query(&query).unwrap();
+        db.execute_query(&query).unwrap();
     }
 
     let count_query = Query::scan("document").count();
