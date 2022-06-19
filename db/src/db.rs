@@ -9,6 +9,7 @@ use crate::plan;
 
 pub trait Tuple {
     fn cell_at(&self, pos: u32) -> Option<&Cell>;
+    fn into_cells(self) -> Vec<Cell>;
 }
 
 #[derive(Default)]
@@ -21,8 +22,8 @@ type Object = Vec<ByteTuple>;
 type ByteTuple = Vec<Vec<u8>>;
 
 #[derive(Debug)]
-struct TupleSet {
-    raw_tuples: Vec<EagerTuple>,
+struct TupleSet<T: Tuple> {
+    raw_tuples: Vec<T>,
 }
 
 #[derive(Clone, Debug)]
@@ -74,6 +75,10 @@ impl Tuple for EagerTuple {
     fn cell_at(&self, i: u32) -> Option<&Cell> {
         self.contents.get(i as usize)
     }
+
+    fn into_cells(self) -> Vec<Cell> {
+        self.contents
+    }
 }
 
 impl Database {
@@ -106,7 +111,7 @@ impl Database {
         }
     }
 
-    fn scan_table(&self, name: &str) -> Result<TupleSet, &'static str> {
+    fn scan_table(&self, name: &str) -> Result<TupleSet<EagerTuple>, &'static str> {
         let rel = self.schema.find_relation(name).ok_or("No such relation in schema")?;
         let tuple_set = TupleSet::from_object(rel, &self.objects.get(name).ok_or("Could not find the object")?.borrow());
 
@@ -122,7 +127,7 @@ fn validate_with_schema(columns: &[Column], tuple: &EagerTuple) -> bool {
     }
 }
 
-fn read_source(db: &Database, source: &Source) -> Result<TupleSet, &'static str> {
+fn read_source(db: &Database, source: &Source) -> Result<TupleSet<EagerTuple>, &'static str> {
     return match &source {
         Source::TableScan(name) => {
             db.scan_table(name)
@@ -134,12 +139,12 @@ fn read_source(db: &Database, source: &Source) -> Result<TupleSet, &'static str>
     }
 }
 
-fn execute_join(db: &Database, current_tuples: TupleSet, joins: &[plan::Join]) -> Result<TupleSet, &'static str> {
+fn execute_join<T: Tuple>(db: &Database, current_tuples: TupleSet<T>, joins: &[plan::Join]) -> Result<TupleSet<EagerTuple>, &'static str> {
     match joins {
-        [] => Ok(current_tuples),
+        [] => Ok(current_tuples.into_eager()),
         [join] => {
             let joiner = db.scan_table(join.source_table())?;
-            let joined = current_tuples.map_mut(|joinee| {
+            let joined = current_tuples.into_eager().map_mut(|joinee| {
                 join.find_match(&joiner.raw_tuples, &joinee).map(|t| joinee.add_cells(t))
             });
 
@@ -149,7 +154,7 @@ fn execute_join(db: &Database, current_tuples: TupleSet, joins: &[plan::Join]) -
     }
 }
 
-fn filter_tuples(mut source: TupleSet, filters: &[plan::Filter]) -> Result<TupleSet, &'static str> {
+fn filter_tuples<T: Tuple>(mut source: TupleSet<T>, filters: &[plan::Filter]) -> Result<TupleSet<T>, &'static str> {
     match filters {
         [] => Ok(source),
         filters => {
@@ -162,7 +167,7 @@ fn filter_tuples(mut source: TupleSet, filters: &[plan::Filter]) -> Result<Tuple
     }
 }
 
-fn apply_filter(source: TupleSet, filter: &plan::Filter) -> TupleSet {
+fn apply_filter<T: Tuple>(source: TupleSet<T>, filter: &plan::Filter) -> TupleSet<T> {
     source.filter(|tuple| filter.matches_tuple(tuple))
 }
 
@@ -171,7 +176,7 @@ pub trait TupleSearch {
     where F: Fn(&dyn Tuple) -> bool;
 }
 
-impl TupleSet {
+impl TupleSet<EagerTuple> {
     fn single_from_cells(cells: Vec<Cell>) -> Self {
         Self{ raw_tuples: vec![EagerTuple::from_cells(cells)] }
     }
@@ -180,20 +185,6 @@ impl TupleSet {
         let types = rel.types();
         let raw_tuples = object.iter().map(|val| EagerTuple::from_bytes(&types, val)).collect();
         Self{ raw_tuples }
-    }
-
-    fn filter<F>(mut self, predicate: F) -> Self
-    where F: Fn(&EagerTuple) -> bool {
-        let mut filtered = vec![];
-
-        for raw_tuple in self.raw_tuples {
-            if predicate(&raw_tuple) {
-                filtered.push(raw_tuple);
-            }
-        }
-
-        self.raw_tuples = filtered;
-        self
     }
 
     fn map_mut<F>(mut self, func: F) -> Self
@@ -207,8 +198,24 @@ impl TupleSet {
         self.raw_tuples = mapped;
         self
     }
+}
 
-    fn iter(&self) -> std::slice::Iter<EagerTuple> {
+impl<T: Tuple> TupleSet<T> {
+    fn filter<F>(mut self, predicate: F) -> Self
+    where F: Fn(&T) -> bool {
+        let mut filtered = vec![];
+
+        for raw_tuple in self.raw_tuples {
+            if predicate(&raw_tuple) {
+                filtered.push(raw_tuple);
+            }
+        }
+
+        self.raw_tuples = filtered;
+        self
+    }
+
+    fn iter(&self) -> std::slice::Iter<T> {
         self.raw_tuples.iter()
     }
 
@@ -216,10 +223,15 @@ impl TupleSet {
         self.raw_tuples.len() as i32
     }
 
+    fn into_eager(self) -> TupleSet<EagerTuple> {
+        let new_tuples = self.raw_tuples.into_iter().map(|t| EagerTuple::from_cells(t.into_cells())).collect();
+        TupleSet{ raw_tuples: new_tuples }
+    }
+
     fn into_query_results(self, attributes: Vec<Attribute>) -> QueryResults {
         QueryResults{
             attributes: attributes.into_iter().map(|x| x.as_string()).collect(),
-            results: self.raw_tuples.into_iter().map(EagerTuple::into_cells).collect()
+            results: self.raw_tuples.into_iter().map(|t| t.into_cells()).collect()
         }
     }
 }

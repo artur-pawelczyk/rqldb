@@ -286,5 +286,9 @@ mod tests {
         fn cell_at(&self, pos: u32) -> Option<&Cell> {
             self.0.get(pos as usize)
         }
+
+        fn into_cells(self) -> Vec<Cell> {
+            self.0
+        }
     }
 }
