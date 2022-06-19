@@ -84,20 +84,11 @@ impl Database {
     }
 
     pub fn execute_query(&self, query: &Query) -> Result<QueryResults, &str> {
+        let plan = plan::compute_plan(&self.schema, query)?;
         let source_tuples = read_source(self, &query.source)?;
-        let planned_joins = plan::compute_joins(&self.schema, query)?;
-        let joined_tuples = execute_join(self, source_tuples, &planned_joins)?;
-        let planned_filters = plan::compute_filters(&self.schema, query)?;
-        let filtered_tuples = filter_tuples(joined_tuples, &planned_filters)?;
-        let final_attributes: Vec<Attribute> = if planned_joins.is_empty() {
-            match &query.source {
-                Source::TableScan(table) => Some(table),
-                _ => None,
-            }.and_then(|table| self.schema.find_relation(&table))
-                .map_or(vec![], |rel| rel.full_attribute_names().iter().map(|attr| Attribute::Named(Type::default(), attr.to_string())).collect())
-        } else {
-            planned_joins.into_iter().next().unwrap().take_attributes().iter().map(|attr| Attribute::from_full_name(attr)).collect()
-        };
+        let joined_tuples = execute_join(self, source_tuples, &plan.joins)?;
+        let filtered_tuples = filter_tuples(joined_tuples, &plan.filters)?;
+        let final_attributes: Vec<Attribute> = plan.final_attributes.iter().map(|name| Attribute::from_full_name(name)).collect();
 
         match query.finisher {
             Finisher::AllColumns => Result::Ok(filtered_tuples.into_query_results(final_attributes)),
@@ -108,11 +99,10 @@ impl Database {
     }
 
     pub fn execute_mut_query(&mut self, query: &Query) -> Result<QueryResults, &str> {
+        let plan = plan::compute_plan(&self.schema, query)?;
         let source_tuples = read_source(self, &query.source)?;
-        let planned_joins = plan::compute_joins(&self.schema, query);
-        let joined_tuples = execute_join(self, source_tuples, &planned_joins?)?;
-        let planned_filters = plan::compute_filters(&self.schema, query)?;
-        let filtered_tuples = filter_tuples(joined_tuples, &planned_filters)?;
+        let joined_tuples = execute_join(self, source_tuples, &plan.joins)?;
+        let filtered_tuples = filter_tuples(joined_tuples, &plan.filters)?;
 
         match &query.finisher {
             Finisher::Insert(table) => {
@@ -133,7 +123,7 @@ impl Database {
 
     fn scan_table(&self, name: &str) -> Result<TupleSet, &'static str> {
         let rel = self.schema.find_relation(name).ok_or("No such relation in schema")?;
-        let tuple_set = TupleSet::from_object(&rel, &self.objects.get(name).ok_or("Could not find the object")?.borrow());
+        let tuple_set = TupleSet::from_object(rel, &self.objects.get(name).ok_or("Could not find the object")?.borrow());
 
         Ok(tuple_set)
     }

@@ -3,6 +3,13 @@ use crate::dsl;
 use crate::schema::{Schema, Relation};
 use crate::db::TupleTrait;
 
+#[derive(Default)]
+pub struct Plan {
+    pub filters: Vec<Filter>,
+    pub joins: Vec<Join>,
+    pub final_attributes: Vec<String>,
+}
+
 pub struct Filter {
     cell_pos: u32,
     right: Cell,
@@ -41,7 +48,31 @@ impl Join {
     }
 }
 
-pub fn compute_filters(schema: &Schema, query: &dsl::Query) -> Result<Vec<Filter>, &'static str> {
+pub fn compute_plan(schema: &Schema, query: &dsl::Query) -> Result<Plan, &'static str> {
+    let rel = match &query.source {
+        dsl::Source::TableScan(name) => if let Some(rel) = schema.find_relation(name) {
+            rel
+        } else {
+            return Err("No such table");
+        }
+        _ => { return Ok(Plan::default()) },
+    };
+
+
+    let joins = compute_joins(schema, query)?;
+
+    let default_attributes = rel.full_attribute_names();
+    let final_attributes = joins.iter().last().map_or(default_attributes, |join| join.attributes.to_vec());
+
+    let filters = compute_filters(schema, query)?;
+
+    Ok(Plan {
+        joins, filters,
+        final_attributes
+    })
+}
+
+fn compute_filters(schema: &Schema, query: &dsl::Query) -> Result<Vec<Filter>, &'static str> {
     if query.filters.is_empty() {
         return Ok(vec![]);
     }
@@ -99,9 +130,7 @@ fn filter_left(filter: &dsl::Filter) -> &str {
     }
 }
 
-
-
-pub fn compute_joins(schema: &Schema, query: &dsl::Query) -> Result<Vec<Join>, &'static str> {
+fn compute_joins(schema: &Schema, query: &dsl::Query) -> Result<Vec<Join>, &'static str> {
     if query.join_sources.is_empty() {
         return Ok(vec![]);
     }
