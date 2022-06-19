@@ -7,7 +7,7 @@ use crate::schema::{Column, Schema, Type, Relation};
 use crate::{Cell, QueryResults};
 use crate::plan;
 
-pub trait TupleTrait {
+pub trait Tuple {
     fn cell_at(&self, pos: u32) -> Option<&Cell>;
 }
 
@@ -22,7 +22,7 @@ type ByteTuple = Vec<Vec<u8>>;
 
 #[derive(Debug)]
 struct TupleSet {
-    raw_tuples: Vec<Tuple>,
+    raw_tuples: Vec<EagerTuple>,
 }
 
 #[derive(Clone, Debug)]
@@ -33,20 +33,20 @@ pub enum Attribute {
 }
 
 #[derive(Clone, Debug)]
-struct Tuple {
+struct EagerTuple {
     contents: Vec<Cell>,
 }
 
-impl Tuple {
-    fn from_bytes(types: &[Type], bytes: &[Vec<u8>]) -> Tuple {
+impl EagerTuple {
+    fn from_bytes(types: &[Type], bytes: &[Vec<u8>]) -> EagerTuple {
         let cells: Vec<Cell> = zip(types, bytes).map(|(kind, b)| Cell::from_bytes(*kind, b)).collect();
-        Self{
+        EagerTuple{
             contents: cells
         }
     }
 
     fn from_cells(cells: Vec<Cell>) -> Self {
-        Self{ contents: cells }
+        EagerTuple{ contents: cells }
     }
 
 
@@ -58,7 +58,7 @@ impl Tuple {
         &self.contents
     }
 
-    fn add_cells(mut self, other: &impl TupleTrait) -> Self {
+    fn add_cells(mut self, other: &impl Tuple) -> Self {
         let mut i = 0;
         while let Some(cell) = other.cell_at(i) {
             i += 1;
@@ -70,7 +70,7 @@ impl Tuple {
 }
 
 
-impl TupleTrait for Tuple {
+impl Tuple for EagerTuple {
     fn cell_at(&self, i: u32) -> Option<&Cell> {
         self.contents.get(i as usize)
     }
@@ -114,7 +114,7 @@ impl Database {
     }
 }
 
-fn validate_with_schema(columns: &[Column], tuple: &Tuple) -> bool {
+fn validate_with_schema(columns: &[Column], tuple: &EagerTuple) -> bool {
     if columns.len() == tuple.contents().len() {
         zip(columns, tuple.contents()).all(|(col, cell)| col.kind == cell.kind)
     } else {
@@ -167,23 +167,23 @@ fn apply_filter(source: TupleSet, filter: &plan::Filter) -> TupleSet {
 }
 
 pub trait TupleSearch {
-    fn search<F>(&self, fun: F) -> Option<&dyn TupleTrait>
-    where F: Fn(&dyn TupleTrait) -> bool;
+    fn search<F>(&self, fun: F) -> Option<&dyn Tuple>
+    where F: Fn(&dyn Tuple) -> bool;
 }
 
 impl TupleSet {
     fn single_from_cells(cells: Vec<Cell>) -> Self {
-        Self{ raw_tuples: vec![Tuple::from_cells(cells)] }
+        Self{ raw_tuples: vec![EagerTuple::from_cells(cells)] }
     }
 
     fn from_object(rel: &Relation, object: &Object) -> Self {
         let types = rel.types();
-        let raw_tuples = object.iter().map(|val| Tuple::from_bytes(&types, val)).collect();
+        let raw_tuples = object.iter().map(|val| EagerTuple::from_bytes(&types, val)).collect();
         Self{ raw_tuples }
     }
 
     fn filter<F>(mut self, predicate: F) -> Self
-    where F: Fn(&Tuple) -> bool {
+    where F: Fn(&EagerTuple) -> bool {
         let mut filtered = vec![];
 
         for raw_tuple in self.raw_tuples {
@@ -197,7 +197,7 @@ impl TupleSet {
     }
 
     fn map_mut<F>(mut self, func: F) -> Self
-    where F: Fn(Tuple) -> Option<Tuple> {
+    where F: Fn(EagerTuple) -> Option<EagerTuple> {
         let mut mapped = vec![];
 
         for raw_tuple in self.raw_tuples {
@@ -208,7 +208,7 @@ impl TupleSet {
         self
     }
 
-    fn iter(&self) -> std::slice::Iter<Tuple> {
+    fn iter(&self) -> std::slice::Iter<EagerTuple> {
         self.raw_tuples.iter()
     }
 
@@ -219,7 +219,7 @@ impl TupleSet {
     fn into_query_results(self, attributes: Vec<Attribute>) -> QueryResults {
         QueryResults{
             attributes: attributes.into_iter().map(|x| x.as_string()).collect(),
-            results: self.raw_tuples.into_iter().map(Tuple::into_cells).collect()
+            results: self.raw_tuples.into_iter().map(EagerTuple::into_cells).collect()
         }
     }
 }

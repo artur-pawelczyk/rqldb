@@ -1,7 +1,7 @@
 use crate::Cell;
 use crate::dsl;
 use crate::schema::{Schema, Relation};
-use crate::db::TupleTrait;
+use crate::db::Tuple;
 
 #[derive(Default)]
 pub struct Plan {
@@ -17,7 +17,7 @@ pub struct Filter {
 }
 
 impl Filter {
-    pub fn matches_tuple(&self, tuple: &impl TupleTrait) -> bool {
+    pub fn matches_tuple(&self, tuple: &impl Tuple) -> bool {
         let left = tuple.cell_at(self.cell_pos).expect("Already validated");
         (self.comp)(left, &self.right)
     }
@@ -31,7 +31,7 @@ pub struct Join {
 }
 
 impl Join {
-    pub fn find_match<'a, T: TupleTrait>(&self, joiner_tuples: &'a [T], joinee: &impl TupleTrait) -> Option<&'a T> {
+    pub fn find_match<'a, T: Tuple>(&self, joiner_tuples: &'a [T], joinee: &impl Tuple) -> Option<&'a T> {
         let joinee_key = joinee.cell_at(self.joinee_key_pos);
         assert!(joinee_key.is_some());
 
@@ -282,7 +282,7 @@ mod tests {
 
     #[derive(Clone, Debug, PartialEq)]
     struct MockTuple(Vec<Cell>);
-    impl TupleTrait for MockTuple {
+    impl Tuple for MockTuple {
         fn cell_at(&self, pos: u32) -> Option<&Cell> {
             self.0.get(pos as usize)
         }
