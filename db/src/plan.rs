@@ -1,10 +1,14 @@
 use crate::Cell;
 use crate::dsl;
-use crate::schema::{Schema, Relation};
+use crate::schema::{Schema, Relation, Type};
 use crate::db::Tuple;
+
+use std::marker::PhantomData;
+use std::iter::zip;
 
 #[derive(Default)]
 pub struct Plan {
+    pub source: Vec<Type>,
     pub filters: Vec<Filter>,
     pub joins: Vec<Join>,
     pub final_attributes: Vec<String>,
@@ -48,27 +52,115 @@ impl Join {
     }
 }
 
-pub fn compute_plan(schema: &Schema, query: &dsl::Query) -> Result<Plan, &'static str> {
-    let rel = match &query.source {
-        dsl::Source::TableScan(name) => if let Some(rel) = schema.find_relation(name) {
-            rel
-        } else {
-            return Err("No such table");
-        }
-        _ => { return Ok(Plan::default()) },
-    };
+struct Validated;
+struct NotValidated;
+struct Attribute<State = NotValidated> {
+    name: String,
+    kind: Type,
+    state: PhantomData<State>
+}
+struct Source<State = NotValidated> {
+    attributes: Vec<Attribute<State>>
+}
 
+impl Attribute<()> {
+    fn numbered(num: usize) -> Attribute<NotValidated> {
+        Attribute{ name: num.to_string(), kind: Type::default(), state: PhantomData }
+    }
+
+    fn named(name: &str) -> Attribute<NotValidated> {
+        Attribute{ name: name.to_string(), kind: Type::default(), state: PhantomData }
+    }
+}
+
+impl Attribute<NotValidated> {
+    fn with_type(self, kind: Type) -> Attribute<NotValidated> {
+        Attribute{ name: self.name, kind: kind, state: PhantomData }
+    }
+
+    fn unknown_type(self) -> Attribute<Validated> {
+        Attribute{ name: self.name, kind: Type::NONE, state: PhantomData }
+    }
+
+    fn validated(self) -> Attribute<Validated> {
+        Attribute{ name: self.name, kind: self.kind, state: PhantomData }
+    }
+
+    fn guess_type(self, value: &str) -> Attribute<NotValidated> {
+        let kind = Cell::from_string(value).kind;
+        Attribute{ name: self.name, kind, state: PhantomData }
+    }
+}
+
+impl Source<()> {
+    fn new(schema: &Schema, dsl_source: &dsl::Source) -> Result<Source<NotValidated>, &'static str> {
+        match dsl_source {
+            dsl::Source::TableScan(name) => {
+                let rel = schema.find_relation(name).ok_or("No such table")?;
+                let attributes = rel.attributes().iter().map(|(name, kind)| Attribute::named(name).with_type(*kind)).collect();
+                Ok(Source{ attributes })
+            },
+
+            dsl::Source::Tuple(values) => {
+                let attributes = values.iter().enumerate().map(|(i, val)| Attribute::numbered(i).guess_type(val)).collect();
+                Ok(Source { attributes })
+            }
+        }
+    }
+}
+
+impl Source<NotValidated> {
+    fn validate_with_finisher(self, finisher: &Finisher) -> Result<Source<Validated>, &'static str> {
+        match finisher {
+            Finisher::Insert(rel) => {
+                let target_types = rel.types();
+                if target_types.len() != self.attributes.len() {
+                    return Err("Number of attributes in the tuple doesn't match the target table");
+                }
+
+                let attributes = zip(self.attributes, target_types).map(|(attr, kind)| attr.with_type(kind).validated()).collect();
+                Ok(Source{ attributes })
+            }
+
+            Finisher::Return => {
+                let attributes = self.attributes.into_iter().map(|attr| attr.validated()).collect();
+                Ok(Source{ attributes })
+            }
+        }
+    }
+}
+
+impl Source<Validated> {
+    fn attribute_names(&self) -> Vec<String> {
+        self.attributes.iter().map(|attr| attr.name.to_string()).collect()
+    }
+
+    fn types(&self) -> Vec<Type> {
+        self.attributes.iter().map(|attr| attr.kind).collect()
+    }
+}
+
+enum Finisher<'a> {
+    Return,
+    Insert(&'a Relation)
+}
+
+pub fn compute_plan(schema: &Schema, query: &dsl::Query) -> Result<Plan, &'static str> {
+    let source: Source<NotValidated> = Source::new(schema, &query.source)?;
+    let finisher = compute_finisher(&schema, &query.finisher)?;
+    let source = source.validate_with_finisher(&finisher)?;
 
     let joins = compute_joins(schema, query)?;
 
-    let default_attributes = rel.full_attribute_names();
+    let default_attributes = source.attribute_names();
     let final_attributes = joins.iter().last().map_or(default_attributes, |join| join.attributes.to_vec());
 
     let filters = compute_filters(schema, query)?;
 
     Ok(Plan {
+        source: source.types(),
         joins, filters,
-        final_attributes
+        final_attributes,
     })
 }
 
@@ -107,6 +199,13 @@ fn compute_filters(schema: &Schema, query: &dsl::Query) -> Result<Vec<Filter>, &
     }
 
     Ok(filters)
+}
+
+fn compute_finisher<'a>(schema: &'a Schema, dsl_finisher: &dsl::Finisher) -> Result<Finisher<'a>, &'static str> {
+    match dsl_finisher {
+        dsl::Finisher::Insert(name) => schema.find_relation(name).map(|rel| Finisher::Insert(rel)).ok_or("No such target table"),
+        _ => Ok(Finisher::Return),
+    }
 }
 
 fn right_as_cell(dsl_filter: &dsl::Filter) -> Cell {
@@ -274,6 +373,26 @@ mod tests {
         let joins = result.unwrap();
         assert_eq!(joins.len(), 1);
         joins.into_iter().next().unwrap()
+    }
+
+    #[test]
+    fn test_source_types_for_select() {
+        let mut schema = Schema::default();
+        schema.add_relation("example", &[col("id", Type::NUMBER), col("content", Type::TEXT), col("type", Type::NUMBER)]);
+
+        let result = compute_plan(&schema, &dsl::Query::scan("example")).unwrap();
+        assert_eq!(result.source, vec![Type::NUMBER, Type::TEXT, Type::NUMBER]);
+        assert_eq!(result.final_attributes, vec!["example.id", "example.content", "example.type"]);
+    }
+
+    #[test]
+    fn test_source_types_for_insert() {
+        let mut schema = Schema::default();
+        schema.add_relation("example", &[col("id", Type::NUMBER), col("content", Type::TEXT), col("title", Type::TEXT)]);
+
+        let result = compute_plan(&schema, &dsl::Query::tuple(&["1", "the-content", "2"]).insert_into("example")).unwrap();
+        assert_eq!(result.source, vec![Type::NUMBER, Type::TEXT, Type::TEXT]);
+        assert_eq!(result.final_attributes, vec!["0", "1", "2"]);
     }
 
     fn col(name: &str, kind: Type) -> Column {

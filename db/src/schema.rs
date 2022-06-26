@@ -97,6 +97,10 @@ impl Relation {
         self.columns.iter().map(|col| col.kind).collect()
     }
 
+    pub fn attributes(&self) -> Vec<(String, Type)> {
+        self.columns.iter().map(|col| (format!("{}.{}", self.name, col.name), col.kind)).collect()
+    }
+
     fn column_name_matches(&self, col: &Column, name: &str) -> bool {
         let parts: Vec<&str> = name.split('.').collect();
         match parts[..] {
