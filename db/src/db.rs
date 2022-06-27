@@ -27,13 +27,6 @@ struct TupleSet<T: Tuple> {
 }
 
 #[derive(Clone, Debug)]
-pub enum Attribute {
-    Unnamed(Type, i32),
-    Named(Type, String),
-    Absolute(Type, String, String),
-}
-
-#[derive(Clone, Debug)]
 struct EagerTuple {
     contents: Vec<Cell>,
 }
@@ -87,10 +80,9 @@ impl Database {
         let source_tuples = read_source(self, &plan.source)?;
         let joined_tuples = execute_join(self, source_tuples, &plan.joins)?;
         let filtered_tuples = filter_tuples(joined_tuples, &plan.filters)?;
-        let final_attributes: Vec<Attribute> = plan.final_attributes().iter().map(|attr| Attribute::from_full_name(&attr.name)).collect();
 
         match &query.finisher {
-            Finisher::AllColumns => Result::Ok(filtered_tuples.into_query_results(final_attributes)),
+            Finisher::AllColumns => Result::Ok(filtered_tuples.into_query_results(plan.final_attributes())),
             Finisher::Columns(_) => todo!(),
             Finisher::Count => Ok(QueryResults::count(filtered_tuples.count())),
             Finisher::Insert(table) => {
@@ -99,7 +91,7 @@ impl Database {
                     object.push(tuple.contents().iter().map(|x| x.as_bytes()).collect())
                 }
 
-                Result::Ok(filtered_tuples.into_query_results(vec![]))
+                Result::Ok(filtered_tuples.into_query_results(&vec![]))
             }
         }
     }
@@ -209,29 +201,10 @@ impl<T: Tuple> TupleSet<T> {
         TupleSet{ raw_tuples: new_tuples }
     }
 
-    fn into_query_results(self, attributes: Vec<Attribute>) -> QueryResults {
+    fn into_query_results(self, attributes: &[plan::Attribute]) -> QueryResults {
         QueryResults{
-            attributes: attributes.into_iter().map(|x| x.as_string()).collect(),
+            attributes: attributes.iter().map(|x| x.name.to_string()).collect(),
             results: self.raw_tuples.into_iter().map(|t| t.into_cells()).collect()
-        }
-    }
-}
-
-impl Attribute {
-    fn from_full_name(s: &str) -> Self {
-        let parts: Vec<_> = s.split('.').collect();
-        match parts[..] {
-            [a] => Self::Named(Type::default(), a.to_string()),
-            [a, b] => Self::Absolute(Type::default(), a.to_string(), b.to_string()),
-            _ => panic!(),
-        }
-    }
-
-    fn as_string(&self) -> String {
-        match self {
-            Attribute::Unnamed(_, i) => i.to_string(),
-            Attribute::Named(_, s) => s.to_string(),
-            Attribute::Absolute(_, t, s) => format!("{}.{}", t, s),
         }
     }
 }
