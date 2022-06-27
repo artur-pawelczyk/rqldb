@@ -52,15 +52,21 @@ impl Join {
     }
 }
 
-struct Validated;
-struct NotValidated;
-struct Attribute<State = NotValidated> {
+pub(crate) struct Validated;
+pub(crate) struct NotValidated;
+pub(crate) struct Attribute<State = NotValidated> {
     name: String,
     kind: Type,
     state: PhantomData<State>
 }
-struct Source<State = NotValidated> {
-    attributes: Vec<Attribute<State>>
+pub(crate) struct Source<'a, State = NotValidated> {
+    pub attributes: Vec<Attribute<State>>,
+    pub contents: Contents<'a>,
+}
+pub(crate) enum Contents<'a> {
+    TableScan(&'a Relation),
+    Tuple(Vec<String>),
+    Nil,
 }
 
 impl Attribute<()> {
@@ -78,39 +84,35 @@ impl Attribute<NotValidated> {
         Attribute{ name: self.name, kind: kind, state: PhantomData }
     }
 
-    fn unknown_type(self) -> Attribute<Validated> {
-        Attribute{ name: self.name, kind: Type::NONE, state: PhantomData }
-    }
-
     fn validated(self) -> Attribute<Validated> {
         Attribute{ name: self.name, kind: self.kind, state: PhantomData }
     }
 
     fn guess_type(self, value: &str) -> Attribute<NotValidated> {
-        let kind = Cell::from_string(value).kind;
+        let kind = Cell::from_string(value).kind; // TODO: Unnecessary allocation
         Attribute{ name: self.name, kind, state: PhantomData }
     }
 }
 
-impl Source<()> {
-    fn new(schema: &Schema, dsl_source: &dsl::Source) -> Result<Source<NotValidated>, &'static str> {
+impl<'a> Source<'a, ()> {
+    fn new(schema: &Schema, dsl_source: &dsl::Source) -> Result<Source<'a, NotValidated>, &'static str> {
         match dsl_source {
             dsl::Source::TableScan(name) => {
                 let rel = schema.find_relation(name).ok_or("No such table")?;
                 let attributes = rel.attributes().iter().map(|(name, kind)| Attribute::named(name).with_type(*kind)).collect();
-                Ok(Source{ attributes })
+                Ok(Source{ attributes, contents: Contents::Nil })
             },
 
             dsl::Source::Tuple(values) => {
                 let attributes = values.iter().enumerate().map(|(i, val)| Attribute::numbered(i).guess_type(val)).collect();
-                Ok(Source { attributes })
+                Ok(Source { attributes, contents: Contents::Nil })
             }
         }
     }
 }
 
-impl Source<NotValidated> {
-    fn validate_with_finisher(self, finisher: &Finisher) -> Result<Source<Validated>, &'static str> {
+impl<'a> Source<'a, NotValidated> {
+    fn validate_with_finisher(self, finisher: &Finisher) -> Result<Source<'a, Validated>, &'static str> {
         match finisher {
             Finisher::Insert(rel) => {
                 let target_types = rel.types();
@@ -118,19 +120,23 @@ impl Source<NotValidated> {
                     return Err("Number of attributes in the tuple doesn't match the target table");
                 }
 
-                let attributes = zip(self.attributes, target_types).map(|(attr, kind)| attr.with_type(kind).validated()).collect();
-                Ok(Source{ attributes })
+                if zip(&self.attributes, target_types).any(|(attr, expected)| attr.kind != expected) {
+                        return Err("Type incompatible with the target table");
+                }
+
+                let attributes = self.attributes.into_iter().map(|attr| attr.validated()).collect();
+                Ok(Source{ attributes, contents: Contents::Nil })
             }
 
             Finisher::Return => {
                 let attributes = self.attributes.into_iter().map(|attr| attr.validated()).collect();
-                Ok(Source{ attributes })
+                Ok(Source{ attributes, contents: Contents::Nil })
             }
         }
     }
 }
 
-impl Source<Validated> {
+impl<'a> Source<'a, Validated> {
     fn attribute_names(&self) -> Vec<String> {
         self.attributes.iter().map(|attr| attr.name.to_string()).collect()
     }
@@ -390,9 +396,15 @@ mod tests {
         let mut schema = Schema::default();
         schema.add_relation("example", &[col("id", Type::NUMBER), col("content", Type::TEXT), col("title", Type::TEXT)]);
 
-        let result = compute_plan(&schema, &dsl::Query::tuple(&["1", "the-content", "2"]).insert_into("example")).unwrap();
+        let result = compute_plan(&schema, &dsl::Query::tuple(&["1", "the-content", "title"]).insert_into("example")).unwrap();
         assert_eq!(result.source, vec![Type::NUMBER, Type::TEXT, Type::TEXT]);
         assert_eq!(result.final_attributes, vec!["0", "1", "2"]);
+
+        let wrong_tuple_len = compute_plan(&schema, &dsl::Query::tuple(&["1", "the-content"]).insert_into("example"));
+        assert!(wrong_tuple_len.is_err());
+
+        let wrong_type = compute_plan(&schema, &dsl::Query::tuple(&["not-ID", "the-content", "something"]).insert_into("example"));
+        assert!(wrong_type.is_err());
     }
 
     fn col(name: &str, kind: Type) -> Column {

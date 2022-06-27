@@ -3,7 +3,7 @@ use std::iter::zip;
 use std::cell::RefCell;
 
 use crate::dsl::{Command, Query, Source, Finisher};
-use crate::schema::{Column, Schema, Type, Relation};
+use crate::schema::{Schema, Type, Relation};
 use crate::{Cell, QueryResults};
 use crate::plan;
 
@@ -99,10 +99,8 @@ impl Database {
             Finisher::Columns(_) => todo!(),
             Finisher::Count => Ok(QueryResults::count(filtered_tuples.count())),
             Finisher::Insert(table) => {
-                let table_schema = self.schema.find_relation(table).ok_or("No such table")?;
                 let mut object = self.objects.get(table).expect("This shouldn't happen").borrow_mut();
                 for tuple in filtered_tuples.iter() {
-                    if !validate_with_schema(&table_schema.columns, tuple) { return Err("Invalid input") }
                     object.push(tuple.contents().iter().map(|x| x.as_bytes()).collect())
                 }
 
@@ -116,14 +114,6 @@ impl Database {
         let tuple_set = TupleSet::from_object(rel, &self.objects.get(name).ok_or("Could not find the object")?.borrow());
 
         Ok(tuple_set)
-    }
-}
-
-fn validate_with_schema(columns: &[Column], tuple: &EagerTuple) -> bool {
-    if columns.len() == tuple.contents().len() {
-        zip(columns, tuple.contents()).all(|(col, cell)| col.kind == cell.kind)
-    } else {
-        false
     }
 }
 
