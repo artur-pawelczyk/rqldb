@@ -10,7 +10,16 @@ pub(crate) struct Plan<'a> {
     pub source: Source<'a, Validated>,
     pub filters: Vec<Filter>,
     pub joins: Vec<Join>,
-    pub final_attributes: Vec<String>,
+}
+
+impl<'a> Plan<'a> {
+    pub fn final_attributes(&self) -> &[Attribute] {
+        if let Some(last_join) = self.joins.iter().last() {
+            &last_join.attributes
+        } else {
+            &self.source.attributes
+        }
+    }
 }
 
 pub(crate) struct Filter {
@@ -30,7 +39,7 @@ pub(crate) struct Join {
     table: String,
     joinee_key_pos: u32,
     joiner_key_pos: u32,
-    attributes: Vec<String>,
+    attributes: Vec<Attribute>,
 }
 
 impl Join {
@@ -49,15 +58,15 @@ impl Join {
 
 pub(crate) struct Validated;
 pub(crate) struct NotValidated;
-pub(crate) struct Attribute<State = NotValidated> {
-    name: String,
-    kind: Type,
-    state: PhantomData<State>
+pub(crate) struct Attribute {
+    pub name: String,
+    pub kind: Type,
 }
 
 pub(crate) struct Source<'a, State = Validated> {
-    pub attributes: Vec<Attribute<State>>,
+    pub attributes: Vec<Attribute>,
     pub contents: Contents<'a>,
+    state: PhantomData<State>,
 }
 pub(crate) enum Contents<'a> {
     TableScan(&'a Relation),
@@ -71,28 +80,22 @@ impl<'a> Default for Contents<'a> {
     }
 }
 
-impl Attribute<()> {
-    fn numbered(num: usize) -> Attribute<NotValidated> {
-        Attribute{ name: num.to_string(), kind: Type::default(), state: PhantomData }
+impl Attribute {
+    fn numbered(num: usize) -> Attribute {
+        Attribute{ name: num.to_string(), kind: Type::default() }
     }
 
-    fn named(name: &str) -> Attribute<NotValidated> {
-        Attribute{ name: name.to_string(), kind: Type::default(), state: PhantomData }
-    }
-}
-
-impl Attribute<NotValidated> {
-    fn with_type(self, kind: Type) -> Attribute<NotValidated> {
-        Attribute{ name: self.name, kind: kind, state: PhantomData }
+    fn named(name: &str) -> Attribute {
+        Attribute{ name: name.to_string(), kind: Type::default() }
     }
 
-    fn validated(self) -> Attribute<Validated> {
-        Attribute{ name: self.name, kind: self.kind, state: PhantomData }
+    fn with_type(self, kind: Type) -> Attribute {
+        Attribute{ name: self.name, kind: kind }
     }
 
-    fn guess_type(self, value: &str) -> Attribute<NotValidated> {
+    fn guess_type(self, value: &str) -> Attribute {
         let kind = Cell::from_string(value).kind; // TODO: Unnecessary allocation
-        Attribute{ name: self.name, kind, state: PhantomData }
+        Attribute{ name: self.name, kind }
     }
 }
 
@@ -102,12 +105,12 @@ impl<'a> Source<'a, ()> {
             dsl::Source::TableScan(name) => {
                 let rel = schema.find_relation(name).ok_or("No such table")?;
                 let attributes = rel.attributes().iter().map(|(name, kind)| Attribute::named(name).with_type(*kind)).collect();
-                Ok(Source{ attributes, contents: Contents::TableScan(rel) })
+                Ok(Source{ attributes, contents: Contents::TableScan(rel), state: PhantomData })
             },
 
             dsl::Source::Tuple(values) => {
                 let attributes = values.iter().enumerate().map(|(i, val)| Attribute::numbered(i).guess_type(val)).collect();
-                Ok(Source { attributes, contents: Contents::Tuple(values.to_vec()) })
+                Ok(Source { attributes, contents: Contents::Tuple(values.to_vec()), state: PhantomData })
             }
         }
     }
@@ -126,21 +129,13 @@ impl<'a> Source<'a, NotValidated> {
                         return Err("Type incompatible with the target table");
                 }
 
-                let attributes = self.attributes.into_iter().map(|attr| attr.validated()).collect();
-                Ok(Source{ attributes, contents: self.contents })
+                Ok(Source{ attributes: self.attributes, contents: self.contents, state: PhantomData })
             }
 
             Finisher::Return => {
-                let attributes = self.attributes.into_iter().map(|attr| attr.validated()).collect();
-                Ok(Source{ attributes, contents: self.contents })
+                Ok(Source{ attributes: self.attributes, contents: self.contents, state: PhantomData })
             }
         }
-    }
-}
-
-impl<'a> Source<'a, Validated> {
-    fn attribute_names(&self) -> Vec<String> {
-        self.attributes.iter().map(|attr| attr.name.to_string()).collect()
     }
 }
 
@@ -156,15 +151,12 @@ pub(crate) fn compute_plan<'a>(schema: &'a Schema, query: &dsl::Query) -> Result
 
     let joins = compute_joins(schema, query)?;
 
-    let default_attributes = source.attribute_names();
-    let final_attributes = joins.iter().last().map_or(default_attributes, |join| join.attributes.to_vec());
-
     let filters = compute_filters(schema, query)?;
 
     Ok(Plan {
         source,
-        joins, filters,
-        final_attributes,
+        joins,
+        filters,
     })
 }
 
@@ -180,7 +172,8 @@ fn compute_filters(schema: &Schema, query: &dsl::Query) -> Result<Vec<Filter>, &
 
     let default_attributes = rel.full_attribute_names();
     let joins = compute_joins(schema, query)?;
-    let attributes = joins.iter().last().map_or(&default_attributes, |join| &join.attributes);
+    let attributes = joins.iter().last()
+        .map_or(default_attributes, |join| join.attributes.iter().map(|attr| attr.name.to_string()).collect());
 
     let mut filters = Vec::with_capacity(query.filters.len());
     for dsl_filter in &query.filters {
@@ -268,10 +261,10 @@ fn compute_joins(schema: &Schema, query: &dsl::Query) -> Result<Vec<Join>, &'sta
     Ok(joins)
 }
 
-fn compute_attributes(joinee: &Relation, joiner: &Relation) -> Vec<String> {
-    let mut combined = joinee.full_attribute_names();
-    combined.extend(joiner.full_attribute_names());
-    combined
+fn compute_attributes(joinee: &Relation, joiner: &Relation) -> Vec<Attribute> {
+    let mut combined = joinee.attributes();
+    combined.extend(joiner.attributes());
+    combined.into_iter().map(|(name, kind)| Attribute{name, kind }).collect()
 }
 
 #[cfg(test)]
@@ -336,7 +329,7 @@ mod tests {
 
         let joins = expect_join(compute_joins(&schema, &dsl::Query::scan("document").join("type", "document.type_id", "type.id")));
         assert_eq!(joins.source_table(), "type");
-        assert_eq!(joins.attributes, vec!["document.name", "document.type_id", "type.id", "type.name"]);
+        assert_eq!(attribute_names(&joins.attributes), vec!["document.name", "document.type_id", "type.id", "type.name"]);
 
         let missing_source_table = compute_joins(&schema, &dsl::Query::scan("nothing").join("type", "a", "b"));
         assert!(missing_source_table.is_err());
@@ -386,7 +379,7 @@ mod tests {
 
         let result = compute_plan(&schema, &dsl::Query::scan("example")).unwrap();
         assert_eq!(source_attributes(&result.source), vec![Type::NUMBER, Type::TEXT, Type::NUMBER]);
-        assert_eq!(result.final_attributes, vec!["example.id", "example.content", "example.type"]);
+        assert_eq!(attribute_names(&result.final_attributes()), vec!["example.id", "example.content", "example.type"]);
     }
 
     #[test]
@@ -396,7 +389,7 @@ mod tests {
 
         let result = compute_plan(&schema, &dsl::Query::tuple(&["1", "the-content", "title"]).insert_into("example")).unwrap();
         assert_eq!(source_attributes(&result.source), vec![Type::NUMBER, Type::TEXT, Type::TEXT]);
-        assert_eq!(result.final_attributes, vec!["0", "1", "2"]);
+        assert_eq!(attribute_names(&result.final_attributes()), vec!["0", "1", "2"]);
 
         let wrong_tuple_len = compute_plan(&schema, &dsl::Query::tuple(&["1", "the-content"]).insert_into("example"));
         assert!(wrong_tuple_len.is_err());
@@ -411,6 +404,10 @@ mod tests {
 
     fn source_attributes(source: &Source) -> Vec<Type> {
         source.attributes.iter().map(|attr| attr.kind).collect()
+    }
+
+    fn attribute_names(attrs: &[Attribute]) -> Vec<&str> {
+        attrs.iter().map(|attr| attr.name.as_str()).collect()
     }
 
     #[derive(Clone, Debug, PartialEq)]

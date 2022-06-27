@@ -87,7 +87,7 @@ impl Database {
         let source_tuples = read_source(self, &plan.source)?;
         let joined_tuples = execute_join(self, source_tuples, &plan.joins)?;
         let filtered_tuples = filter_tuples(joined_tuples, &plan.filters)?;
-        let final_attributes: Vec<Attribute> = plan.final_attributes.iter().map(|name| Attribute::from_full_name(name)).collect();
+        let final_attributes: Vec<Attribute> = plan.final_attributes().iter().map(|attr| Attribute::from_full_name(&attr.name)).collect();
 
         match &query.finisher {
             Finisher::AllColumns => Result::Ok(filtered_tuples.into_query_results(final_attributes)),
