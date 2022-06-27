@@ -59,6 +59,7 @@ impl Join {
 pub(crate) struct Validated;
 pub(crate) struct NotValidated;
 pub(crate) struct Attribute {
+    pub pos: u32,
     pub name: String,
     pub kind: Type,
 }
@@ -82,20 +83,20 @@ impl<'a> Default for Contents<'a> {
 
 impl Attribute {
     fn numbered(num: usize) -> Attribute {
-        Attribute{ name: num.to_string(), kind: Type::default() }
+        Attribute{ pos: num as u32, name: num.to_string(), kind: Type::default() }
     }
 
-    fn named(name: &str) -> Attribute {
-        Attribute{ name: name.to_string(), kind: Type::default() }
+    fn named(pos: u32, name: &str) -> Attribute {
+        Attribute{ pos, name: name.to_string(), kind: Type::default() }
     }
 
     fn with_type(self, kind: Type) -> Attribute {
-        Attribute{ name: self.name, kind: kind }
+        Attribute{ pos: self.pos, name: self.name, kind: kind }
     }
 
     fn guess_type(self, value: &str) -> Attribute {
         let kind = Cell::from_string(value).kind; // TODO: Unnecessary allocation
-        Attribute{ name: self.name, kind }
+        Attribute{ pos: self.pos, name: self.name, kind }
     }
 }
 
@@ -104,7 +105,8 @@ impl<'a> Source<'a, ()> {
         match dsl_source {
             dsl::Source::TableScan(name) => {
                 let rel = schema.find_relation(name).ok_or("No such table")?;
-                let attributes = rel.attributes().iter().map(|(name, kind)| Attribute::named(name).with_type(*kind)).collect();
+                let attributes = rel.attributes().iter().enumerate()
+                    .map(|(i, (name, kind))| Attribute::named(i as u32, name).with_type(*kind)).collect();
                 Ok(Source{ attributes, contents: Contents::TableScan(rel), state: PhantomData })
             },
 
@@ -264,7 +266,7 @@ fn compute_joins(schema: &Schema, query: &dsl::Query) -> Result<Vec<Join>, &'sta
 fn compute_attributes(joinee: &Relation, joiner: &Relation) -> Vec<Attribute> {
     let mut combined = joinee.attributes();
     combined.extend(joiner.attributes());
-    combined.into_iter().map(|(name, kind)| Attribute{name, kind }).collect()
+    combined.into_iter().enumerate().map(|(i, (name, kind))| Attribute{ pos: i as u32, name, kind }).collect()
 }
 
 #[cfg(test)]
