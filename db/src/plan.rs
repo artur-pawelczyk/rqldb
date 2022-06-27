@@ -6,15 +6,14 @@ use crate::db::Tuple;
 use std::marker::PhantomData;
 use std::iter::zip;
 
-#[derive(Default)]
-pub struct Plan {
-    pub source: Vec<Type>,
+pub(crate) struct Plan<'a> {
+    pub source: Source<'a, Validated>,
     pub filters: Vec<Filter>,
     pub joins: Vec<Join>,
     pub final_attributes: Vec<String>,
 }
 
-pub struct Filter {
+pub(crate) struct Filter {
     cell_pos: u32,
     right: Cell,
     comp: Box<dyn Fn(&Cell, &Cell) -> bool>,
@@ -27,7 +26,7 @@ impl Filter {
     }
 }
 
-pub struct Join {
+pub(crate) struct Join {
     table: String,
     joinee_key_pos: u32,
     joiner_key_pos: u32,
@@ -46,10 +45,6 @@ impl Join {
     pub fn source_table(&self) -> &str {
         &self.table
     }
-
-    pub fn take_attributes(self) -> Vec<String> {
-        self.attributes
-    }
 }
 
 pub(crate) struct Validated;
@@ -59,7 +54,8 @@ pub(crate) struct Attribute<State = NotValidated> {
     kind: Type,
     state: PhantomData<State>
 }
-pub(crate) struct Source<'a, State = NotValidated> {
+
+pub(crate) struct Source<'a, State = Validated> {
     pub attributes: Vec<Attribute<State>>,
     pub contents: Contents<'a>,
 }
@@ -67,6 +63,12 @@ pub(crate) enum Contents<'a> {
     TableScan(&'a Relation),
     Tuple(Vec<String>),
     Nil,
+}
+
+impl<'a> Default for Contents<'a> {
+    fn default() -> Self {
+        Self::Nil
+    }
 }
 
 impl Attribute<()> {
@@ -95,17 +97,17 @@ impl Attribute<NotValidated> {
 }
 
 impl<'a> Source<'a, ()> {
-    fn new(schema: &Schema, dsl_source: &dsl::Source) -> Result<Source<'a, NotValidated>, &'static str> {
+    fn new(schema: &'a Schema, dsl_source: &dsl::Source) -> Result<Source<'a, NotValidated>, &'static str> {
         match dsl_source {
             dsl::Source::TableScan(name) => {
                 let rel = schema.find_relation(name).ok_or("No such table")?;
                 let attributes = rel.attributes().iter().map(|(name, kind)| Attribute::named(name).with_type(*kind)).collect();
-                Ok(Source{ attributes, contents: Contents::Nil })
+                Ok(Source{ attributes, contents: Contents::TableScan(rel) })
             },
 
             dsl::Source::Tuple(values) => {
                 let attributes = values.iter().enumerate().map(|(i, val)| Attribute::numbered(i).guess_type(val)).collect();
-                Ok(Source { attributes, contents: Contents::Nil })
+                Ok(Source { attributes, contents: Contents::Tuple(values.to_vec()) })
             }
         }
     }
@@ -125,12 +127,12 @@ impl<'a> Source<'a, NotValidated> {
                 }
 
                 let attributes = self.attributes.into_iter().map(|attr| attr.validated()).collect();
-                Ok(Source{ attributes, contents: Contents::Nil })
+                Ok(Source{ attributes, contents: self.contents })
             }
 
             Finisher::Return => {
                 let attributes = self.attributes.into_iter().map(|attr| attr.validated()).collect();
-                Ok(Source{ attributes, contents: Contents::Nil })
+                Ok(Source{ attributes, contents: self.contents })
             }
         }
     }
@@ -140,10 +142,6 @@ impl<'a> Source<'a, Validated> {
     fn attribute_names(&self) -> Vec<String> {
         self.attributes.iter().map(|attr| attr.name.to_string()).collect()
     }
-
-    fn types(&self) -> Vec<Type> {
-        self.attributes.iter().map(|attr| attr.kind).collect()
-    }
 }
 
 enum Finisher<'a> {
@@ -151,7 +149,7 @@ enum Finisher<'a> {
     Insert(&'a Relation)
 }
 
-pub fn compute_plan(schema: &Schema, query: &dsl::Query) -> Result<Plan, &'static str> {
+pub(crate) fn compute_plan<'a>(schema: &'a Schema, query: &dsl::Query) -> Result<Plan<'a>, &'static str> {
     let source: Source<NotValidated> = Source::new(schema, &query.source)?;
     let finisher = compute_finisher(&schema, &query.finisher)?;
     let source = source.validate_with_finisher(&finisher)?;
@@ -164,7 +162,7 @@ pub fn compute_plan(schema: &Schema, query: &dsl::Query) -> Result<Plan, &'stati
     let filters = compute_filters(schema, query)?;
 
     Ok(Plan {
-        source: source.types(),
+        source,
         joins, filters,
         final_attributes,
     })
@@ -387,7 +385,7 @@ mod tests {
         schema.add_relation("example", &[col("id", Type::NUMBER), col("content", Type::TEXT), col("type", Type::NUMBER)]);
 
         let result = compute_plan(&schema, &dsl::Query::scan("example")).unwrap();
-        assert_eq!(result.source, vec![Type::NUMBER, Type::TEXT, Type::NUMBER]);
+        assert_eq!(source_attributes(&result.source), vec![Type::NUMBER, Type::TEXT, Type::NUMBER]);
         assert_eq!(result.final_attributes, vec!["example.id", "example.content", "example.type"]);
     }
 
@@ -397,7 +395,7 @@ mod tests {
         schema.add_relation("example", &[col("id", Type::NUMBER), col("content", Type::TEXT), col("title", Type::TEXT)]);
 
         let result = compute_plan(&schema, &dsl::Query::tuple(&["1", "the-content", "title"]).insert_into("example")).unwrap();
-        assert_eq!(result.source, vec![Type::NUMBER, Type::TEXT, Type::TEXT]);
+        assert_eq!(source_attributes(&result.source), vec![Type::NUMBER, Type::TEXT, Type::TEXT]);
         assert_eq!(result.final_attributes, vec!["0", "1", "2"]);
 
         let wrong_tuple_len = compute_plan(&schema, &dsl::Query::tuple(&["1", "the-content"]).insert_into("example"));
@@ -409,6 +407,10 @@ mod tests {
 
     fn col(name: &str, kind: Type) -> Column {
         Column{ name: name.to_string(), kind }
+    }
+
+    fn source_attributes(source: &Source) -> Vec<Type> {
+        source.attributes.iter().map(|attr| attr.kind).collect()
     }
 
     #[derive(Clone, Debug, PartialEq)]

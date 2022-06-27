@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::iter::zip;
 use std::cell::RefCell;
 
-use crate::dsl::{Command, Query, Source, Finisher};
+use crate::dsl::{Command, Query, Finisher};
 use crate::schema::{Schema, Type, Relation};
 use crate::{Cell, QueryResults};
 use crate::plan;
@@ -50,11 +50,6 @@ impl EagerTuple {
         EagerTuple{ contents: cells }
     }
 
-
-    pub fn into_cells(self) -> Vec<Cell> {
-        self.contents
-    }
-
     pub fn contents(&self) -> &[Cell] {
         &self.contents
     }
@@ -89,7 +84,7 @@ impl Database {
 
     pub fn execute_query(&self, query: &Query) -> Result<QueryResults, &str> {
         let plan = plan::compute_plan(&self.schema, query)?;
-        let source_tuples = read_source(self, &query.source)?;
+        let source_tuples = read_source(self, &plan.source)?;
         let joined_tuples = execute_join(self, source_tuples, &plan.joins)?;
         let filtered_tuples = filter_tuples(joined_tuples, &plan.filters)?;
         let final_attributes: Vec<Attribute> = plan.final_attributes.iter().map(|name| Attribute::from_full_name(name)).collect();
@@ -117,15 +112,11 @@ impl Database {
     }
 }
 
-fn read_source(db: &Database, source: &Source) -> Result<TupleSet<EagerTuple>, &'static str> {
-    return match &source {
-        Source::TableScan(name) => {
-            db.scan_table(name)
-        },
-        Source::Tuple(values) => {
-            let cells = values.iter().map(|x| Cell::from_string(x)).collect();
-            Ok(TupleSet::single_from_cells(cells))
-        }
+fn read_source(db: &Database, source: &plan::Source) -> Result<TupleSet<EagerTuple>, &'static str> {
+    match &source.contents {
+        plan::Contents::TableScan(rel) => db.scan_table(&rel.name),
+        plan::Contents::Tuple(values) => Ok(TupleSet::single_from_cells(values.iter().map(|x| Cell::from_string(x)).collect())),
+        _ => panic!()
     }
 }
 
