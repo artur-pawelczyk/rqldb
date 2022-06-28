@@ -8,9 +8,8 @@ use crate::{Cell, QueryResults};
 use crate::plan;
 
 pub(crate) trait Tuple {
-    fn cell_at(&self, pos: u32) -> Option<&Cell>;
-    fn into_cells(self) -> Vec<Cell>;
     fn cell(&self, attr: &plan::Attribute) -> Cell;
+    fn all_cells(&self) -> Vec<Cell>;
 }
 
 #[derive(Default)]
@@ -49,28 +48,19 @@ impl EagerTuple {
     }
 
     fn add_cells(mut self, other: &impl Tuple) -> Self {
-        let mut i = 0;
-        while let Some(cell) = other.cell_at(i) {
-            i += 1;
-            self.contents.push(cell.clone());
-        }
-
+        self.contents.extend(other.all_cells());
         self
     }    
 }
 
 
 impl Tuple for EagerTuple {
-    fn cell_at(&self, i: u32) -> Option<&Cell> {
-        self.contents.get(i as usize)
-    }
-
-    fn into_cells(self) -> Vec<Cell> {
-        self.contents
-    }
-
     fn cell(&self, attr: &plan::Attribute) -> Cell {
         self.contents.get(attr.pos).expect("Already validated").clone()
+    }
+
+    fn all_cells(&self) -> Vec<Cell> {
+        self.contents.to_vec()
     }
 }
 
@@ -202,14 +192,14 @@ impl<T: Tuple> TupleSet<T> {
     }
 
     fn into_eager(self) -> TupleSet<EagerTuple> {
-        let new_tuples = self.raw_tuples.into_iter().map(|t| EagerTuple::from_cells(t.into_cells())).collect();
+        let new_tuples = self.raw_tuples.into_iter().map(|t| EagerTuple::from_cells(t.all_cells())).collect();
         TupleSet{ raw_tuples: new_tuples }
     }
 
     fn into_query_results(self, attributes: &[plan::Attribute]) -> QueryResults {
         QueryResults{
             attributes: attributes.iter().map(|x| x.name.to_string()).collect(),
-            results: self.raw_tuples.into_iter().map(|t| t.into_cells()).collect()
+            results: self.raw_tuples.into_iter().map(|t| t.all_cells()).collect()
         }
     }
 }

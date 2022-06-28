@@ -420,16 +420,12 @@ mod tests {
     #[derive(Clone, Debug, PartialEq)]
     struct MockTuple(Vec<Cell>);
     impl Tuple for MockTuple {
-        fn cell_at(&self, pos: u32) -> Option<&Cell> {
-            self.0.get(pos as usize)
-        }
-
-        fn into_cells(self) -> Vec<Cell> {
-            self.0
-        }
-
         fn cell(&self, attr: &Attribute) -> Cell {
             self.0.get(attr.pos).unwrap().clone()
+        }
+
+        fn all_cells(&self) -> Vec<Cell> {
+            self.0.to_vec()
         }
     }
 }
