@@ -7,9 +7,10 @@ use crate::schema::{Schema, Type, Relation};
 use crate::{Cell, QueryResults};
 use crate::plan;
 
-pub trait Tuple {
+pub(crate) trait Tuple {
     fn cell_at(&self, pos: u32) -> Option<&Cell>;
     fn into_cells(self) -> Vec<Cell>;
+    fn cell(&self, attr: &plan::Attribute) -> Cell;
 }
 
 #[derive(Default)]
@@ -66,6 +67,10 @@ impl Tuple for EagerTuple {
 
     fn into_cells(self) -> Vec<Cell> {
         self.contents
+    }
+
+    fn cell(&self, attr: &plan::Attribute) -> Cell {
+        self.contents.get(attr.pos).expect("Already validated").clone()
     }
 }
 
@@ -144,7 +149,7 @@ fn apply_filter<T: Tuple>(source: TupleSet<T>, filter: &plan::Filter) -> TupleSe
     source.filter(|tuple| filter.matches_tuple(tuple))
 }
 
-pub trait TupleSearch {
+pub(crate) trait TupleSearch {
     fn search<F>(&self, fun: F) -> Option<&dyn Tuple>
     where F: Fn(&dyn Tuple) -> bool;
 }

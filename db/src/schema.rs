@@ -8,7 +8,7 @@ pub struct Relation {
     pub columns: Vec<Column>
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Column {
     pub name: String,
     pub kind: Type
@@ -39,7 +39,27 @@ impl Schema {
     }
 }
 
+pub struct ColumnIter<'a> {
+    name: &'a str,
+    raw: &'a [Column],
+    pos: usize,
+}
+
+impl<'a> Iterator for ColumnIter<'a> {
+    type Item = (String, Type);
+
+    fn next(&mut self) -> Option<(String, Type)> {
+        self.pos += 1;
+        self.raw.get(self.pos - 1)
+            .map(|col| (format!("{}.{}", self.name, col.name), col.kind))
+    }
+}
+
 impl Relation {
+
+    pub fn columns<'a>(&'a self) -> ColumnIter<'a> {
+        ColumnIter{ name: self.name.as_str(), raw: &self.columns, pos: 0 }
+    }
     
     /// # Examples
     /// 

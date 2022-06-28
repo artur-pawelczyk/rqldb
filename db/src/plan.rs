@@ -30,32 +30,31 @@ impl<'a> Plan<'a> {
 }
 
 pub(crate) struct Filter {
-    cell_pos: u32,
+    attribute: Attribute,
     right: Cell,
     comp: Box<dyn Fn(&Cell, &Cell) -> bool>,
 }
 
 impl Filter {
     pub fn matches_tuple(&self, tuple: &impl Tuple) -> bool {
-        let left = tuple.cell_at(self.cell_pos).expect("Already validated");
-        (self.comp)(left, &self.right)
+        let left = tuple.cell(&self.attribute);
+        (self.comp)(&left, &self.right)
     }
 }
 
 pub(crate) struct Join {
     table: String,
-    joinee_key_pos: u32,
-    joiner_key_pos: u32,
+    joinee_key: Attribute,
+    joiner_key: Attribute,
     attributes: Vec<Attribute>,
 }
 
 impl Join {
     pub fn find_match<'a, T: Tuple>(&self, joiner_tuples: &'a [T], joinee: &impl Tuple) -> Option<&'a T> {
-        let joinee_key = joinee.cell_at(self.joinee_key_pos);
-        assert!(joinee_key.is_some());
+        let joinee_key = joinee.cell(&self.joinee_key);
 
         joiner_tuples.iter()
-            .find(|tuple| tuple.cell_at(self.joiner_key_pos) == joinee_key)
+            .find(|tuple| tuple.cell(&self.joiner_key) == joinee_key)
     }
 
     pub fn source_table(&self) -> &str {
@@ -63,8 +62,9 @@ impl Join {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct Attribute {
-    pub pos: u32,
+    pub pos: usize,
     pub name: String,
     pub kind: Type,
 }
@@ -89,10 +89,10 @@ impl<'a> Default for Contents<'a> {
 
 impl Attribute {
     fn numbered(num: usize) -> Attribute {
-        Attribute{ pos: num as u32, name: num.to_string(), kind: Type::default() }
+        Attribute{ pos: num, name: num.to_string(), kind: Type::default() }
     }
 
-    fn named(pos: u32, name: &str) -> Attribute {
+    fn named(pos: usize, name: &str) -> Attribute {
         Attribute{ pos, name: name.to_string(), kind: Type::default() }
     }
 
@@ -104,6 +104,12 @@ impl Attribute {
         let kind = Cell::from_string(value).kind; // TODO: Unnecessary allocation
         Attribute{ pos: self.pos, name: self.name, kind }
     }
+
+    fn in_table(table: &Relation, name: &str) -> Option<Attribute> {
+        table.columns().enumerate()
+            .find(|(_, (col_name, _))| col_name == &name)
+            .map(|(pos, (col_name, kind))| Attribute{ pos: pos, name: col_name.to_string(), kind })
+    }
 }
 
 impl<'a> Source<'a> {
@@ -112,7 +118,7 @@ impl<'a> Source<'a> {
             dsl::Source::TableScan(name) => {
                 let rel = schema.find_relation(name).ok_or("No such table")?;
                 let attributes = rel.attributes().iter().enumerate()
-                    .map(|(i, (name, kind))| Attribute::named(i as u32, name).with_type(*kind)).collect();
+                    .map(|(i, (name, kind))| Attribute::named(i, name).with_type(*kind)).collect();
                 Ok(Source{ attributes, contents: Contents::TableScan(rel) })
             },
 
@@ -178,10 +184,10 @@ fn compute_filters<'a>(plan: Plan<'a>, query: &dsl::Query) -> Result<Plan<'a>, &
     let attributes = plan.final_attributes();
     let mut filters = Vec::with_capacity(query.filters.len());
     for dsl_filter in &query.filters {
-        if let Some(pos) = attributes.iter().enumerate().find(|(_, attr)| attr.name == filter_left(dsl_filter)).map(|(i, _)| i) {
+        if let Some(attr) = attributes.iter().find(|attr| attr.name == filter_left(dsl_filter)) {
             let op = filter_operator(dsl_filter);
             filters.push(Filter{
-                cell_pos: pos as u32,
+                attribute: attr.clone(),
                 right: right_as_cell(dsl_filter),
                 comp: Box::new(move |a, b| match op {
                     dsl::Operator::EQ => a == b,
@@ -244,11 +250,11 @@ fn compute_joins<'a>(plan: Plan<'a>, schema: &Schema, query: &dsl::Query) -> Res
             None => return Err("No such table")
         };
 
-        if let Some(joinee_key_pos) = joinee_table.column_position(&join_source.left) {
-            if let Some(joiner_key_pos) = joiner_table.column_position(&join_source.right) {
+        if let Some(joinee_key) = Attribute::in_table(joinee_table, &join_source.left) {
+            if let Some(joiner_key) = Attribute::in_table(joiner_table, &join_source.right) {
                 joins.push(Join{
                     table: joiner_table.name.to_string(),
-                    joinee_key_pos, joiner_key_pos,
+                    joinee_key, joiner_key,
                     attributes: compute_attributes(joinee_table, joiner_table),
                 })
             } else {
@@ -265,7 +271,7 @@ fn compute_joins<'a>(plan: Plan<'a>, schema: &Schema, query: &dsl::Query) -> Res
 fn compute_attributes(joinee: &Relation, joiner: &Relation) -> Vec<Attribute> {
     let mut combined = joinee.attributes();
     combined.extend(joiner.attributes());
-    combined.into_iter().enumerate().map(|(i, (name, kind))| Attribute{ pos: i as u32, name, kind }).collect()
+    combined.into_iter().enumerate().map(|(i, (name, kind))| Attribute{ pos: i, name, kind }).collect()
 }
 
 #[cfg(test)]
@@ -280,8 +286,8 @@ mod tests {
         schema.add_relation("example", &[col("id", Type::NUMBER), col("content", Type::TEXT), col("type", Type::NUMBER)]);
 
         let filters = expect_filters(compute_plan(&schema, &dsl::Query::scan("example").filter("example.id", EQ, "1").filter("example.type", EQ, "2")), 2);
-        assert_eq!(filters.get(0).map(|x| x.cell_pos), Some(0));
-        assert_eq!(filters.get(1).map(|x| x.cell_pos), Some(2));
+        assert_eq!(filters.get(0).map(|x| x.attribute.pos), Some(0));
+        assert_eq!(filters.get(1).map(|x| x.attribute.pos), Some(2));
 
         let failure = compute_plan(&schema, &dsl::Query::scan("example").filter("not-a-column", EQ, "0"));
         assert!(failure.is_err());
@@ -364,7 +370,7 @@ mod tests {
         schema.add_relation("type", &[col("id", Type::TEXT), col("name", Type::NUMBER)]);
 
         let filter = expect_filter(compute_plan(&schema, &dsl::Query::scan("document").join("type", "document.type_id", "type.id").filter("type.name", EQ, "b")));
-        assert_eq!(filter.cell_pos, 3);
+        assert_eq!(filter.attribute.pos, 3);
     }
 
     fn expect_join(result: Result<Plan, &str>) -> Join {
@@ -420,6 +426,10 @@ mod tests {
 
         fn into_cells(self) -> Vec<Cell> {
             self.0
+        }
+
+        fn cell(&self, attr: &Attribute) -> Cell {
+            self.0.get(attr.pos).unwrap().clone()
         }
     }
 }
