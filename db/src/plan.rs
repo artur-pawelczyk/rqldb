@@ -20,11 +20,11 @@ impl<'a> Plan<'a> {
         })
     }
 
-    pub fn final_attributes(&self) -> &[Attribute] {
+    pub fn final_attributes(&self) -> Vec<Attribute> {
         if let Some(last_join) = self.joins.iter().last() {
-            &last_join.attributes
+            last_join.attributes_after()
         } else {
-            &self.source.attributes
+            self.source.attributes.to_vec()
         }
     }
 }
@@ -44,25 +44,42 @@ impl Filter {
 
 pub(crate) struct Join {
     table: String,
-    joinee_key: Attribute,
-    joiner_key: Attribute,
-    attributes: Vec<Attribute>,
+    joinee_attributes: Vec<Attribute>,
+    joiner_attributes: Vec<Attribute>,
+    joinee_key: usize,
+    joiner_key: usize,
 }
 
 impl Join {
     pub fn find_match<'a, T: Tuple>(&self, joiner_tuples: &'a [T], joinee: &impl Tuple) -> Option<&'a T> {
-        let joinee_key = joinee.cell(&self.joinee_key);
+        let joinee_key = joinee.cell(&self.joinee_key());
 
         joiner_tuples.iter()
-            .find(|tuple| tuple.cell(&self.joiner_key) == joinee_key)
+            .find(|tuple| tuple.cell(&self.joiner_key()) == joinee_key)
     }
 
     pub fn source_table(&self) -> &str {
         &self.table
     }
+
+    fn joinee_key(&self) -> &Attribute {
+        self.joinee_attributes.get(self.joinee_key).unwrap()
+    }
+
+    fn joiner_key(&self) -> &Attribute {
+        self.joiner_attributes.get(self.joiner_key).unwrap()
+    }
+
+    fn attributes_after(&self) -> Vec<Attribute> {
+        self.joinee_attributes.iter()
+            .chain(self.joiner_attributes.iter())
+            .enumerate()
+            .map(|(pos, attr)| Attribute{ pos, name: attr.name.to_string(), kind: attr.kind })
+            .collect()
+    }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct Attribute {
     pub pos: usize,
     pub name: String,
@@ -103,12 +120,6 @@ impl Attribute {
     fn guess_type(self, value: &str) -> Attribute {
         let kind = Cell::from_string(value).kind; // TODO: Unnecessary allocation
         Attribute{ pos: self.pos, name: self.name, kind }
-    }
-
-    fn in_table(table: &Relation, name: &str) -> Option<Attribute> {
-        table.columns().enumerate()
-            .find(|(_, (col_name, _))| col_name == &name)
-            .map(|(pos, (col_name, kind))| Attribute{ pos: pos, name: col_name.to_string(), kind })
     }
 }
 
@@ -250,28 +261,30 @@ fn compute_joins<'a>(plan: Plan<'a>, schema: &Schema, query: &dsl::Query) -> Res
             None => return Err("No such table")
         };
 
-        if let Some(joinee_key) = Attribute::in_table(joinee_table, &join_source.left) {
-            if let Some(joiner_key) = Attribute::in_table(joiner_table, &join_source.right) {
+        let joinee_attributes = table_attributes(joinee_table);
+        let joiner_attributes = table_attributes(joiner_table);
+        if let Some(joinee_key) = joinee_attributes.iter().enumerate().find(|(_, a)| a.name == join_source.left).map(|(i,_)| i) {
+            if let Some(joiner_key) = joiner_attributes.iter().enumerate().find(|(_, a)| a.name == join_source.right).map(|(i,_)| i) {
                 joins.push(Join{
                     table: joiner_table.name.to_string(),
-                    joinee_key, joiner_key,
-                    attributes: compute_attributes(joinee_table, joiner_table),
+                    joinee_attributes, joiner_attributes,
+                    joinee_key, joiner_key
                 })
             } else {
-                return Err("Join: no such column")
+                return Err("Joiner: no such column")
             }
         } else {
-            return Err("Join: no such column")
+            return Err("Joiee: no such column")
         }
     }
 
     Ok(Plan{ joins, ..plan })
 }
 
-fn compute_attributes(joinee: &Relation, joiner: &Relation) -> Vec<Attribute> {
-    let mut combined = joinee.attributes();
-    combined.extend(joiner.attributes());
-    combined.into_iter().enumerate().map(|(i, (name, kind))| Attribute{ pos: i, name, kind }).collect()
+fn table_attributes(table: &Relation) -> Vec<Attribute> {
+    table.columns().enumerate()
+        .map(|(pos, (col_name, kind))| Attribute{ pos: pos, name: col_name.to_string(), kind })
+        .collect()
 }
 
 #[cfg(test)]
@@ -336,7 +349,7 @@ mod tests {
 
         let joins = expect_join(compute_plan(&schema, &dsl::Query::scan("document").join("type", "document.type_id", "type.id")));
         assert_eq!(joins.source_table(), "type");
-        assert_eq!(attribute_names(&joins.attributes), vec!["document.name", "document.type_id", "type.id", "type.name"]);
+        assert_eq!(attribute_names(&joins.attributes_after()), vec!["document.name", "document.type_id", "type.id", "type.name"]);
 
         let missing_source_table = compute_plan(&schema, &dsl::Query::scan("nothing").join("type", "a", "b"));
         assert!(missing_source_table.is_err());

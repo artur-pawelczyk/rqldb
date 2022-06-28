@@ -77,7 +77,7 @@ impl Database {
         let filtered_tuples = filter_tuples(joined_tuples, &plan.filters)?;
 
         match &query.finisher {
-            Finisher::AllColumns => Result::Ok(filtered_tuples.into_query_results(plan.final_attributes())),
+            Finisher::AllColumns => Result::Ok(filtered_tuples.into_query_results(&plan.final_attributes())),
             Finisher::Columns(_) => todo!(),
             Finisher::Count => Ok(QueryResults::count(filtered_tuples.count())),
             Finisher::Insert(table) => {
