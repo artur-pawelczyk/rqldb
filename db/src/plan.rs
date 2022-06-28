@@ -3,16 +3,23 @@ use crate::dsl;
 use crate::schema::{Schema, Relation, Type};
 use crate::db::Tuple;
 
-use std::marker::PhantomData;
 use std::iter::zip;
 
+#[derive(Default)]
 pub(crate) struct Plan<'a> {
-    pub source: Source<'a, Validated>,
+    pub source: Source<'a>,
     pub filters: Vec<Filter>,
     pub joins: Vec<Join>,
 }
 
 impl<'a> Plan<'a> {
+    fn validate_with_finisher(self, finisher: &Finisher) -> Result<Self, &'static str> {
+        Ok(Plan{
+            source: self.source.validate_with_finisher(finisher)?,
+            ..self
+        })
+    }
+
     pub fn final_attributes(&self) -> &[Attribute] {
         if let Some(last_join) = self.joins.iter().last() {
             &last_join.attributes
@@ -56,19 +63,18 @@ impl Join {
     }
 }
 
-pub(crate) struct Validated;
-pub(crate) struct NotValidated;
 pub(crate) struct Attribute {
     pub pos: u32,
     pub name: String,
     pub kind: Type,
 }
 
-pub(crate) struct Source<'a, State = Validated> {
+#[derive(Default)]
+pub(crate) struct Source<'a> {
     pub attributes: Vec<Attribute>,
     pub contents: Contents<'a>,
-    state: PhantomData<State>,
 }
+
 pub(crate) enum Contents<'a> {
     TableScan(&'a Relation),
     Tuple(Vec<String>),
@@ -100,26 +106,24 @@ impl Attribute {
     }
 }
 
-impl<'a> Source<'a, ()> {
-    fn new(schema: &'a Schema, dsl_source: &dsl::Source) -> Result<Source<'a, NotValidated>, &'static str> {
+impl<'a> Source<'a> {
+    fn new(schema: &'a Schema, dsl_source: &dsl::Source) -> Result<Source<'a>, &'static str> {
         match dsl_source {
             dsl::Source::TableScan(name) => {
                 let rel = schema.find_relation(name).ok_or("No such table")?;
                 let attributes = rel.attributes().iter().enumerate()
                     .map(|(i, (name, kind))| Attribute::named(i as u32, name).with_type(*kind)).collect();
-                Ok(Source{ attributes, contents: Contents::TableScan(rel), state: PhantomData })
+                Ok(Source{ attributes, contents: Contents::TableScan(rel) })
             },
 
             dsl::Source::Tuple(values) => {
                 let attributes = values.iter().enumerate().map(|(i, val)| Attribute::numbered(i).guess_type(val)).collect();
-                Ok(Source { attributes, contents: Contents::Tuple(values.to_vec()), state: PhantomData })
+                Ok(Source { attributes, contents: Contents::Tuple(values.to_vec()) })
             }
         }
     }
-}
 
-impl<'a> Source<'a, NotValidated> {
-    fn validate_with_finisher(self, finisher: &Finisher) -> Result<Source<'a, Validated>, &'static str> {
+    fn validate_with_finisher(self, finisher: &Finisher) -> Result<Source<'a>, &'static str> {
         match finisher {
             Finisher::Insert(rel) => {
                 let target_types = rel.types();
@@ -131,11 +135,11 @@ impl<'a> Source<'a, NotValidated> {
                         return Err("Type incompatible with the target table");
                 }
 
-                Ok(Source{ attributes: self.attributes, contents: self.contents, state: PhantomData })
+                Ok(Source{ attributes: self.attributes, contents: self.contents })
             }
 
             Finisher::Return => {
-                Ok(Source{ attributes: self.attributes, contents: self.contents, state: PhantomData })
+                Ok(Source{ attributes: self.attributes, contents: self.contents })
             }
         }
     }
@@ -147,39 +151,34 @@ enum Finisher<'a> {
 }
 
 pub(crate) fn compute_plan<'a>(schema: &'a Schema, query: &dsl::Query) -> Result<Plan<'a>, &'static str> {
-    let source: Source<NotValidated> = Source::new(schema, &query.source)?;
-    let finisher = compute_finisher(&schema, &query.finisher)?;
-    let source = source.validate_with_finisher(&finisher)?;
+    let plan: Plan = compute_source(schema, &query.source)?;
 
-    let joins = compute_joins(schema, query)?;
+    let finisher = compute_finisher(schema, &query.finisher)?;
+    let plan = plan.validate_with_finisher(&finisher)?;
 
-    let filters = compute_filters(schema, query)?;
+    let plan = compute_joins(plan, schema, query)?;
 
-    Ok(Plan {
-        source,
-        joins,
-        filters,
+    let plan = compute_filters(plan, query)?;
+
+    Ok(plan)
+}
+
+fn compute_source<'a>(schema: &'a Schema, dsl_source: &dsl::Source) -> Result<Plan<'a>, &'static str> {
+    Ok(Plan{
+        source: Source::new(schema, dsl_source)?,
+        ..Plan::default()
     })
 }
 
-fn compute_filters(schema: &Schema, query: &dsl::Query) -> Result<Vec<Filter>, &'static str> {
+fn compute_filters<'a>(plan: Plan<'a>, query: &dsl::Query) -> Result<Plan<'a>, &'static str> {
     if query.filters.is_empty() {
-        return Ok(vec![]);
+        return Ok(plan);
     }
 
-    let rel = match &query.source {
-        dsl::Source::TableScan(name) => schema.find_relation(name).unwrap(),
-        _ => todo!(),
-    };
-
-    let default_attributes = rel.full_attribute_names();
-    let joins = compute_joins(schema, query)?;
-    let attributes = joins.iter().last()
-        .map_or(default_attributes, |join| join.attributes.iter().map(|attr| attr.name.to_string()).collect());
-
+    let attributes = plan.final_attributes();
     let mut filters = Vec::with_capacity(query.filters.len());
     for dsl_filter in &query.filters {
-        if let Some(pos) = attributes.iter().enumerate().find(|(_, attr)| attr.as_str() == filter_left(dsl_filter)).map(|(i, _)| i) {
+        if let Some(pos) = attributes.iter().enumerate().find(|(_, attr)| attr.name == filter_left(dsl_filter)).map(|(i, _)| i) {
             let op = filter_operator(dsl_filter);
             filters.push(Filter{
                 cell_pos: pos as u32,
@@ -197,12 +196,12 @@ fn compute_filters(schema: &Schema, query: &dsl::Query) -> Result<Vec<Filter>, &
         }
     }
 
-    Ok(filters)
+    Ok(Plan{ filters, ..plan })
 }
 
 fn compute_finisher<'a>(schema: &'a Schema, dsl_finisher: &dsl::Finisher) -> Result<Finisher<'a>, &'static str> {
     match dsl_finisher {
-        dsl::Finisher::Insert(name) => schema.find_relation(name).map(|rel| Finisher::Insert(rel)).ok_or("No such target table"),
+        dsl::Finisher::Insert(name) => schema.find_relation(name).map(Finisher::Insert).ok_or("No such target table"),
         _ => Ok(Finisher::Return),
     }
 }
@@ -228,9 +227,9 @@ fn filter_left(filter: &dsl::Filter) -> &str {
     }
 }
 
-fn compute_joins(schema: &Schema, query: &dsl::Query) -> Result<Vec<Join>, &'static str> {
+fn compute_joins<'a>(plan: Plan<'a>, schema: &Schema, query: &dsl::Query) -> Result<Plan<'a>, &'static str> {
     if query.join_sources.is_empty() {
-        return Ok(vec![]);
+        return Ok(plan);
     }
 
     let mut joins = Vec::with_capacity(query.join_sources.len());
@@ -260,7 +259,7 @@ fn compute_joins(schema: &Schema, query: &dsl::Query) -> Result<Vec<Join>, &'sta
         }
     }
 
-    Ok(joins)
+    Ok(Plan{ joins, ..plan })
 }
 
 fn compute_attributes(joinee: &Relation, joiner: &Relation) -> Vec<Attribute> {
@@ -280,11 +279,11 @@ mod tests {
         let mut schema = Schema::default();
         schema.add_relation("example", &[col("id", Type::NUMBER), col("content", Type::TEXT), col("type", Type::NUMBER)]);
 
-        let filters = expect_filters(compute_filters(&schema, &dsl::Query::scan("example").filter("example.id", EQ, "1").filter("example.type", EQ, "2")), 2);
+        let filters = expect_filters(compute_plan(&schema, &dsl::Query::scan("example").filter("example.id", EQ, "1").filter("example.type", EQ, "2")), 2);
         assert_eq!(filters.get(0).map(|x| x.cell_pos), Some(0));
         assert_eq!(filters.get(1).map(|x| x.cell_pos), Some(2));
 
-        let failure = compute_filters(&schema, &dsl::Query::scan("example").filter("not-a-column", EQ, "0"));
+        let failure = compute_plan(&schema, &dsl::Query::scan("example").filter("not-a-column", EQ, "0"));
         assert!(failure.is_err());
     }
 
@@ -295,30 +294,30 @@ mod tests {
         let tuple_1 = MockTuple(vec![Cell::from_number(1), Cell::from_string("content1"), Cell::from_number(11)]);
         let tuple_2 = MockTuple(vec![Cell::from_number(2), Cell::from_string("content2"), Cell::from_number(12)]);
 
-        let id_filter = expect_filter(compute_filters(&schema, &dsl::Query::scan("example").filter("example.id", EQ, "1")));
+        let id_filter = expect_filter(compute_plan(&schema, &dsl::Query::scan("example").filter("example.id", EQ, "1")));
         assert!(id_filter.matches_tuple(&tuple_1));
         assert!(!id_filter.matches_tuple(&tuple_2));
 
-        let content_filter = expect_filter(compute_filters(&schema, &dsl::Query::scan("example").filter("example.content", EQ, "content1")));
+        let content_filter = expect_filter(compute_plan(&schema, &dsl::Query::scan("example").filter("example.content", EQ, "content1")));
         assert!(content_filter.matches_tuple(&tuple_1));
         assert!(!content_filter.matches_tuple(&tuple_2));
 
-        let comp_filter = expect_filter(compute_filters(&schema, &dsl::Query::scan("example").filter("example.id", GT, "1")));
+        let comp_filter = expect_filter(compute_plan(&schema, &dsl::Query::scan("example").filter("example.id", GT, "1")));
         assert!(!comp_filter.matches_tuple(&tuple_1));
         assert!(comp_filter.matches_tuple(&tuple_2));
     }
 
-    fn expect_filters(result: Result<Vec<Filter>, &'static str>, n: usize) -> Vec<Filter> {
+    fn expect_filters(result: Result<Plan, &'static str>, n: usize) -> Vec<Filter> {
         match result {
-            Ok(filters) => {
-                assert_eq!(filters.len(), n);
-                filters
+            Ok(plan) => {
+                assert_eq!(plan.filters.len(), n);
+                plan.filters
             },
             Err(msg) => panic!("{}", msg)
         }
     }
 
-    fn expect_filter(result: Result<Vec<Filter>, &'static str>) -> Filter {
+    fn expect_filter(result: Result<Plan, &'static str>) -> Filter {
         let filters = expect_filters(result, 1);
         filters.into_iter().next().unwrap()
     }
@@ -329,17 +328,17 @@ mod tests {
         schema.add_relation("document", &[col("name", Type::TEXT), col("type_id", Type::NUMBER)]);
         schema.add_relation("type", &[col("id", Type::TEXT), col("name", Type::NUMBER)]);
 
-        let joins = expect_join(compute_joins(&schema, &dsl::Query::scan("document").join("type", "document.type_id", "type.id")));
+        let joins = expect_join(compute_plan(&schema, &dsl::Query::scan("document").join("type", "document.type_id", "type.id")));
         assert_eq!(joins.source_table(), "type");
         assert_eq!(attribute_names(&joins.attributes), vec!["document.name", "document.type_id", "type.id", "type.name"]);
 
-        let missing_source_table = compute_joins(&schema, &dsl::Query::scan("nothing").join("type", "a", "b"));
+        let missing_source_table = compute_plan(&schema, &dsl::Query::scan("nothing").join("type", "a", "b"));
         assert!(missing_source_table.is_err());
 
-        let missing_table = compute_joins(&schema, &dsl::Query::scan("document").join("nothing", "a", "b"));
+        let missing_table = compute_plan(&schema, &dsl::Query::scan("document").join("nothing", "a", "b"));
         assert!(missing_table.is_err());
 
-        let missing_column = compute_joins(&schema, &dsl::Query::scan("document").join("type", "something", "else"));
+        let missing_column = compute_plan(&schema, &dsl::Query::scan("document").join("type", "something", "else"));
         assert!(missing_column.is_err());
     }
 
@@ -353,7 +352,7 @@ mod tests {
         let type_1 = MockTuple(vec![Cell::from_number(1), Cell::from_string("a")]);
         let type_2 = MockTuple(vec![Cell::from_number(2), Cell::from_string("b")]);
 
-        let join = expect_join(compute_joins(&schema, &dsl::Query::scan("document").join("type", "document.type_id", "type.id")));
+        let join = expect_join(compute_plan(&schema, &dsl::Query::scan("document").join("type", "document.type_id", "type.id")));
         assert_eq!(join.find_match(&[type_1.clone(), type_2.clone()], &document_1), Some(&type_2));
         assert_eq!(join.find_match(&[type_1.clone(), type_2.clone()], &document_2), None);
     }
@@ -364,14 +363,14 @@ mod tests {
         schema.add_relation("document", &[col("name", Type::TEXT), col("type_id", Type::NUMBER)]);
         schema.add_relation("type", &[col("id", Type::TEXT), col("name", Type::NUMBER)]);
 
-        let filter = expect_filter(compute_filters(&schema, &dsl::Query::scan("document").join("type", "document.type_id", "type.id").filter("type.name", EQ, "b")));
+        let filter = expect_filter(compute_plan(&schema, &dsl::Query::scan("document").join("type", "document.type_id", "type.id").filter("type.name", EQ, "b")));
         assert_eq!(filter.cell_pos, 3);
     }
 
-    fn expect_join(result: Result<Vec<Join>, &str>) -> Join {
-        let joins = result.unwrap();
-        assert_eq!(joins.len(), 1);
-        joins.into_iter().next().unwrap()
+    fn expect_join(result: Result<Plan, &str>) -> Join {
+        let plan = result.unwrap();
+        assert_eq!(plan.joins.len(), 1);
+        plan.joins.into_iter().next().unwrap()
     }
 
     #[test]
