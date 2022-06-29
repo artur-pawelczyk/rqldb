@@ -9,7 +9,9 @@ use crate::plan;
 
 pub(crate) trait Tuple {
     fn cell(&self, attr: &plan::Attribute) -> Cell;
-    fn all_cells(&self) -> Vec<Cell>;
+    fn all_cells(&self, attrs: &[plan::Attribute]) -> Vec<Cell> {
+        attrs.iter().map(|a| self.cell(a)).collect()
+    }
 }
 
 #[derive(Default)]
@@ -47,8 +49,8 @@ impl EagerTuple {
         &self.contents
     }
 
-    fn add_cells(mut self, other: &impl Tuple) -> Self {
-        self.contents.extend(other.all_cells());
+    fn add_cells(mut self, other: &impl Tuple, other_attrs: &[plan::Attribute]) -> Self {
+        self.contents.extend(other.all_cells(other_attrs));
         self
     }    
 }
@@ -59,8 +61,18 @@ impl Tuple for EagerTuple {
         self.contents.get(attr.pos).expect("Already validated").clone()
     }
 
-    fn all_cells(&self) -> Vec<Cell> {
+    fn all_cells(&self, _: &[plan::Attribute]) -> Vec<Cell> {
         self.contents.to_vec()
+    }
+}
+
+struct ObjectTuple<'a> {
+    raw: &'a ByteTuple,
+}
+
+impl<'a> Tuple for ObjectTuple<'a> {
+    fn cell(&self, attr: &plan::Attribute) -> Cell {
+        Cell::from_bytes(attr.kind, self.raw.get(attr.pos).unwrap())
     }
 }
 
@@ -73,7 +85,7 @@ impl Database {
     pub fn execute_query(&self, query: &Query) -> Result<QueryResults, &str> {
         let plan = plan::compute_plan(&self.schema, query)?;
         let source_tuples = read_source(self, &plan.source)?;
-        let joined_tuples = execute_join(self, source_tuples, &plan.joins)?;
+        let joined_tuples = execute_join(self, source_tuples, &plan)?;
         let filtered_tuples = filter_tuples(joined_tuples, &plan.filters)?;
 
         match &query.finisher {
@@ -107,13 +119,13 @@ fn read_source(db: &Database, source: &plan::Source) -> Result<TupleSet<EagerTup
     }
 }
 
-fn execute_join<T: Tuple>(db: &Database, current_tuples: TupleSet<T>, joins: &[plan::Join]) -> Result<TupleSet<EagerTuple>, &'static str> {
-    match joins {
-        [] => Ok(current_tuples.into_eager()),
+fn execute_join<T: Tuple>(db: &Database, current_tuples: TupleSet<T>, plan: &plan::Plan) -> Result<TupleSet<EagerTuple>, &'static str> {
+    match &plan.joins[..] {
+        [] => Ok(current_tuples.into_eager(&plan.source_attributes())),
         [join] => {
             let joiner = db.scan_table(join.source_table())?;
-            let joined = current_tuples.into_eager().map_mut(|joinee| {
-                join.find_match(&joiner.raw_tuples, &joinee).map(|t| joinee.add_cells(t))
+            let joined = current_tuples.into_eager(&join.joinee_attributes).map_mut(|joinee| {
+                join.find_match(&joiner.raw_tuples, &joinee).map(|t| joinee.add_cells(t, &join.joiner_attributes))
             });
 
             Ok(joined)
@@ -191,15 +203,15 @@ impl<T: Tuple> TupleSet<T> {
         self.raw_tuples.len() as i32
     }
 
-    fn into_eager(self) -> TupleSet<EagerTuple> {
-        let new_tuples = self.raw_tuples.into_iter().map(|t| EagerTuple::from_cells(t.all_cells())).collect();
+    fn into_eager(self, attrs: &[plan::Attribute]) -> TupleSet<EagerTuple> {
+        let new_tuples = self.raw_tuples.into_iter().map(|t| EagerTuple::from_cells(t.all_cells(attrs))).collect();
         TupleSet{ raw_tuples: new_tuples }
     }
 
     fn into_query_results(self, attributes: &[plan::Attribute]) -> QueryResults {
         QueryResults{
             attributes: attributes.iter().map(|x| x.name.to_string()).collect(),
-            results: self.raw_tuples.into_iter().map(|t| t.all_cells()).collect()
+            results: self.raw_tuples.into_iter().map(|t| t.all_cells(attributes)).collect()
         }
     }
 }

@@ -20,6 +20,10 @@ impl<'a> Plan<'a> {
         })
     }
 
+    pub fn source_attributes(&self) -> Vec<Attribute> {
+        self.source.attributes.to_vec()
+    }
+
     pub fn final_attributes(&self) -> Vec<Attribute> {
         if let Some(last_join) = self.joins.iter().last() {
             last_join.attributes_after()
@@ -44,8 +48,8 @@ impl Filter {
 
 pub(crate) struct Join {
     table: String,
-    joinee_attributes: Vec<Attribute>,
-    joiner_attributes: Vec<Attribute>,
+    pub joinee_attributes: Vec<Attribute>,
+    pub joiner_attributes: Vec<Attribute>,
     joinee_key: usize,
     joiner_key: usize,
 }
@@ -437,7 +441,7 @@ mod tests {
             self.0.get(attr.pos).unwrap().clone()
         }
 
-        fn all_cells(&self) -> Vec<Cell> {
+        fn all_cells(&self, _: &[Attribute]) -> Vec<Cell> {
             self.0.to_vec()
         }
     }
