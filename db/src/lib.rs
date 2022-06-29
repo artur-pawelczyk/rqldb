@@ -72,7 +72,7 @@ impl Cell {
     }
 
     
-    fn from_number(n: i32) -> Self {
+    fn from_number(n: u32) -> Self {
         Self{ contents: Vec::from(n.to_be_bytes()), kind: Type::NUMBER }
     }
 
@@ -127,7 +127,7 @@ impl fmt::Debug for Cell {
 }
 
 impl QueryResults {
-    fn count(n: i32) -> Self {
+    fn count(n: u32) -> Self {
         let tuple = vec![Cell::from_number(n)];
         Self{ attributes: vec!["count".to_string()], results: vec![tuple]}
     }

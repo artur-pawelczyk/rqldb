@@ -119,7 +119,7 @@ fn read_source(db: &Database, source: &plan::Source) -> Result<EagerTupleSet<Eag
     }
 }
 
-fn execute_join<T: Tuple>(db: &Database, current_tuples: EagerTupleSet<T>, plan: &plan::Plan) -> Result<EagerTupleSet<EagerTuple>, &'static str> {
+fn execute_join(db: &Database, current_tuples: EagerTupleSet<EagerTuple>, plan: &plan::Plan) -> Result<EagerTupleSet<EagerTuple>, &'static str> {
     match &plan.joins[..] {
         [] => Ok(current_tuples.into_eager(&plan.source_attributes())),
         [join] => {
@@ -134,7 +134,7 @@ fn execute_join<T: Tuple>(db: &Database, current_tuples: EagerTupleSet<T>, plan:
     }
 }
 
-fn filter_tuples<T: Tuple>(mut source: EagerTupleSet<T>, filters: &[plan::Filter]) -> Result<EagerTupleSet<T>, &'static str> {
+fn filter_tuples(mut source: EagerTupleSet<EagerTuple>, filters: &[plan::Filter]) -> Result<EagerTupleSet<EagerTuple>, &'static str> {
     match filters {
         [] => Ok(source),
         filters => {
@@ -147,13 +147,29 @@ fn filter_tuples<T: Tuple>(mut source: EagerTupleSet<T>, filters: &[plan::Filter
     }
 }
 
-fn apply_filter<T: Tuple>(source: EagerTupleSet<T>, filter: &plan::Filter) -> EagerTupleSet<T> {
+fn apply_filter(source: EagerTupleSet<EagerTuple>, filter: &plan::Filter) -> EagerTupleSet<EagerTuple> {
     source.filter(|tuple| filter.matches_tuple(tuple))
 }
 
 pub(crate) trait TupleSearch {
     fn search<F>(&self, fun: F) -> Option<&dyn Tuple>
     where F: Fn(&dyn Tuple) -> bool;
+}
+
+trait TupleSet<T: Tuple> {
+    fn filter<F>(self, predicate: F) -> Self
+    where F: Fn(&T) -> bool;
+
+    fn map_mut<F>(self, mapper: F) -> Self
+    where F: Fn(T) -> Option<T>;
+
+    fn count(&self) -> u32;
+
+    fn iter<'a>(&'a self) -> Box<dyn Iterator<Item = &T> + 'a>;
+
+    fn into_eager(self, attrs: &[plan::Attribute]) -> EagerTupleSet<EagerTuple>;
+
+    fn into_query_results(self, attributes: &[plan::Attribute]) -> QueryResults;
 }
 
 impl EagerTupleSet<EagerTuple> {
@@ -167,22 +183,12 @@ impl EagerTupleSet<EagerTuple> {
         EagerTupleSet{ raw_tuples }
     }
 
-    fn map_mut<F>(mut self, func: F) -> Self
-    where F: Fn(EagerTuple) -> Option<EagerTuple> {
-        let mut mapped = vec![];
 
-        for raw_tuple in self.raw_tuples {
-            func(raw_tuple).into_iter().for_each(|t| mapped.push(t));
-        }
-
-        self.raw_tuples = mapped;
-        self
-    }
 }
 
-impl<T: Tuple> EagerTupleSet<T> {
+impl TupleSet<EagerTuple> for EagerTupleSet<EagerTuple> {
     fn filter<F>(mut self, predicate: F) -> Self
-    where F: Fn(&T) -> bool {
+    where F: Fn(&EagerTuple) -> bool {
         let mut filtered = vec![];
 
         for raw_tuple in self.raw_tuples {
@@ -195,12 +201,24 @@ impl<T: Tuple> EagerTupleSet<T> {
         self
     }
 
-    fn iter(&self) -> std::slice::Iter<T> {
-        self.raw_tuples.iter()
+    fn map_mut<F>(mut self, func: F) -> Self
+    where F: Fn(EagerTuple) -> Option<EagerTuple> {
+        let mut mapped = vec![];
+
+        for raw_tuple in self.raw_tuples {
+            func(raw_tuple).into_iter().for_each(|t| mapped.push(t));
+        }
+
+        self.raw_tuples = mapped;
+        self
     }
 
-    fn count(&self) -> i32 {
-        self.raw_tuples.len() as i32
+    fn iter<'a>(&'a self) -> Box<dyn Iterator<Item = &'a EagerTuple> + 'a> {
+        Box::new(self.raw_tuples.iter())
+    }
+
+    fn count(&self) -> u32 {
+        self.raw_tuples.len() as u32
     }
 
     fn into_eager(self, attrs: &[plan::Attribute]) -> EagerTupleSet<EagerTuple> {
