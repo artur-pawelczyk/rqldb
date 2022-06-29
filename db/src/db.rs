@@ -24,7 +24,7 @@ type Object = Vec<ByteTuple>;
 type ByteTuple = Vec<Vec<u8>>;
 
 #[derive(Debug)]
-struct TupleSet<T: Tuple> {
+struct EagerTupleSet<T: Tuple> {
     raw_tuples: Vec<T>,
 }
 
@@ -52,7 +52,7 @@ impl EagerTuple {
     fn add_cells(mut self, other: &impl Tuple, other_attrs: &[plan::Attribute]) -> Self {
         self.contents.extend(other.all_cells(other_attrs));
         self
-    }    
+    }
 }
 
 
@@ -103,23 +103,23 @@ impl Database {
         }
     }
 
-    fn scan_table(&self, name: &str) -> Result<TupleSet<EagerTuple>, &'static str> {
+    fn scan_table(&self, name: &str) -> Result<EagerTupleSet<EagerTuple>, &'static str> {
         let rel = self.schema.find_relation(name).ok_or("No such relation in schema")?;
-        let tuple_set = TupleSet::from_object(rel, &self.objects.get(name).ok_or("Could not find the object")?.borrow());
+        let tuple_set = EagerTupleSet::from_object(rel, &self.objects.get(name).ok_or("Could not find the object")?.borrow());
 
         Ok(tuple_set)
     }
 }
 
-fn read_source(db: &Database, source: &plan::Source) -> Result<TupleSet<EagerTuple>, &'static str> {
+fn read_source(db: &Database, source: &plan::Source) -> Result<EagerTupleSet<EagerTuple>, &'static str> {
     match &source.contents {
         plan::Contents::TableScan(rel) => db.scan_table(&rel.name),
-        plan::Contents::Tuple(values) => Ok(TupleSet::single_from_cells(values.iter().map(|x| Cell::from_string(x)).collect())),
+        plan::Contents::Tuple(values) => Ok(EagerTupleSet::single_from_cells(values.iter().map(|x| Cell::from_string(x)).collect())),
         _ => panic!()
     }
 }
 
-fn execute_join<T: Tuple>(db: &Database, current_tuples: TupleSet<T>, plan: &plan::Plan) -> Result<TupleSet<EagerTuple>, &'static str> {
+fn execute_join<T: Tuple>(db: &Database, current_tuples: EagerTupleSet<T>, plan: &plan::Plan) -> Result<EagerTupleSet<EagerTuple>, &'static str> {
     match &plan.joins[..] {
         [] => Ok(current_tuples.into_eager(&plan.source_attributes())),
         [join] => {
@@ -134,7 +134,7 @@ fn execute_join<T: Tuple>(db: &Database, current_tuples: TupleSet<T>, plan: &pla
     }
 }
 
-fn filter_tuples<T: Tuple>(mut source: TupleSet<T>, filters: &[plan::Filter]) -> Result<TupleSet<T>, &'static str> {
+fn filter_tuples<T: Tuple>(mut source: EagerTupleSet<T>, filters: &[plan::Filter]) -> Result<EagerTupleSet<T>, &'static str> {
     match filters {
         [] => Ok(source),
         filters => {
@@ -147,7 +147,7 @@ fn filter_tuples<T: Tuple>(mut source: TupleSet<T>, filters: &[plan::Filter]) ->
     }
 }
 
-fn apply_filter<T: Tuple>(source: TupleSet<T>, filter: &plan::Filter) -> TupleSet<T> {
+fn apply_filter<T: Tuple>(source: EagerTupleSet<T>, filter: &plan::Filter) -> EagerTupleSet<T> {
     source.filter(|tuple| filter.matches_tuple(tuple))
 }
 
@@ -156,15 +156,15 @@ pub(crate) trait TupleSearch {
     where F: Fn(&dyn Tuple) -> bool;
 }
 
-impl TupleSet<EagerTuple> {
+impl EagerTupleSet<EagerTuple> {
     fn single_from_cells(cells: Vec<Cell>) -> Self {
-        Self{ raw_tuples: vec![EagerTuple::from_cells(cells)] }
+        EagerTupleSet{ raw_tuples: vec![EagerTuple::from_cells(cells)] }
     }
 
     fn from_object(rel: &Relation, object: &Object) -> Self {
         let types = rel.types();
         let raw_tuples = object.iter().map(|val| EagerTuple::from_bytes(&types, val)).collect();
-        Self{ raw_tuples }
+        EagerTupleSet{ raw_tuples }
     }
 
     fn map_mut<F>(mut self, func: F) -> Self
@@ -174,13 +174,13 @@ impl TupleSet<EagerTuple> {
         for raw_tuple in self.raw_tuples {
             func(raw_tuple).into_iter().for_each(|t| mapped.push(t));
         }
-        
+
         self.raw_tuples = mapped;
         self
     }
 }
 
-impl<T: Tuple> TupleSet<T> {
+impl<T: Tuple> EagerTupleSet<T> {
     fn filter<F>(mut self, predicate: F) -> Self
     where F: Fn(&T) -> bool {
         let mut filtered = vec![];
@@ -203,9 +203,9 @@ impl<T: Tuple> TupleSet<T> {
         self.raw_tuples.len() as i32
     }
 
-    fn into_eager(self, attrs: &[plan::Attribute]) -> TupleSet<EagerTuple> {
+    fn into_eager(self, attrs: &[plan::Attribute]) -> EagerTupleSet<EagerTuple> {
         let new_tuples = self.raw_tuples.into_iter().map(|t| EagerTuple::from_cells(t.all_cells(attrs))).collect();
-        TupleSet{ raw_tuples: new_tuples }
+        EagerTupleSet{ raw_tuples: new_tuples }
     }
 
     fn into_query_results(self, attributes: &[plan::Attribute]) -> QueryResults {
