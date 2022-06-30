@@ -55,7 +55,6 @@ impl EagerTuple {
     }
 }
 
-
 impl Tuple for EagerTuple {
     fn cell(&self, attr: &plan::Attribute) -> Cell {
         self.contents.get(attr.pos).expect("Already validated").clone()

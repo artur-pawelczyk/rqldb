@@ -109,15 +109,15 @@ impl<'a> Default for Contents<'a> {
 }
 
 impl Attribute {
-    fn numbered(num: usize) -> Attribute {
+    pub fn numbered(num: usize) -> Attribute {
         Attribute{ pos: num, name: num.to_string(), kind: Type::default() }
     }
 
-    fn named(pos: usize, name: &str) -> Attribute {
+    pub fn named(pos: usize, name: &str) -> Attribute {
         Attribute{ pos, name: name.to_string(), kind: Type::default() }
     }
 
-    fn with_type(self, kind: Type) -> Attribute {
+    pub fn with_type(self, kind: Type) -> Attribute {
         Attribute{ pos: self.pos, name: self.name, kind: kind }
     }
 
