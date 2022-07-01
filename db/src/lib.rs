@@ -4,6 +4,7 @@ pub mod parse;
 pub mod tokenize;
 pub mod schema;
 pub mod plan;
+pub mod tuple_set;
 
 use std::fmt;
 use std::cmp::Ordering;
@@ -88,6 +89,10 @@ impl Cell {
 
     fn as_bytes(&self) -> Vec<u8> {
         self.contents.clone()
+    }
+
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.contents
     }
 
     pub fn as_number(&self) -> Option<i32> {
