@@ -102,27 +102,18 @@ mod tests {
     }
 
     #[test]
-    fn test_join() {
-        let attributes_1 = vec![
-            Attribute::named(0, "a").with_type(Type::NUMBER),
-            Attribute::named(1, "b").with_type(Type::TEXT),
-        ];
-        let attributes_2 = vec![
-            Attribute::named(0, "c").with_type(Type::TEXT),
-        ];
-        let joined_attributes = vec![
-            Attribute::named(0, "a").with_type(Type::NUMBER),
-            Attribute::named(1, "b").with_type(Type::TEXT),
-            Attribute::named(2, "c").with_type(Type::TEXT),
-        ];
-        
+    fn test_join()  {
         let object_1 = vec![
             tuple(&["1", "foo"]),
             tuple(&["2", "bar"]),
         ];
-        let joiner = tuple(&["fizz"]);
+        let object_2 = vec![
+            tuple(&["fizz"]),
+        ];
 
-        let result: Vec<Tuple> = TupleSet::from_object(&object_1).filter_map(|tuple| Some(tuple.add_cells(&joiner))).collect();
+        let result: Vec<Tuple> = TupleSet::from_object(&object_1).filter_map(|tuple| {
+            object_2.get(0).map(|joiner_tuple| tuple.add_cells(joiner_tuple))
+        }).collect();
         let first = result.get(0).unwrap();
         assert_eq!(i32::try_from(first.cell(0, Type::NUMBER).unwrap()), Ok(1));
         assert_eq!(first.cell(2, Type::TEXT).unwrap().to_string(), "fizz");
