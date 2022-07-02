@@ -1,242 +1,138 @@
+use std::cell::{RefCell, Ref};
 use std::collections::HashMap;
-use std::iter::zip;
-use std::cell::RefCell;
 
-use crate::dsl::{Command, Query};
-use crate::schema::{Schema, Type, Relation};
-use crate::{Cell, QueryResults};
-use crate::plan;
-
-pub(crate) trait Tuple {
-    fn cell(&self, attr: &plan::Attribute) -> Cell;
-    fn all_cells(&self, attrs: &[plan::Attribute]) -> Vec<Cell> {
-        attrs.iter().map(|a| self.cell(a)).collect()
-    }
-}
+use crate::dsl::Finisher;
+use crate::plan::{Contents, Attribute, Filter};
+use crate::tuple_set::Tuple;
+use crate::{schema::Schema, QueryResults, plan::compute_plan};
+use crate::{dsl, Cell};
 
 #[derive(Default)]
 pub struct Database {
     schema: Schema,
-    objects: HashMap<String, RefCell<Object>>
+    objects: HashMap<String, RefCell<Object>>,
 }
 
 type Object = Vec<ByteTuple>;
 type ByteTuple = Vec<Vec<u8>>;
 
-#[derive(Debug)]
-struct EagerTupleSet<T: Tuple> {
-    raw_tuples: Vec<T>,
-}
-
-#[derive(Clone, Debug)]
-struct EagerTuple {
-    contents: Vec<Cell>,
-}
-
-impl EagerTuple {
-    fn from_bytes(types: &[Type], bytes: &[Vec<u8>]) -> EagerTuple {
-        let cells: Vec<Cell> = zip(types, bytes).map(|(kind, b)| Cell::from_bytes(*kind, b)).collect();
-        EagerTuple{
-            contents: cells
-        }
-    }
-
-    fn from_cells(cells: Vec<Cell>) -> Self {
-        EagerTuple{ contents: cells }
-    }
-
-    pub fn contents(&self) -> &[Cell] {
-        &self.contents
-    }
-
-    fn add_cells(mut self, other: &impl Tuple, other_attrs: &[plan::Attribute]) -> Self {
-        self.contents.extend(other.all_cells(other_attrs));
-        self
-    }
-}
-
-impl Tuple for EagerTuple {
-    fn cell(&self, attr: &plan::Attribute) -> Cell {
-        self.contents.get(attr.pos).expect("Already validated").clone()
-    }
-
-    fn all_cells(&self, _: &[plan::Attribute]) -> Vec<Cell> {
-        self.contents.to_vec()
-    }
-}
-
-struct ObjectTuple<'a> {
-    raw: &'a ByteTuple,
-}
-
-impl<'a> Tuple for ObjectTuple<'a> {
-    fn cell(&self, attr: &plan::Attribute) -> Cell {
-        Cell::from_bytes(attr.kind, self.raw.get(attr.pos).unwrap())
-    }
-}
-
 impl Database {
-    pub fn execute_create(&mut self, command: &Command) {
+    pub fn execute_create(&mut self, command: &dsl::Command) {
         self.schema.add_relation(&command.name, &command.columns);
         self.objects.insert(command.name.clone(), RefCell::new(Object::new()));
     }
 
-    pub fn execute_query(&self, query: &Query) -> Result<QueryResults, &str> {
-        let plan = plan::compute_plan(&self.schema, query)?;
-        let source_tuples = read_source(self, &plan.source)?;
-        let joined_tuples = execute_join(self, source_tuples, &plan)?;
-        let filtered_tuples = filter_tuples(joined_tuples, &plan.filters)?;
+    pub fn execute_query(&self, query: &dsl::Query) -> Result<QueryResults, &'static str> {
+        let plan = compute_plan(&self.schema, query)?;
 
-        match &plan.finisher {
-            plan::Finisher::Return => Result::Ok(filtered_tuples.into_query_results(&plan.final_attributes())),
-            plan::Finisher::Count => Ok(QueryResults::count(filtered_tuples.count())),
-            plan::Finisher::Insert(table) => {
-                let mut object = self.objects.get(&table.name).expect("This shouldn't happen").borrow_mut();
-                for tuple in filtered_tuples.iter() {
-                    object.push(tuple.contents().iter().map(|x| x.as_bytes()).collect())
+        fn cell(s: &str) -> Vec<u8> {
+            if let Ok(num) = s.parse::<i32>() {
+                Vec::from(num.to_be_bytes())
+            } else {
+                Vec::from(s.as_bytes())
+            }
+        }
+
+        let source: ObjectView = match plan.source.contents {
+            Contents::TableScan(rel) => {
+                ObjectView::Ref(self.objects.get(&rel.name).unwrap().borrow())
+            },
+            Contents::Tuple(ref values) => {
+                let cells = values.iter().map(|val| cell(val)).collect();
+                ObjectView::Val(vec![cells])
+            },
+            _ => todo!()
+        };
+
+        let join_sources: Vec<Ref<Object>> = plan.joins.iter().map(|join| self.objects.get(join.source_table()).unwrap().borrow()).collect();
+
+        let mut filtered = Vec::new();
+        for byte_tuple in source.iter() {
+
+            let tuple = match &plan.joins[..] {
+                [] => Tuple::from_bytes(byte_tuple),
+                [join] => {
+                    let joinee = Tuple::from_bytes(byte_tuple);
+                    let key = joinee.cell_by_attr(join.joinee_key());
+                    if let Some(found) = join_sources.get(0).unwrap().iter().find(|bytes| Tuple::from_bytes(bytes).cell_by_attr(join.joiner_key()) == key) {
+                        joinee.add_cells(found)
+                    } else {
+                        joinee
+                    }
+                },
+                _ => todo!(),
+            };
+
+            if test_filters(&plan.filters, &tuple) {
+                filtered.push(tuple);
+            }
+        }
+
+        match &query.finisher {
+            Finisher::AllColumns => Ok(query_results(&filtered, &plan.final_attributes())),
+            Finisher::Insert(name) => {
+                let mut object = self.objects.get(name).unwrap().borrow_mut();
+                for tuple in filtered.iter() {
+                    object.push(tuple.as_bytes().clone());
                 }
 
-                Result::Ok(filtered_tuples.into_query_results(&vec![]))
+                Ok(query_results(&filtered, &plan.final_attributes()))
             },
-            _ => Err("Unknown finisher"),
+            Finisher::Count => Ok(QueryResults::count(filtered.len() as u32)),
+            _ => todo!(),
         }
     }
-
-    fn scan_table(&self, name: &str) -> Result<EagerTupleSet<EagerTuple>, &'static str> {
-        let rel = self.schema.find_relation(name).ok_or("No such relation in schema")?;
-        let tuple_set = EagerTupleSet::from_object(rel, &self.objects.get(name).ok_or("Could not find the object")?.borrow());
-
-        Ok(tuple_set)
-    }
 }
 
-fn read_source(db: &Database, source: &plan::Source) -> Result<EagerTupleSet<EagerTuple>, &'static str> {
-    match &source.contents {
-        plan::Contents::TableScan(rel) => db.scan_table(&rel.name),
-        plan::Contents::Tuple(values) => Ok(EagerTupleSet::single_from_cells(values.iter().map(|x| Cell::from_string(x)).collect())),
-        _ => panic!()
-    }
+fn test_filters(filters: &[Filter], tuple: &Tuple) -> bool {
+    filters.iter().all(|filter| filter.matches_tuple(tuple))
 }
 
-fn execute_join(db: &Database, current_tuples: EagerTupleSet<EagerTuple>, plan: &plan::Plan) -> Result<EagerTupleSet<EagerTuple>, &'static str> {
-    match &plan.joins[..] {
-        [] => Ok(current_tuples.into_eager(&plan.source_attributes())),
-        [join] => {
-            let joiner = db.scan_table(join.source_table())?;
-            let joined = current_tuples.into_eager(&join.joinee_attributes).map_mut(|joinee| {
-                join.find_match(&joiner.raw_tuples, &joinee).map(|t| joinee.add_cells(t, &join.joiner_attributes))
-            });
-
-            Ok(joined)
-        }
-        _ => todo!(),
-    }
+enum ObjectView<'a> {
+    Ref(Ref<'a, Object>),
+    Val(Object),
 }
 
-fn filter_tuples(mut source: EagerTupleSet<EagerTuple>, filters: &[plan::Filter]) -> Result<EagerTupleSet<EagerTuple>, &'static str> {
-    match filters {
-        [] => Ok(source),
-        filters => {
-            for filter in filters {
-                source = apply_filter(source, filter);
-            }
-
-            Ok(source)
-        },
-    }
-}
-
-fn apply_filter(source: EagerTupleSet<EagerTuple>, filter: &plan::Filter) -> EagerTupleSet<EagerTuple> {
-    source.filter(|tuple| filter.matches_tuple(tuple))
-}
-
-pub(crate) trait TupleSearch {
-    fn search<F>(&self, fun: F) -> Option<&dyn Tuple>
-    where F: Fn(&dyn Tuple) -> bool;
-}
-
-trait TupleSet<T: Tuple> {
-    fn filter<F>(self, predicate: F) -> Self
-    where F: Fn(&T) -> bool;
-
-    fn map_mut<F>(self, mapper: F) -> Self
-    where F: Fn(T) -> Option<T>;
-
-    fn count(&self) -> u32;
-
-    fn iter<'a>(&'a self) -> Box<dyn Iterator<Item = &T> + 'a>;
-
-    fn into_eager(self, attrs: &[plan::Attribute]) -> EagerTupleSet<EagerTuple>;
-
-    fn into_query_results(self, attributes: &[plan::Attribute]) -> QueryResults;
-}
-
-impl EagerTupleSet<EagerTuple> {
-    fn single_from_cells(cells: Vec<Cell>) -> Self {
-        EagerTupleSet{ raw_tuples: vec![EagerTuple::from_cells(cells)] }
-    }
-
-    fn from_object(rel: &Relation, object: &Object) -> Self {
-        let types = rel.types();
-        let raw_tuples = object.iter().map(|val| EagerTuple::from_bytes(&types, val)).collect();
-        EagerTupleSet{ raw_tuples }
-    }
-
-
-}
-
-impl TupleSet<EagerTuple> for EagerTupleSet<EagerTuple> {
-    fn filter<F>(mut self, predicate: F) -> Self
-    where F: Fn(&EagerTuple) -> bool {
-        let mut filtered = vec![];
-
-        for raw_tuple in self.raw_tuples {
-            if predicate(&raw_tuple) {
-                filtered.push(raw_tuple);
-            }
-        }
-
-        self.raw_tuples = filtered;
-        self
-    }
-
-    fn map_mut<F>(mut self, func: F) -> Self
-    where F: Fn(EagerTuple) -> Option<EagerTuple> {
-        let mut mapped = vec![];
-
-        for raw_tuple in self.raw_tuples {
-            func(raw_tuple).into_iter().for_each(|t| mapped.push(t));
-        }
-
-        self.raw_tuples = mapped;
-        self
-    }
-
-    fn iter<'a>(&'a self) -> Box<dyn Iterator<Item = &'a EagerTuple> + 'a> {
-        Box::new(self.raw_tuples.iter())
-    }
-
-    fn count(&self) -> u32 {
-        self.raw_tuples.len() as u32
-    }
-
-    fn into_eager(self, attrs: &[plan::Attribute]) -> EagerTupleSet<EagerTuple> {
-        let new_tuples = self.raw_tuples.into_iter().map(|t| EagerTuple::from_cells(t.all_cells(attrs))).collect();
-        EagerTupleSet{ raw_tuples: new_tuples }
-    }
-
-    fn into_query_results(self, attributes: &[plan::Attribute]) -> QueryResults {
-        QueryResults{
-            attributes: attributes.iter().map(|x| x.name.to_string()).collect(),
-            results: self.raw_tuples.into_iter().map(|t| t.all_cells(attributes)).collect()
+impl<'a> AsRef<Object> for ObjectView<'a> {
+    fn as_ref(&self) -> &Object {
+        match self {
+            Self::Ref(o) => o,
+            Self::Val(o) => o,
+            _ => todo!(),
         }
     }
+}
+
+impl<'a> ObjectView<'a> {
+    fn iter(&self) -> std::slice::Iter<ByteTuple> {
+        match self {
+            Self::Ref(o) => o.iter(),
+            Self::Val(o) => o.iter(),
+            _ => todo!(),
+        }
+    }
+}
+
+struct ObjectIter<'a> {
+    object: ObjectView<'a>,
+    pos: usize,
+}
+
+fn query_results(object: &[Tuple], attrs: &[Attribute]) -> QueryResults {
+    QueryResults {
+        attributes: attrs.iter().map(|a| a.name.to_string()).collect(),
+        results: object.iter().map(|tuple| tuple_to_cells(attrs, tuple)).collect(), 
+   }
+}
+
+fn tuple_to_cells(attrs: &[Attribute], tuple: &Tuple) -> Vec<Cell> {
+    attrs.iter().map(|attr| Cell::from_bytes(attr.kind, tuple.cell_by_attr(attr).bytes())).collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dsl::Operator;
+    use crate::{dsl::{Command, Operator, Query}, Type};
 
     #[test]
     fn query_not_existing_relation() {

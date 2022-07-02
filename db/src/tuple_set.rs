@@ -8,6 +8,11 @@ struct TupleSet<'a> {
     pos: usize,
 }
 
+struct FilteredTupleSet<'a> {
+    source: TupleSet<'a>,
+//    filter: 
+}
+
 impl<'a> TupleSet<'a> {
     fn from_object(raw: &'a [ByteTuple]) -> Self {
         Self { raw, pos: 0 }
@@ -23,17 +28,25 @@ impl<'a> Iterator for TupleSet<'a> {
     }
 }
 
-struct Tuple<'a> {
+pub struct Tuple<'a> {
     raw: &'a ByteTuple,
     rest: Option<&'a ByteTuple>,
 }
 
 impl<'a> Tuple<'a> {
-    fn cell_by_attr(&self, attr: &Attribute) -> Option<Cell> {
-        self.cell(attr.pos, attr.kind)
+    pub(crate) fn from_bytes(raw: &'a ByteTuple) -> Self {
+        Self{ raw, rest: None }
     }
 
-    fn cell(&self, pos: usize, kind: Type) -> Option<Cell> {
+    pub(crate) fn as_bytes(&self) -> &ByteTuple {
+        self.raw
+    }
+
+    pub(crate) fn cell_by_attr(&self, attr: &Attribute) -> Cell {
+        self.cell(attr.pos, attr.kind).unwrap()
+    }
+
+    pub(crate) fn cell(&self, pos: usize, kind: Type) -> Option<Cell> {
         if pos < self.raw.len() {
             Some(Cell{ raw: &self.raw[pos], kind })
         } else if self.rest.is_some() {
@@ -46,15 +59,21 @@ impl<'a> Tuple<'a> {
 
     }
 
-    fn add_cells(mut self, other: &'a ByteTuple) -> Self {
+    pub(crate) fn add_cells(mut self, other: &'a ByteTuple) -> Self {
         self.rest = Some(other);
         self
     }
 }
 
-struct Cell<'a> {
+pub(crate) struct Cell<'a> {
     raw: &'a [u8],
     kind: Type,
+}
+
+impl<'a> Cell<'a> {
+    pub fn bytes(&self) -> &[u8] {
+        self.raw
+    }
 }
 
 impl<'a> ToString for Cell<'a> {
@@ -88,6 +107,13 @@ impl<'a> TryFrom<Cell<'a>> for i32 {
     }
 }
 
+impl<'a> PartialEq for Cell<'a> {
+    fn eq(&self, other: &Cell) -> bool {
+        self.raw == other.raw
+    }
+
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -99,6 +125,20 @@ mod tests {
         let first = result.get(0).unwrap();
         assert_eq!(first.cell(0, Type::NUMBER).unwrap().to_string(), "1");
         assert_eq!(first.cell(1, Type::TEXT).unwrap().to_string(), "example");
+    }
+
+    #[test]
+    fn test_filter() {
+        let object = vec![
+            tuple(&["1", "foo"]),
+            tuple(&["2", "bar"]),
+        ];
+
+        let result: Vec<Tuple> = TupleSet::from_object(&object)
+            .filter(|tuple| tuple.cell(0, Type::NUMBER).map(|cell| i32::try_from(cell).unwrap() == 1).unwrap_or(false))
+            .collect();
+
+        assert_eq!(result.get(0).unwrap().cell(1, Type::TEXT).unwrap().to_string(), "foo");
     }
 
     #[test]

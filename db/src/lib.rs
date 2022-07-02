@@ -19,6 +19,7 @@ pub struct QueryResults {
     results: Vec<Vec<Cell>>
 }
 
+#[derive(Debug)]
 pub struct Tuple<'a> {
     attributes: &'a [String],
     contents: &'a [Cell],

@@ -1,7 +1,7 @@
 use crate::Cell;
 use crate::dsl;
 use crate::schema::{Schema, Relation, Type};
-use crate::db::Tuple;
+use crate::tuple_set::Tuple;
 
 use std::iter::zip;
 
@@ -41,8 +41,8 @@ pub(crate) struct Filter {
 }
 
 impl Filter {
-    pub fn matches_tuple(&self, tuple: &impl Tuple) -> bool {
-        let left = tuple.cell(&self.attribute);
+    pub fn matches_tuple(&self, tuple: &Tuple) -> bool {
+        let left = Cell::from_bytes(self.attribute.kind, tuple.cell_by_attr(&self.attribute).bytes());
         (self.comp)(&left, &self.right)
     }
 }
@@ -56,26 +56,19 @@ pub(crate) struct Join {
 }
 
 impl Join {
-    pub fn find_match<'a, T: Tuple>(&self, joiner_tuples: &'a [T], joinee: &impl Tuple) -> Option<&'a T> {
-        let joinee_key = joinee.cell(&self.joinee_key());
-
-        joiner_tuples.iter()
-            .find(|tuple| tuple.cell(&self.joiner_key()) == joinee_key)
-    }
-
     pub fn source_table(&self) -> &str {
         &self.table
     }
 
-    fn joinee_key(&self) -> &Attribute {
+    pub fn joinee_key(&self) -> &Attribute {
         self.joinee_attributes.get(self.joinee_key).unwrap()
     }
 
-    fn joiner_key(&self) -> &Attribute {
+    pub fn joiner_key(&self) -> &Attribute {
         self.joiner_attributes.get(self.joiner_key).unwrap()
     }
 
-    fn attributes_after(&self) -> Vec<Attribute> {
+    pub fn attributes_after(&self) -> Vec<Attribute> {
         self.joinee_attributes.iter()
             .chain(self.joiner_attributes.iter())
             .enumerate()
@@ -294,7 +287,7 @@ fn compute_joins<'a>(plan: Plan<'a>, schema: &Schema, query: &dsl::Query) -> Res
 
 fn table_attributes(table: &Relation) -> Vec<Attribute> {
     table.columns().enumerate()
-        .map(|(pos, (col_name, kind))| Attribute{ pos: pos, name: col_name.to_string(), kind })
+        .map(|(pos, (col_name, kind))| Attribute{ pos, name: col_name.to_string(), kind })
         .collect()
 }
 
@@ -303,6 +296,9 @@ mod tests {
     use super::*;
     use crate::dsl::Operator::{EQ, GT};
     use crate::schema::{Column, Type};
+    
+
+    type ByteTuple = Vec<Vec<u8>>;
 
     #[test]
     fn test_compute_filter() {
@@ -321,20 +317,20 @@ mod tests {
     fn test_apply_filter() {
         let mut schema = Schema::default();
         schema.add_relation("example", &[col("id", Type::NUMBER), col("content", Type::TEXT), col("type", Type::NUMBER)]);
-        let tuple_1 = MockTuple(vec![Cell::from_number(1), Cell::from_string("content1"), Cell::from_number(11)]);
-        let tuple_2 = MockTuple(vec![Cell::from_number(2), Cell::from_string("content2"), Cell::from_number(12)]);
+        let tuple_1 = tuple(&["1", "content1", "11"]);
+        let tuple_2 = tuple(&["2", "content2", "12"]);
 
         let id_filter = expect_filter(compute_plan(&schema, &dsl::Query::scan("example").filter("example.id", EQ, "1")));
-        assert!(id_filter.matches_tuple(&tuple_1));
-        assert!(!id_filter.matches_tuple(&tuple_2));
+        assert!(id_filter.matches_tuple(&Tuple::from_bytes(&tuple_1)));
+        assert!(!id_filter.matches_tuple(&Tuple::from_bytes(&tuple_2)));
 
         let content_filter = expect_filter(compute_plan(&schema, &dsl::Query::scan("example").filter("example.content", EQ, "content1")));
-        assert!(content_filter.matches_tuple(&tuple_1));
-        assert!(!content_filter.matches_tuple(&tuple_2));
+        assert!(content_filter.matches_tuple(&Tuple::from_bytes(&tuple_1)));
+        assert!(!content_filter.matches_tuple(&Tuple::from_bytes(&tuple_2)));
 
         let comp_filter = expect_filter(compute_plan(&schema, &dsl::Query::scan("example").filter("example.id", GT, "1")));
-        assert!(!comp_filter.matches_tuple(&tuple_1));
-        assert!(comp_filter.matches_tuple(&tuple_2));
+        assert!(!comp_filter.matches_tuple(&Tuple::from_bytes(&tuple_1)));
+        assert!(comp_filter.matches_tuple(&Tuple::from_bytes(&tuple_2)));
     }
 
     fn expect_filters(result: Result<Plan, &'static str>, n: usize) -> Vec<Filter> {
@@ -370,21 +366,6 @@ mod tests {
 
         let missing_column = compute_plan(&schema, &dsl::Query::scan("document").join("type", "something", "else"));
         assert!(missing_column.is_err());
-    }
-
-    #[test]
-    fn test_join_match_tuple() {
-        let mut schema = Schema::default();
-        schema.add_relation("document", &[col("name", Type::TEXT), col("type_id", Type::NUMBER)]);
-        schema.add_relation("type", &[col("id", Type::TEXT), col("name", Type::NUMBER)]);
-        let document_1 = MockTuple(vec![Cell::from_number(1), Cell::from_number(2)]);
-        let document_2 = MockTuple(vec![Cell::from_number(2), Cell::from_number(3)]);
-        let type_1 = MockTuple(vec![Cell::from_number(1), Cell::from_string("a")]);
-        let type_2 = MockTuple(vec![Cell::from_number(2), Cell::from_string("b")]);
-
-        let join = expect_join(compute_plan(&schema, &dsl::Query::scan("document").join("type", "document.type_id", "type.id")));
-        assert_eq!(join.find_match(&[type_1.clone(), type_2.clone()], &document_1), Some(&type_2));
-        assert_eq!(join.find_match(&[type_1.clone(), type_2.clone()], &document_2), None);
     }
 
     #[test]
@@ -463,15 +444,16 @@ mod tests {
         attrs.iter().map(|attr| attr.name.as_str()).collect()
     }
 
-    #[derive(Clone, Debug, PartialEq)]
-    struct MockTuple(Vec<Cell>);
-    impl Tuple for MockTuple {
-        fn cell(&self, attr: &Attribute) -> Cell {
-            self.0.get(attr.pos).unwrap().clone()
-        }
+    fn tuple(cells: &[&str]) -> ByteTuple {
+        cells.iter().map(|s| cell(s)).collect()
+    }
 
-        fn all_cells(&self, _: &[Attribute]) -> Vec<Cell> {
-            self.0.to_vec()
+    fn cell(s: &str) -> Vec<u8> {
+        if let Result::Ok(num) = s.parse::<i32>() {
+            Vec::from(num.to_be_bytes())
+        } else {
+            Vec::from(s.as_bytes())
         }
     }
 }
+
