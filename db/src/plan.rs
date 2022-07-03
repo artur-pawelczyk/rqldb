@@ -10,12 +10,13 @@ pub(crate) struct Plan<'a> {
     pub source: Source<'a>,
     pub filters: Vec<Filter>,
     pub joins: Vec<Join>,
+    pub finisher: Finisher<'a>,
 }
 
 impl<'a> Plan<'a> {
-    fn validate_with_finisher(self, finisher: &Finisher) -> Result<Self, &'static str> {
+    fn validate_with_finisher(self) -> Result<Self, &'static str> {
         Ok(Plan{
-            source: self.source.validate_with_finisher(finisher)?,
+            source: self.source.validate_with_finisher(&self.finisher)?,
             ..self
         })
     }
@@ -118,7 +119,7 @@ impl Attribute {
     }
 
     pub fn with_type(self, kind: Type) -> Attribute {
-        Attribute{ pos: self.pos, name: self.name, kind: kind }
+        Attribute{ pos: self.pos, name: self.name, kind }
     }
 
     fn guess_type(self, value: &str) -> Attribute {
@@ -159,23 +160,27 @@ impl<'a> Source<'a> {
                 Ok(Source{ attributes: self.attributes, contents: self.contents })
             }
 
-            Finisher::Return => {
+            _ => {
                 Ok(Source{ attributes: self.attributes, contents: self.contents })
-            }
+            },
         }
     }
 }
 
-enum Finisher<'a> {
+#[derive(Debug, Default, PartialEq)]
+pub enum Finisher<'a> {
     Return,
-    Insert(&'a Relation)
+    Insert(&'a Relation),
+    Count,
+    #[default]
+    Nil,
 }
 
 pub(crate) fn compute_plan<'a>(schema: &'a Schema, query: &dsl::Query) -> Result<Plan<'a>, &'static str> {
     let plan: Plan = compute_source(schema, &query.source)?;
 
-    let finisher = compute_finisher(schema, &query.finisher)?;
-    let plan = plan.validate_with_finisher(&finisher)?;
+    let plan = compute_finisher(plan, schema, &query.finisher)?;
+    let plan = plan.validate_with_finisher()?;
 
     let plan = compute_joins(plan, schema, query)?;
 
@@ -220,11 +225,13 @@ fn compute_filters<'a>(plan: Plan<'a>, query: &dsl::Query) -> Result<Plan<'a>, &
     Ok(Plan{ filters, ..plan })
 }
 
-fn compute_finisher<'a>(schema: &'a Schema, dsl_finisher: &dsl::Finisher) -> Result<Finisher<'a>, &'static str> {
+fn compute_finisher<'a>(plan: Plan<'a>, schema: &'a Schema, dsl_finisher: &dsl::Finisher) -> Result<Plan<'a>, &'static str> {
     match dsl_finisher {
         dsl::Finisher::Insert(name) => schema.find_relation(name).map(Finisher::Insert).ok_or("No such target table"),
-        _ => Ok(Finisher::Return),
-    }
+        dsl::Finisher::AllColumns => Ok(Finisher::Return),
+        dsl::Finisher::Count => Ok(Finisher::Count),
+        _ => todo!(),
+    }.map(|finisher| Plan{ finisher, ..plan })
 }
 
 fn right_as_cell(dsl_filter: &dsl::Filter) -> Cell {
@@ -420,6 +427,28 @@ mod tests {
 
         let wrong_type = compute_plan(&schema, &dsl::Query::tuple(&["not-ID", "the-content", "something"]).insert_into("example"));
         assert!(wrong_type.is_err());
+    }
+
+    #[test]
+    fn test_compute_finisher() {
+        let mut schema = Schema::default();
+        schema.add_relation("example", &[col("id", Type::NUMBER), col("content", Type::TEXT)]);
+
+        let finisher = compute_plan(&schema, &dsl::Query::scan("example"))
+            .unwrap().finisher;
+        assert_eq!(finisher, Finisher::Return);
+
+        let finisher = compute_plan(&schema, &dsl::Query::tuple(&["1", "the content"]).insert_into("example"))
+            .unwrap().finisher;
+        assert!(matches!(finisher, Finisher::Insert{..}));
+
+        let finisher = compute_plan(&schema, &dsl::Query::scan("example").count())
+            .unwrap().finisher;
+        assert_eq!(finisher, Finisher::Count);
+
+
+        let failure = compute_plan(&schema, &dsl::Query::tuple(&["a", "b", "c"]).insert_into("not-a-table"));
+        assert!(failure.is_err());
     }
 
     fn col(name: &str, kind: Type) -> Column {

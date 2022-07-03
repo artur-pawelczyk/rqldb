@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::iter::zip;
 use std::cell::RefCell;
 
-use crate::dsl::{Command, Query, Finisher};
+use crate::dsl::{Command, Query};
 use crate::schema::{Schema, Type, Relation};
 use crate::{Cell, QueryResults};
 use crate::plan;
@@ -87,18 +87,18 @@ impl Database {
         let joined_tuples = execute_join(self, source_tuples, &plan)?;
         let filtered_tuples = filter_tuples(joined_tuples, &plan.filters)?;
 
-        match &query.finisher {
-            Finisher::AllColumns => Result::Ok(filtered_tuples.into_query_results(&plan.final_attributes())),
-            Finisher::Columns(_) => todo!(),
-            Finisher::Count => Ok(QueryResults::count(filtered_tuples.count())),
-            Finisher::Insert(table) => {
-                let mut object = self.objects.get(table).expect("This shouldn't happen").borrow_mut();
+        match &plan.finisher {
+            plan::Finisher::Return => Result::Ok(filtered_tuples.into_query_results(&plan.final_attributes())),
+            plan::Finisher::Count => Ok(QueryResults::count(filtered_tuples.count())),
+            plan::Finisher::Insert(table) => {
+                let mut object = self.objects.get(&table.name).expect("This shouldn't happen").borrow_mut();
                 for tuple in filtered_tuples.iter() {
                     object.push(tuple.contents().iter().map(|x| x.as_bytes()).collect())
                 }
 
                 Result::Ok(filtered_tuples.into_query_results(&vec![]))
-            }
+            },
+            _ => Err("Unknown finisher"),
         }
     }
 

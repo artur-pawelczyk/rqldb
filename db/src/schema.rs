@@ -3,9 +3,16 @@ pub struct Schema {
     pub relations: Vec<Relation>
 }
 
+#[derive(Debug)]
 pub struct Relation {
     pub name: String,
     pub columns: Vec<Column>
+}
+
+impl PartialEq for Relation {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
 }
 
 #[derive(Clone, Debug)]
