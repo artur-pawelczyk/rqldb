@@ -3,31 +3,6 @@ use crate::schema::Type;
 
 type ByteTuple = Vec<Vec<u8>>;
 
-struct TupleSet<'a> {
-    raw: &'a [ByteTuple],
-    pos: usize,
-}
-
-struct FilteredTupleSet<'a> {
-    source: TupleSet<'a>,
-//    filter: 
-}
-
-impl<'a> TupleSet<'a> {
-    fn from_object(raw: &'a [ByteTuple]) -> Self {
-        Self { raw, pos: 0 }
-    }
-}
-
-impl<'a> Iterator for TupleSet<'a> {
-    type Item = Tuple<'a>;
-
-    fn next(&mut self) -> Option<Tuple<'a>> {
-        self.pos += 1;
-        self.raw.get(self.pos - 1).map(|tuple| Tuple{ raw: tuple, rest: None })
-    }
-}
-
 pub struct Tuple<'a> {
     raw: &'a ByteTuple,
     rest: Option<&'a ByteTuple>,
@@ -119,12 +94,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_single_tuple() {
+    fn test_tuple() {
         let object = vec![tuple(&["1", "example"])];
-        let result: Vec<Tuple> = TupleSet::from_object(&object).collect();
-        let first = result.get(0).unwrap();
-        assert_eq!(first.cell(0, Type::NUMBER).unwrap().to_string(), "1");
-        assert_eq!(first.cell(1, Type::TEXT).unwrap().to_string(), "example");
+        let tuple = Tuple::from_bytes(object.get(0).unwrap());
+        assert_eq!(tuple.cell(0, Type::NUMBER).unwrap().to_string(), "1");
+        assert_eq!(tuple.cell(1, Type::TEXT).unwrap().to_string(), "example");
     }
 
     #[test]
@@ -134,7 +108,7 @@ mod tests {
             tuple(&["2", "bar"]),
         ];
 
-        let result: Vec<Tuple> = TupleSet::from_object(&object)
+        let result: Vec<Tuple> = object.iter().map(Tuple::from_bytes)
             .filter(|tuple| tuple.cell(0, Type::NUMBER).map(|cell| i32::try_from(cell).unwrap() == 1).unwrap_or(false))
             .collect();
 
@@ -142,7 +116,7 @@ mod tests {
     }
 
     #[test]
-    fn test_join()  {
+    fn test_add_cells()  {
         let object_1 = vec![
             tuple(&["1", "foo"]),
             tuple(&["2", "bar"]),
@@ -151,9 +125,10 @@ mod tests {
             tuple(&["fizz"]),
         ];
 
-        let result: Vec<Tuple> = TupleSet::from_object(&object_1).filter_map(|tuple| {
-            object_2.get(0).map(|joiner_tuple| tuple.add_cells(joiner_tuple))
-        }).collect();
+        let result: Vec<Tuple> = object_1.iter().map(Tuple::from_bytes)
+            .filter_map(|tuple| {
+                object_2.get(0).map(|joiner_tuple| tuple.add_cells(joiner_tuple))
+            }).collect();
         let first = result.get(0).unwrap();
         assert_eq!(i32::try_from(first.cell(0, Type::NUMBER).unwrap()), Ok(1));
         assert_eq!(first.cell(2, Type::TEXT).unwrap().to_string(), "fizz");

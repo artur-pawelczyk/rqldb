@@ -21,10 +21,6 @@ impl<'a> Plan<'a> {
         })
     }
 
-    pub fn source_attributes(&self) -> Vec<Attribute> {
-        self.source.attributes.to_vec()
-    }
-
     pub fn final_attributes(&self) -> Vec<Attribute> {
         if let Some(last_join) = self.joins.iter().last() {
             last_join.attributes_after()

@@ -98,7 +98,6 @@ impl<'a> AsRef<Object> for ObjectView<'a> {
         match self {
             Self::Ref(o) => o,
             Self::Val(o) => o,
-            _ => todo!(),
         }
     }
 }
@@ -108,14 +107,8 @@ impl<'a> ObjectView<'a> {
         match self {
             Self::Ref(o) => o.iter(),
             Self::Val(o) => o.iter(),
-            _ => todo!(),
         }
     }
-}
-
-struct ObjectIter<'a> {
-    object: ObjectView<'a>,
-    pos: usize,
 }
 
 fn query_results(object: &[Tuple], attrs: &[Attribute]) -> QueryResults {
@@ -181,7 +174,7 @@ mod tests {
         assert_eq!(tuples.size(), 1);
         let results = tuples.results();
         let tuple = results.get(0).expect("fail");
-        assert_eq!(&tuple.contents[0].as_bytes(), &Vec::from(1_i32.to_be_bytes()));
+        assert_eq!(tuple.contents[0].as_number(), Some(1i32));
         assert_eq!(&tuple.contents[1].as_string(), "something");
     }
 

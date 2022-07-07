@@ -88,9 +88,9 @@ impl Cell {
         }
     }
 
-    fn as_bytes(&self) -> Vec<u8> {
-        self.contents.clone()
-    }
+    // fn as_bytes(&self) -> Vec<u8> {
+    //     self.contents.clone()
+    // }
 
     pub fn into_bytes(self) -> Vec<u8> {
         self.contents
