@@ -4,7 +4,7 @@ pub mod parse;
 pub mod tokenize;
 pub mod schema;
 pub mod plan;
-pub mod tuple_set;
+pub mod tuple;
 
 use std::fmt;
 use std::cmp::Ordering;

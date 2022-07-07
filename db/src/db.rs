@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use crate::dsl::Finisher;
 use crate::plan::{Contents, Attribute, Filter};
-use crate::tuple_set::Tuple;
+use crate::tuple::Tuple;
 use crate::{schema::Schema, QueryResults, plan::compute_plan};
 use crate::{dsl, Cell};
 

@@ -1,7 +1,7 @@
 use crate::Cell;
 use crate::dsl;
 use crate::schema::{Schema, Relation, Type};
-use crate::tuple_set::Tuple;
+use crate::tuple::Tuple;
 
 use std::iter::zip;
 
