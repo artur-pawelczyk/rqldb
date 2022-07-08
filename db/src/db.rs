@@ -1,5 +1,4 @@
 use std::cell::{RefCell, Ref, RefMut};
-use std::collections::HashMap;
 
 use crate::plan::{Contents, Attribute, Filter, Plan, Finisher};
 use crate::tuple::Tuple;
@@ -9,7 +8,7 @@ use crate::{dsl, Cell};
 #[derive(Default)]
 pub struct Database {
     schema: Schema,
-    objects: HashMap<String, RefCell<Object>>,
+    objects: Vec<RefCell<Object>>,
 }
 
 type Object = Vec<ByteTuple>;
@@ -18,8 +17,8 @@ type TupleIndex = usize;
 
 impl Database {
     pub fn execute_create(&mut self, command: &dsl::Command) {
-        self.schema.add_relation(&command.name, &command.columns);
-        self.objects.insert(command.name.clone(), RefCell::new(Object::new()));
+        self.schema.add_relation(self.objects.len(), &command.name, &command.columns);
+        self.objects.push(RefCell::new(Object::new()));
     }
 
     pub fn execute_query(&self, query: &dsl::Query) -> Result<QueryResults, &'static str> {
@@ -35,7 +34,7 @@ impl Database {
 
         let source: ObjectView = match plan.source.contents {
             Contents::TableScan(rel) => {
-                ObjectView::Ref(self.objects.get(&rel.name).unwrap().borrow())
+                ObjectView::Ref(self.objects.get(rel.id).unwrap().borrow())
             },
             Contents::Tuple(ref values) => {
                 let cells = values.iter().map(|val| cell(val)).collect();
@@ -44,7 +43,7 @@ impl Database {
             _ => todo!()
         };
 
-        let join_sources: Vec<Ref<Object>> = plan.joins.iter().map(|join| self.objects.get(join.source_table()).unwrap().borrow()).collect();
+        let join_sources: Vec<Ref<Object>> = plan.joins.iter().map(|join| self.objects.get(join.source_table().id).unwrap().borrow()).collect();
         let mut sink = self.create_sink(&plan);
 
         for (idx, byte_tuple) in source.iter().enumerate() {
@@ -69,7 +68,7 @@ impl Database {
 
         drop(source);
         match plan.finisher {
-            Finisher::Delete(rel) => sink.accept_object(self.objects.get(&rel.name).unwrap().borrow_mut()),
+            Finisher::Delete(rel) => sink.accept_object(self.objects.get(rel.id).unwrap().borrow_mut()),
             _ => {},
         }
 
@@ -80,7 +79,7 @@ impl Database {
         match plan.finisher {
             Finisher::Return => Sink::Return(plan.final_attributes(), vec![]),
             Finisher::Count => Sink::Count(0),
-            Finisher::Insert(rel) => Sink::Insert(self.objects.get(&rel.name).unwrap().borrow_mut()),
+            Finisher::Insert(rel) => Sink::Insert(self.objects.get(rel.id).unwrap().borrow_mut()),
             Finisher::Delete(_) => Sink::Delete(vec![]),
             Finisher::Nil => Sink::NoOp,
         }

@@ -1,10 +1,11 @@
 #[derive(Default)]
 pub struct Schema {
-    pub relations: Vec<Relation>
+    pub relations: Vec<Relation>,
 }
 
 #[derive(Debug)]
 pub struct Relation {
+    pub id: usize,
     pub name: String,
     pub columns: Vec<Column>
 }
@@ -12,6 +13,28 @@ pub struct Relation {
 impl PartialEq for Relation {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
+    }
+}
+
+pub trait TableId {
+    fn find_in(self, schema: &Schema) -> Option<&Relation>;
+}
+
+impl TableId for usize {
+    fn find_in(self, schema: &Schema) -> Option<&Relation> {
+        schema.relations.iter().find(|rel| rel.id == self)
+    }
+}
+
+impl TableId for &str {
+    fn find_in(self, schema: &Schema) -> Option<&Relation> {
+        schema.relations.iter().find(|rel| rel.name == self)
+    }
+}
+
+impl TableId for &String {
+    fn find_in(self, schema: &Schema) -> Option<&Relation> {
+        schema.relations.iter().find(|rel| &rel.name == self)
     }
 }
 
@@ -35,14 +58,13 @@ impl Default for Type {
 }
 
 impl Schema {
-    pub fn add_relation(&mut self, name: &str, columns: &[Column]) {
-        let relation = Relation{name: name.to_string(), columns: columns.to_vec()};
+    pub fn add_relation(&mut self, id: usize, name: &str, columns: &[Column]) {
+        let relation = Relation{ id, name: name.to_string(), columns: columns.to_vec() };
         self.relations.push(relation);
     }
 
-    pub fn find_relation(&self, name: &str) -> Option<&Relation> {
-        self.relations.iter()
-            .find(|x| x.name == name)
+    pub fn find_relation<T: TableId>(&self, id: T) -> Option<&Relation> {
+        id.find_in(self)
     }
 }
 
@@ -73,7 +95,7 @@ impl Relation {
     /// ```
     /// use rqldb::schema::{Column, Type, Relation};
     ///
-    /// let relation = Relation{name: "document".to_string(),
+    /// let relation = Relation{id: 0, name: "document".to_string(),
     ///                         columns: vec![
     ///                             Column{name: "id".to_string(), kind: Type::NUMBER},
     ///                             Column{name: "content".to_string(), kind: Type::TEXT},
@@ -99,7 +121,7 @@ impl Relation {
     /// ```
     /// use rqldb::schema::{Column, Type, Relation};
     ///
-    /// let relation = Relation{name: "document".to_string(),
+    /// let relation = Relation{id: 0, name: "document".to_string(),
     ///                         columns: vec![
     ///                             Column{name: "id".to_string(), kind: Type::NUMBER},
     ///                             Column{name: "content".to_string(), kind: Type::TEXT},
