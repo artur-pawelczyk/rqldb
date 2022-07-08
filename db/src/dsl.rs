@@ -48,6 +48,11 @@ impl Query {
         self
     }
 
+    pub fn delete(mut self) -> Self {
+        self.finisher = Finisher::Delete;
+        self
+    }
+
     pub fn print(&self) -> String {
         let mut s = String::new();
 
@@ -139,6 +144,7 @@ pub enum Finisher {
     Columns(Vec<String>),
     Insert(String),
     Count,
+    Delete,
 }
 
 impl Finisher {
@@ -148,6 +154,7 @@ impl Finisher {
             Finisher::Columns(rows) => "select ".to_string() + &print_tokens(rows),
             Finisher::Insert(name) => "insert_into ".to_string() + name,
             Finisher::Count => "count".to_string(),
+            Finisher::Delete => "delete".to_string(),
         }
     }
 }
@@ -256,6 +263,16 @@ mod tests {
         let query = Query::scan("example").count();
         assert_eq!(query.to_string(), "scan example | count");
     }
+
+    #[test]
+    fn delete() {
+        let delete_all = Query::scan("example").delete();
+        assert_eq!(delete_all.to_string(), "scan example | delete");
+
+        let delete_one = Query::scan("example").filter("example.id", EQ, "1").delete();
+        assert_eq!(delete_one.to_string(), "scan example | filter example.id = 1 | delete");
+    }
+
 
     #[test]
     fn create_table() {
