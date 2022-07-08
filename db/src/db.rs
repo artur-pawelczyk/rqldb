@@ -14,7 +14,7 @@ pub struct Database {
 }
 
 #[derive(Default)]
-struct Object{
+struct Object {
     tuples: Vec<ByteTuple>,
     uniq_index: HashMap<u64, Vec<usize>>,
 }
@@ -31,26 +31,22 @@ impl Object {
     fn add_tuple(&mut self, tuple: &Tuple) -> bool {
         let hash = tuple.hash();
 
-        if let Some(_) = self.tuples.iter().find(|t| &tuple.as_bytes() == t) {
-            false
-        } else {
-            match self.uniq_index.entry(hash) {
-                Entry::Occupied(mut entry) => {
-                    if let Some(_) = entry.get().iter().find(|idx| self.tuples.get(**idx) == Some(tuple.as_bytes())) {
-                        false
-                    } else {
-                        let idx = self.tuples.len();
-                        self.tuples.push(tuple.as_bytes().clone());
-                        entry.get_mut().push(idx);
-                        true
-                    }
-                }
-                Entry::Vacant(entry) => {
+        match self.uniq_index.entry(hash) {
+            Entry::Occupied(mut entry) => {
+                if let Some(_) = entry.get().iter().find(|idx| self.tuples.get(**idx) == Some(tuple.as_bytes())) {
+                    false
+                } else {
                     let idx = self.tuples.len();
                     self.tuples.push(tuple.as_bytes().clone());
-                    entry.insert(vec![idx]);
+                    entry.get_mut().push(idx);
                     true
                 }
+            }
+            Entry::Vacant(entry) => {
+                let idx = self.tuples.len();
+                self.tuples.push(tuple.as_bytes().clone());
+                entry.insert(vec![idx]);
+                true
             }
         }
     }
