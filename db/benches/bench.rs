@@ -23,9 +23,6 @@ fn benchmark_insert(c: &mut Criterion) {
     let db = create_database();
     let query = Query::tuple(&["1", "2", "example_doc", "the_content"]).insert_into("document");
     c.bench_function("insert", |b| b.iter(|| db.execute_query(&query).unwrap()));
-
-    let count_query = Query::scan("document").count();
-    println!("count: {}", query_single_number(&db, &count_query).unwrap());
 }
 
 fn benchmark_filter(c: &mut Criterion) {
