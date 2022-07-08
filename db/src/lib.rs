@@ -133,9 +133,13 @@ impl fmt::Debug for Cell {
 }
 
 impl QueryResults {
-    fn count(n: u32) -> Self {
+    pub(crate) fn count(n: u32) -> Self {
         let tuple = vec![Cell::from_number(n)];
         Self{ attributes: vec!["count".to_string()], results: vec![tuple]}
+    }
+
+    pub(crate) fn empty() -> Self {
+        Self{ attributes: vec![], results: vec![] }
     }
 
     pub fn size(&self) -> u32 {

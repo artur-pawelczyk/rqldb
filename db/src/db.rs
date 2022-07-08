@@ -1,8 +1,7 @@
-use std::cell::{RefCell, Ref};
+use std::cell::{RefCell, Ref, RefMut};
 use std::collections::HashMap;
 
-use crate::dsl::Finisher;
-use crate::plan::{Contents, Attribute, Filter};
+use crate::plan::{Contents, Attribute, Filter, Plan, Finisher};
 use crate::tuple::Tuple;
 use crate::{schema::Schema, QueryResults, plan::compute_plan};
 use crate::{dsl, Cell};
@@ -45,10 +44,9 @@ impl Database {
         };
 
         let join_sources: Vec<Ref<Object>> = plan.joins.iter().map(|join| self.objects.get(join.source_table()).unwrap().borrow()).collect();
+        let mut sink = self.create_sink(&plan);
 
-        let mut filtered = Vec::new();
-        for byte_tuple in source.iter() {
-
+       for byte_tuple in source.iter() {
             let tuple = match &plan.joins[..] {
                 [] => Tuple::from_bytes(byte_tuple),
                 [join] => {
@@ -64,22 +62,19 @@ impl Database {
             };
 
             if test_filters(&plan.filters, &tuple) {
-                filtered.push(tuple);
+                sink.accept(&tuple);
             }
         }
 
-        match &query.finisher {
-            Finisher::AllColumns => Ok(query_results(&filtered, &plan.final_attributes())),
-            Finisher::Insert(name) => {
-                let mut object = self.objects.get(name).unwrap().borrow_mut();
-                for tuple in filtered.iter() {
-                    object.push(tuple.as_bytes().clone());
-                }
+        Ok(sink.into_results())
+    }
 
-                Ok(query_results(&filtered, &plan.final_attributes()))
-            },
-            Finisher::Count => Ok(QueryResults::count(filtered.len() as u32)),
-            _ => todo!(),
+    fn create_sink(&self, plan: &Plan) -> Sink {
+        match plan.finisher {
+            Finisher::Return => Sink::Return(plan.final_attributes(), vec![]),
+            Finisher::Count => Sink::Count(0),
+            Finisher::Insert(rel) => Sink::Insert(self.objects.get(&rel.name).unwrap().borrow_mut()),
+            Finisher::Nil => Sink::NoOp,
         }
     }
 }
@@ -111,11 +106,36 @@ impl<'a> ObjectView<'a> {
     }
 }
 
-fn query_results(object: &[Tuple], attrs: &[Attribute]) -> QueryResults {
-    QueryResults {
-        attributes: attrs.iter().map(|a| a.name.to_string()).collect(),
-        results: object.iter().map(|tuple| tuple_to_cells(attrs, tuple)).collect(), 
-   }
+enum Sink<'a> {
+    Count(usize),
+    Return(Vec<Attribute>, Vec<Vec<Cell>>),
+    Insert(RefMut<'a, Object>),
+    NoOp,
+}
+
+impl<'a> Sink<'a> {
+    fn accept(&mut self, tuple: &Tuple) {
+        match self {
+            Self::Count(ref mut count) => *count += 1,
+            Self::Return(attrs, ref mut results) => results.push(tuple_to_cells(attrs, tuple)),
+            Self::Insert(object) => object.push(tuple.as_bytes().clone()),
+            Self::NoOp => {},
+        }
+    }
+
+    fn into_results(self) -> QueryResults {
+        match self {
+            Self::Count(count) => QueryResults::count(count as u32),
+            Self::Return(attributes, results) => {
+                QueryResults{
+                    attributes: attributes.into_iter().map(|attr| attr.name.to_string()).collect(),
+                    results,
+                }
+            }
+            Self::Insert(_) => QueryResults::empty(),
+            Self::NoOp => QueryResults::empty(),
+        }
+    }
 }
 
 fn tuple_to_cells(attrs: &[Attribute], tuple: &Tuple) -> Vec<Cell> {
