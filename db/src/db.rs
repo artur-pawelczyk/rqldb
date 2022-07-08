@@ -14,6 +14,7 @@ pub struct Database {
 
 type Object = Vec<ByteTuple>;
 type ByteTuple = Vec<Vec<u8>>;
+type TupleIndex = usize;
 
 impl Database {
     pub fn execute_create(&mut self, command: &dsl::Command) {
@@ -46,7 +47,7 @@ impl Database {
         let join_sources: Vec<Ref<Object>> = plan.joins.iter().map(|join| self.objects.get(join.source_table()).unwrap().borrow()).collect();
         let mut sink = self.create_sink(&plan);
 
-       for byte_tuple in source.iter() {
+        for (idx, byte_tuple) in source.iter().enumerate() {
             let tuple = match &plan.joins[..] {
                 [] => Tuple::from_bytes(byte_tuple),
                 [join] => {
@@ -62,18 +63,25 @@ impl Database {
             };
 
             if test_filters(&plan.filters, &tuple) {
-                sink.accept(&tuple);
+                sink.accept_tuple(idx, &tuple);
             }
+        }
+
+        drop(source);
+        match plan.finisher {
+            Finisher::Delete(rel) => sink.accept_object(self.objects.get(&rel.name).unwrap().borrow_mut()),
+            _ => {},
         }
 
         Ok(sink.into_results())
     }
 
-    fn create_sink(&self, plan: &Plan) -> Sink {
+    fn create_sink<'a>(&'a self, plan: &'a Plan) -> Sink<'a> {
         match plan.finisher {
             Finisher::Return => Sink::Return(plan.final_attributes(), vec![]),
             Finisher::Count => Sink::Count(0),
             Finisher::Insert(rel) => Sink::Insert(self.objects.get(&rel.name).unwrap().borrow_mut()),
+            Finisher::Delete(_) => Sink::Delete(vec![]),
             Finisher::Nil => Sink::NoOp,
         }
     }
@@ -110,16 +118,25 @@ enum Sink<'a> {
     Count(usize),
     Return(Vec<Attribute>, Vec<Vec<Cell>>),
     Insert(RefMut<'a, Object>),
+    Delete(Vec<TupleIndex>),
     NoOp,
 }
 
 impl<'a> Sink<'a> {
-    fn accept(&mut self, tuple: &Tuple) {
+    fn accept_tuple(&mut self, idx: TupleIndex, tuple: &Tuple) {
         match self {
             Self::Count(ref mut count) => *count += 1,
             Self::Return(attrs, ref mut results) => results.push(tuple_to_cells(attrs, tuple)),
             Self::Insert(object) => object.push(tuple.as_bytes().clone()),
+            Self::Delete(ref mut tuples) => tuples.push(idx),
             Self::NoOp => {},
+        }
+    }
+
+    fn accept_object(&mut self, mut object: RefMut<Object>) {
+        match self {
+            Self::Delete(ids) => ids.iter().for_each(|id| { object.remove(*id); }),
+            _ => {},
         }
     }
 
@@ -133,6 +150,7 @@ impl<'a> Sink<'a> {
                 }
             }
             Self::Insert(_) => QueryResults::empty(),
+            Self::Delete(_) => QueryResults::empty(),
             Self::NoOp => QueryResults::empty(),
         }
     }
@@ -253,7 +271,7 @@ mod tests {
     }
 
     #[test]
-    pub fn count() {
+    fn count() {
         let mut db = Database::default();
         db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT));
 
@@ -267,5 +285,23 @@ mod tests {
             .and_then(|c| c.as_number())
             .unwrap();
         assert_eq!(count, 20);
+    }
+
+    #[test]
+    fn delete() {
+        let mut db = Database::default();
+        db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT));
+        db.execute_query(&Query::tuple(&["1", "the content"]).insert_into("document")).unwrap();
+
+        let tuple_delete = db.execute_query(&Query::tuple(&["1"]).delete());
+        assert!(tuple_delete.is_err());
+
+        let no_such_table = db.execute_query(&Query::scan("something").delete());
+        assert!(no_such_table.is_err());
+
+        db.execute_query(&Query::scan("document").delete()).unwrap();
+
+        let result = db.execute_query(&Query::scan("document")).unwrap();
+        assert!(result.results().is_empty());
     }
 }

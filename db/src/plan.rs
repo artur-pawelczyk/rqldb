@@ -161,6 +161,7 @@ pub enum Finisher<'a> {
     Return,
     Insert(&'a Relation),
     Count,
+    Delete(&'a Relation),
     #[default]
     Nil,
 }
@@ -168,7 +169,7 @@ pub enum Finisher<'a> {
 pub(crate) fn compute_plan<'a>(schema: &'a Schema, query: &dsl::Query) -> Result<Plan<'a>, &'static str> {
     let plan: Plan = compute_source(schema, &query.source)?;
 
-    let plan = compute_finisher(plan, schema, &query.finisher)?;
+    let plan = compute_finisher(plan, schema, query)?;
     let plan = plan.validate_with_finisher()?;
 
     let plan = compute_joins(plan, schema, query)?;
@@ -214,11 +215,17 @@ fn compute_filters<'a>(plan: Plan<'a>, query: &dsl::Query) -> Result<Plan<'a>, &
     Ok(Plan{ filters, ..plan })
 }
 
-fn compute_finisher<'a>(plan: Plan<'a>, schema: &'a Schema, dsl_finisher: &dsl::Finisher) -> Result<Plan<'a>, &'static str> {
-    match dsl_finisher {
+fn compute_finisher<'a>(plan: Plan<'a>, schema: &'a Schema, query: &dsl::Query) -> Result<Plan<'a>, &'static str> {
+    match &query.finisher {
         dsl::Finisher::Insert(name) => schema.find_relation(name).map(Finisher::Insert).ok_or("No such target table"),
         dsl::Finisher::AllColumns => Ok(Finisher::Return),
         dsl::Finisher::Count => Ok(Finisher::Count),
+        dsl::Finisher::Delete => {
+            match &query.source {
+                dsl::Source::TableScan(name) => schema.find_relation(name).map(Finisher::Delete).ok_or("No table to delete"),
+                _ => Err("Illegal delete operation"),
+            }
+        }
         _ => todo!(),
     }.map(|finisher| Plan{ finisher, ..plan })
 }
