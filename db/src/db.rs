@@ -1,4 +1,6 @@
 use std::cell::{RefCell, Ref, RefMut};
+use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 
 use crate::plan::{Contents, Attribute, Filter, Plan, Finisher};
 use crate::tuple::Tuple;
@@ -12,30 +14,53 @@ pub struct Database {
 }
 
 #[derive(Default)]
-struct Object(Vec<ByteTuple>);
+struct Object{
+    tuples: Vec<ByteTuple>,
+    uniq_index: HashMap<u64, Vec<usize>>,
+}
 type ByteTuple = Vec<Vec<u8>>;
 type TupleIndex = usize;
 
 impl Object {
     fn temporary(byte_tuple: ByteTuple) -> Self {
-        Self(vec![byte_tuple])
+        let mut obj = Self::default();
+        obj.add_tuple(&Tuple::from_bytes(&byte_tuple));
+        obj
     }
 
     fn add_tuple(&mut self, tuple: &Tuple) -> bool {
-        if let Some(_) = self.0.iter().find(|t| &tuple.as_bytes() == t) {
+        let hash = tuple.hash();
+
+        if let Some(_) = self.tuples.iter().find(|t| &tuple.as_bytes() == t) {
             false
         } else {
-            self.0.push(tuple.as_bytes().clone());
-            true
+            match self.uniq_index.entry(hash) {
+                Entry::Occupied(mut entry) => {
+                    if let Some(_) = entry.get().iter().find(|idx| self.tuples.get(**idx) == Some(tuple.as_bytes())) {
+                        false
+                    } else {
+                        let idx = self.tuples.len();
+                        self.tuples.push(tuple.as_bytes().clone());
+                        entry.get_mut().push(idx);
+                        true
+                    }
+                }
+                Entry::Vacant(entry) => {
+                    let idx = self.tuples.len();
+                    self.tuples.push(tuple.as_bytes().clone());
+                    entry.insert(vec![idx]);
+                    true
+                }
+            }
         }
     }
 
     fn iter(&self) -> std::slice::Iter<ByteTuple> {
-        self.0.iter()
+        self.tuples.iter()
     }
 
     fn remove_tuple(&mut self, idx: TupleIndex) {
-        self.0.remove(idx);
+        self.tuples.remove(idx);
     }
 }
 

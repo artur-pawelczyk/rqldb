@@ -1,3 +1,6 @@
+use std::collections::hash_map::DefaultHasher;
+use std::hash::Hasher;
+
 use crate::plan::Attribute;
 use crate::schema::Type;
 
@@ -31,12 +34,22 @@ impl<'a> Tuple<'a> {
         } else {
             None
         }
-
     }
 
     pub(crate) fn add_cells(mut self, other: &'a ByteTuple) -> Self {
         self.rest = Some(other);
         self
+    }
+
+    pub(crate) fn hash(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        for cell in self.raw {
+            for byte in cell {
+                hasher.write_u8(*byte);
+            }
+        }
+
+        hasher.finish()
     }
 }
 
