@@ -11,14 +11,38 @@ pub struct Database {
     objects: Vec<RefCell<Object>>,
 }
 
-type Object = Vec<ByteTuple>;
+#[derive(Default)]
+struct Object(Vec<ByteTuple>);
 type ByteTuple = Vec<Vec<u8>>;
 type TupleIndex = usize;
+
+impl Object {
+    fn temporary(byte_tuple: ByteTuple) -> Self {
+        Self(vec![byte_tuple])
+    }
+
+    fn add_tuple(&mut self, tuple: &Tuple) -> bool {
+        if let Some(_) = self.0.iter().find(|t| &tuple.as_bytes() == t) {
+            false
+        } else {
+            self.0.push(tuple.as_bytes().clone());
+            true
+        }
+    }
+
+    fn iter(&self) -> std::slice::Iter<ByteTuple> {
+        self.0.iter()
+    }
+
+    fn remove_tuple(&mut self, idx: TupleIndex) {
+        self.0.remove(idx);
+    }
+}
 
 impl Database {
     pub fn execute_create(&mut self, command: &dsl::Command) {
         self.schema.add_relation(self.objects.len(), &command.name, &command.columns);
-        self.objects.push(RefCell::new(Object::new()));
+        self.objects.push(RefCell::new(Object::default()));
     }
 
     pub fn execute_query(&self, query: &dsl::Query) -> Result<QueryResults, &'static str> {
@@ -38,7 +62,7 @@ impl Database {
             },
             Contents::Tuple(ref values) => {
                 let cells = values.iter().map(|val| cell(val)).collect();
-                ObjectView::Val(vec![cells])
+                ObjectView::Val(Object::temporary(cells))
             },
             _ => todo!()
         };
@@ -126,7 +150,7 @@ impl<'a> Sink<'a> {
         match self {
             Self::Count(ref mut count) => *count += 1,
             Self::Return(attrs, ref mut results) => results.push(tuple_to_cells(attrs, tuple)),
-            Self::Insert(object) => object.push(tuple.as_bytes().clone()),
+            Self::Insert(object) => { object.add_tuple(tuple); },
             Self::Delete(ref mut tuples) => tuples.push(idx),
             Self::NoOp => {},
         }
@@ -134,7 +158,7 @@ impl<'a> Sink<'a> {
 
     fn accept_object(&mut self, mut object: RefMut<Object>) {
         match self {
-            Self::Delete(ids) => ids.iter().for_each(|id| { object.remove(*id); }),
+            Self::Delete(ids) => ids.iter().for_each(|id| { object.remove_tuple(*id); }),
             _ => {},
         }
     }
@@ -302,5 +326,19 @@ mod tests {
 
         let result = db.execute_query(&Query::scan("document")).unwrap();
         assert!(result.results().is_empty());
+    }
+
+    #[test]
+    fn duplicates() {
+        let mut db = Database::default();
+        db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT));
+
+        let insert_query = Query::tuple(&["1", "the content"]).insert_into("document");
+        db.execute_query(&insert_query).unwrap();
+        db.execute_query(&insert_query).unwrap();
+
+        let count_query = Query::scan("document").count();
+        let result = db.execute_query(&count_query).unwrap();
+        assert_eq!(result.results().get(0).unwrap().cell_by_name("count").unwrap().as_number(), Some(1));
     }
 }
