@@ -20,9 +20,12 @@ fn query_single_number(db: &Database, query: &Query) -> Option<i32> {
 }
 
 fn benchmark_insert(c: &mut Criterion) {
-    let db = create_database();
-    let query = Query::tuple(&["1", "2", "example_doc", "the_content"]).insert_into("document");
-    c.bench_function("insert", |b| b.iter(|| db.execute_query(&query).unwrap()));
+    c.bench_function("insert", |b| b.iter(|| {
+        let db = create_database();
+        for i in 1..1000 {
+            db.execute_query(&Query::tuple(&[i.to_string().as_str(), "12", "example_doc", "the content"]).insert_into("document")).unwrap();
+        }
+    }));
 }
 
 fn benchmark_filter(c: &mut Criterion) {
