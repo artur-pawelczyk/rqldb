@@ -45,7 +45,8 @@ pub fn parse_query(query_str: &str) -> Result<Query, ParseError> {
                         if token != &Token::Pipe { return Err(ParseError("Expected end of statement")); }
                     }
                     query = query.count();
-                }
+                },
+                "delete" => query = query.delete(),
                 _ => return Err(ParseError("Function not recognized"))
             },
             _ => return Err(ParseError("Expected a symbol"))
@@ -182,6 +183,7 @@ mod tests {
         assert_parse("scan example | filter id > 1 | select_all");
         assert_parse("scan example | join other example.other_id example.id | select_all");
         assert_parse("scan example | count");
+        assert_parse("scan example | filter example.id = 1 | delete");
     }
 
     #[test]
