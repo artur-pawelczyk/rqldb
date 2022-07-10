@@ -1,5 +1,5 @@
 use std::cell::{RefCell, Ref, RefMut};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::plan::{Contents, Attribute, Filter, Plan, Finisher};
 use crate::schema::Column;
@@ -17,6 +17,7 @@ pub struct Database {
 struct Object {
     tuples: Vec<ByteTuple>,
     uniq_index: HashMap<u64, Vec<usize>>,
+    removed_ids: HashSet<usize>,
 }
 type ByteTuple = Vec<Vec<u8>>;
 type TupleIndex = usize;
@@ -53,8 +54,8 @@ impl Object {
         self.tuples.iter()
     }
 
-    fn remove_tuple(&mut self, idx: TupleIndex) {
-        self.tuples.remove(idx);
+    fn remove_tuples(&mut self, ids: &[TupleIndex]) {
+        self.removed_ids.extend(ids);
     }
 }
 
@@ -110,7 +111,7 @@ impl Database {
                 _ => todo!(),
             };
 
-            if test_filters(&plan.filters, &tuple) {
+            if !source.is_removed(idx) && test_filters(&plan.filters, &tuple) {
                 sink.accept_tuple(idx, &tuple);
             }
         }
@@ -160,6 +161,13 @@ impl<'a> ObjectView<'a> {
             Self::Val(o) => o.iter(),
         }
     }
+
+    fn is_removed(&self, id: usize) -> bool {
+        match self {
+            Self::Ref(object) => object.removed_ids.contains(&id),
+            Self::Val(_) => false,
+        }
+    }
 }
 
 enum Sink<'a> {
@@ -183,7 +191,7 @@ impl<'a> Sink<'a> {
 
     fn accept_object(&mut self, mut object: RefMut<Object>) {
         match self {
-            Self::Delete(ids) => ids.iter().for_each(|id| { object.remove_tuple(*id); }),
+            Self::Delete(ids) => { object.remove_tuples(ids) },
             _ => {},
         }
     }
