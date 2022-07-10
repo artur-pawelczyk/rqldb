@@ -436,7 +436,7 @@ mod tests {
     }
 
     fn col(name: &str, kind: Type) -> Column {
-        Column{ name: name.to_string(), kind }
+        Column{ name: name.to_string(), kind, indexed: false }
     }
 
     fn source_attributes(source: &Source) -> Vec<Type> {

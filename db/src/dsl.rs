@@ -182,7 +182,7 @@ impl Command {
     }
 
     pub fn column(mut self, name: &str, kind: Type) -> Self {
-        self.columns.push(Column{name: name.to_string(), kind});
+        self.columns.push(Column::new(name, kind));
         self
     }
 

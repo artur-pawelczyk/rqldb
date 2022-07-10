@@ -41,7 +41,18 @@ impl TableId for &String {
 #[derive(Clone, Debug)]
 pub struct Column {
     pub name: String,
-    pub kind: Type
+    pub kind: Type,
+    pub indexed: bool,
+}
+
+impl Column {
+    pub fn new(name: &str, kind: Type) -> Self {
+        Self{
+            name: name.to_string(),
+            kind,
+            indexed: false,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -97,8 +108,8 @@ impl Relation {
     ///
     /// let relation = Relation{id: 0, name: "document".to_string(),
     ///                         columns: vec![
-    ///                             Column{name: "id".to_string(), kind: Type::NUMBER},
-    ///                             Column{name: "content".to_string(), kind: Type::TEXT},
+    ///                             Column::new("id", Type::NUMBER),
+    ///                             Column::new("content", Type::TEXT),
     ///                         ]};
     ///
     /// assert_eq!(relation.column_position("id"), Some(0));
@@ -123,8 +134,8 @@ impl Relation {
     ///
     /// let relation = Relation{id: 0, name: "document".to_string(),
     ///                         columns: vec![
-    ///                             Column{name: "id".to_string(), kind: Type::NUMBER},
-    ///                             Column{name: "content".to_string(), kind: Type::TEXT},
+    ///                             Column::new("id", Type::NUMBER),
+    ///                             Column::new("content", Type::TEXT),
     ///                         ]};
     ///
     /// assert_eq!(relation.column_type("id"), Some(Type::NUMBER));
