@@ -1,8 +1,8 @@
 use std::cell::{RefCell, Ref, RefMut};
 use std::collections::HashMap;
-use std::collections::hash_map::Entry;
 
 use crate::plan::{Contents, Attribute, Filter, Plan, Finisher};
+use crate::schema::Column;
 use crate::tuple::Tuple;
 use crate::{schema::Schema, QueryResults, plan::compute_plan};
 use crate::{dsl, Cell};
@@ -29,26 +29,24 @@ impl Object {
     }
 
     fn add_tuple(&mut self, tuple: &Tuple) -> bool {
-        let hash = tuple.hash();
-
-        match self.uniq_index.entry(hash) {
-            Entry::Occupied(mut entry) => {
-                if let Some(_) = entry.get().iter().find(|idx| self.tuples.get(**idx) == Some(tuple.as_bytes())) {
-                    false
-                } else {
-                    let idx = self.tuples.len();
-                    self.tuples.push(tuple.as_bytes().clone());
-                    entry.get_mut().push(idx);
-                    true
-                }
-            }
-            Entry::Vacant(entry) => {
-                let idx = self.tuples.len();
-                self.tuples.push(tuple.as_bytes().clone());
-                entry.insert(vec![idx]);
-                true
-            }
+        if self.find_by_contents(tuple) {
+            false
+        } else {
+            let id = self.tuples.len();
+            self.tuples.push(tuple.as_bytes().clone());
+            self.index(id, tuple);
+            true
         }
+    }
+
+    fn find_by_contents(&self, tuple: &Tuple) -> bool {
+        self.uniq_index.get(&tuple.hash())
+            .and_then(|ids| ids.iter().find(|id| self.tuples.get(**id) == Some(tuple.as_bytes())))
+            .is_some()
+    }
+
+    fn index(&mut self, id: usize, tuple: &Tuple) {
+        self.uniq_index.entry(tuple.hash()).or_insert(vec![]).push(id);
     }
 
     fn iter(&self) -> std::slice::Iter<ByteTuple> {
@@ -62,13 +60,19 @@ impl Object {
 
 impl Database {
     pub fn execute_create(&mut self, command: &dsl::Command) {
-        self.schema.add_relation(self.objects.len(), &command.name, &command.columns);
+        self.create_table(&command.name, &command.columns);
+    }
+
+    fn create_table(&mut self, name: &str, columns: &[Column]) {
+        self.schema.add_relation(self.objects.len(), &name, &columns);
         self.objects.push(RefCell::new(Object::default()));
     }
 
     pub fn execute_query(&self, query: &dsl::Query) -> Result<QueryResults, &'static str> {
-        let plan = compute_plan(&self.schema, query)?;
+        self.execute_plan(compute_plan(&self.schema, query)?)
+    }
 
+    fn execute_plan(&self, plan: Plan) -> Result<QueryResults, &'static str> {
         fn cell(s: &str) -> Vec<u8> {
             if let Ok(num) = s.parse::<i32>() {
                 Vec::from(num.to_be_bytes())
@@ -361,5 +365,19 @@ mod tests {
         let count_query = Query::scan("document").count();
         let result = db.execute_query(&count_query).unwrap();
         assert_eq!(result.results().get(0).unwrap().cell_by_name("count").unwrap().as_number(), Some(1));
+    }
+
+    //#[test]
+    fn _update() {
+        let mut db = Database::default();
+        db.create_table("document", &[Column::new("id", Type::NUMBER).indexed(), Column::new("content", Type::TEXT)]);
+        let table = db.schema.find_relation("document").unwrap();
+
+        db.execute_plan(Plan::insert(table, &["1".to_string(), "orig content".to_string()])).unwrap();
+        db.execute_plan(Plan::insert(table, &["1".to_string(), "new content".to_string()])).unwrap();
+
+        let result = db.execute_plan(Plan::scan(table)).unwrap();
+        assert_eq!(result.results().get(0).unwrap().cell_by_name("content").unwrap().as_string(), "new content");
+        assert_eq!(result.size(), 1);
     }
 }

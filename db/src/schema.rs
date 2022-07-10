@@ -53,6 +53,13 @@ impl Column {
             indexed: false,
         }
     }
+
+    pub fn indexed(self) -> Self {
+        Self{
+            indexed: true,
+            ..self
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

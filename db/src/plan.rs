@@ -14,6 +14,22 @@ pub(crate) struct Plan<'a> {
 }
 
 impl<'a> Plan<'a> {
+    pub fn insert(rel: &'a Relation, values: &[String]) -> Self {
+        Self{
+            source: Source::from_tuple(values),
+            finisher: Finisher::Insert(rel),
+            ..Plan::default()
+        }
+    }
+
+    pub fn scan(rel: &'a Relation) -> Self {
+        Self{
+            source: Source::scan_table(rel),
+            finisher: Finisher::Return,
+            ..Plan::default()
+        }
+    }
+
     fn validate_with_finisher(self) -> Result<Self, &'static str> {
         Ok(Plan{
             source: self.source.validate_with_finisher(&self.finisher)?,
@@ -121,17 +137,24 @@ impl<'a> Source<'a> {
     fn new(schema: &'a Schema, dsl_source: &dsl::Source) -> Result<Source<'a>, &'static str> {
         match dsl_source {
             dsl::Source::TableScan(name) => {
-                let rel = schema.find_relation(name).ok_or("No such table")?;
-                let attributes = rel.attributes().iter().enumerate()
-                    .map(|(i, (name, kind))| Attribute::named(i, name).with_type(*kind)).collect();
-                Ok(Source{ attributes, contents: Contents::TableScan(rel) })
+                Ok(Self::scan_table(schema.find_relation(name).ok_or("No such table")?))
             },
 
             dsl::Source::Tuple(values) => {
-                let attributes = values.iter().enumerate().map(|(i, val)| Attribute::numbered(i).guess_type(val)).collect();
-                Ok(Source { attributes, contents: Contents::Tuple(values.to_vec()) })
+                Ok(Self::from_tuple(&values))
             }
         }
+    }
+
+    fn scan_table(rel: &'a Relation) -> Self {
+        let attributes = rel.attributes().iter().enumerate()
+            .map(|(i, (name, kind))| Attribute::named(i, name).with_type(*kind)).collect();
+        Source{ attributes, contents: Contents::TableScan(rel) }
+    }
+
+    fn from_tuple(values: &[String]) -> Self {
+        let attributes = values.iter().enumerate().map(|(i, val)| Attribute::numbered(i).guess_type(val)).collect();
+        Self{ attributes, contents: Contents::Tuple(values.to_vec()) }
     }
 
     fn validate_with_finisher(self, finisher: &Finisher) -> Result<Source<'a>, &'static str> {
