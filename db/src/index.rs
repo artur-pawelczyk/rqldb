@@ -5,7 +5,6 @@ use crate::tuple::Tuple;
 
 type ByteTuple = Vec<Vec<u8>>;
 
-#[derive(Default)]
 pub(crate) struct TupleIndex {
     index: HashMap<u64, Node>,
 }
@@ -77,7 +76,7 @@ impl fmt::Debug for Node {
 }
 
 impl TupleIndex {
-    fn new(tuples: &[ByteTuple]) -> Self {
+    pub fn new(tuples: &[ByteTuple]) -> Self {
         let mut index: HashMap<u64, Node> = HashMap::new();
 
         tuples.iter().enumerate().for_each(|(i, byte_tuple)| {
@@ -108,7 +107,7 @@ impl TupleIndex {
         id
     }
 
-    fn index<'a, F>(&mut self, tuple: &Tuple, f: F) -> Op
+    pub fn index<'a, F>(&mut self, tuple: &Tuple, f: F) -> Op
     where F: Fn(usize) -> &'a ByteTuple
     {
         let hash = tuple.hash();
@@ -124,8 +123,7 @@ impl TupleIndex {
     }
 }
 
-#[derive(Debug)]
-enum Op {
+pub(crate) enum Op {
     Insert(usize),
     Replace(usize),
     Ignore,
@@ -169,7 +167,6 @@ mod tests {
         tuples.insert(2, new_tuple.clone());
 
         let inserted_again = index.index(&Tuple::from_bytes(&new_tuple), |i| tuples.get(i).unwrap());
-        println!("{:?}", inserted_again);
         assert!(matches!(inserted_again, Op::Ignore));
     }
 

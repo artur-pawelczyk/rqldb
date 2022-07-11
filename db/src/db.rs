@@ -1,6 +1,7 @@
 use std::cell::{RefCell, Ref, RefMut};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
+use crate::index::{TupleIndex, Op};
 use crate::plan::{Contents, Attribute, Filter, Plan, Finisher};
 use crate::schema::Column;
 use crate::tuple::Tuple;
@@ -13,14 +14,12 @@ pub struct Database {
     objects: Vec<RefCell<Object>>,
 }
 
-#[derive(Default)]
 struct Object {
     tuples: Vec<ByteTuple>,
-    uniq_index: HashMap<u64, Vec<usize>>,
+    uniq_index: TupleIndex,
     removed_ids: HashSet<usize>,
 }
 type ByteTuple = Vec<Vec<u8>>;
-type TupleIndex = usize;
 
 impl Object {
     fn temporary(byte_tuple: ByteTuple) -> Self {
@@ -30,32 +29,31 @@ impl Object {
     }
 
     fn add_tuple(&mut self, tuple: &Tuple) -> bool {
-        if self.find_by_contents(tuple) {
-            false
-        } else {
-            let id = self.tuples.len();
-            self.tuples.push(tuple.as_bytes().clone());
-            self.index(id, tuple);
-            true
+        match self.uniq_index.index(tuple, |i| self.tuples.get(i).unwrap()) {
+            Op::Insert(i) => {
+                self.tuples.insert(i, tuple.as_bytes().clone());
+                true
+            }
+            _ => false,
         }
-    }
-
-    fn find_by_contents(&self, tuple: &Tuple) -> bool {
-        self.uniq_index.get(&tuple.hash())
-            .and_then(|ids| ids.iter().find(|id| self.tuples.get(**id) == Some(tuple.as_bytes())))
-            .is_some()
-    }
-
-    fn index(&mut self, id: usize, tuple: &Tuple) {
-        self.uniq_index.entry(tuple.hash()).or_insert(vec![]).push(id);
     }
 
     fn iter(&self) -> std::slice::Iter<ByteTuple> {
         self.tuples.iter()
     }
 
-    fn remove_tuples(&mut self, ids: &[TupleIndex]) {
+    fn remove_tuples(&mut self, ids: &[usize]) {
         self.removed_ids.extend(ids);
+    }
+}
+
+impl Default for Object {
+    fn default() -> Self {
+        Object{
+            tuples: vec![],
+            uniq_index: TupleIndex::new(&[]),
+            removed_ids: HashSet::new(),
+        }
     }
 }
 
@@ -174,12 +172,12 @@ enum Sink<'a> {
     Count(usize),
     Return(Vec<Attribute>, Vec<Vec<Cell>>),
     Insert(RefMut<'a, Object>),
-    Delete(Vec<TupleIndex>),
+    Delete(Vec<usize>),
     NoOp,
 }
 
 impl<'a> Sink<'a> {
-    fn accept_tuple(&mut self, idx: TupleIndex, tuple: &Tuple) {
+    fn accept_tuple(&mut self, idx: usize, tuple: &Tuple) {
         match self {
             Self::Count(ref mut count) => *count += 1,
             Self::Return(attrs, ref mut results) => results.push(tuple_to_cells(attrs, tuple)),
