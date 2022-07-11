@@ -374,7 +374,7 @@ mod tests {
     }
 
     //#[test]
-    fn _update() {
+    fn update() {
         let mut db = Database::default();
         db.create_table("document", &[Column::new("id", Type::NUMBER).indexed(), Column::new("content", Type::TEXT)]);
         let table = db.schema.find_relation("document").unwrap();
@@ -383,7 +383,8 @@ mod tests {
         db.execute_plan(Plan::insert(table, &["1".to_string(), "new content".to_string()])).unwrap();
 
         let result = db.execute_plan(Plan::scan(table)).unwrap();
-        assert_eq!(result.results().get(0).unwrap().cell_by_name("content").unwrap().as_string(), "new content");
+        println!("{:?}", result.results().get(0));
+        assert_eq!(result.results().get(0).unwrap().cell_by_name("document.content").unwrap().as_string(), "new content");
         assert_eq!(result.size(), 1);
     }
 }
