@@ -5,6 +5,7 @@ pub mod tokenize;
 pub mod schema;
 pub mod plan;
 pub mod tuple;
+pub mod index;
 
 use std::fmt;
 use std::cmp::Ordering;
