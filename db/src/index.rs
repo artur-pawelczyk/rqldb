@@ -126,13 +126,13 @@ impl TupleIndex {
     }
 }
 
-struct KeyIndex {
+pub(crate) struct KeyIndex {
     index: HashMap<u64, Node>,
     pos: usize,
 }
 
 impl KeyIndex {
-    fn new(pos: usize, tuples: &[ByteTuple]) -> Self {
+    pub(crate) fn new(pos: usize, tuples: &[ByteTuple]) -> Self {
         let mut index = Self{ index: HashMap::new(), pos };
         for (i, byte_tuple) in tuples.iter().enumerate(){
             let hash = index.hash(byte_tuple);
@@ -142,7 +142,7 @@ impl KeyIndex {
         index
     }
 
-    fn index<'a, F>(&mut self, tuple: &'a ByteTuple, f: F) -> Op
+    pub(crate) fn index<'a, F>(&mut self, tuple: &'a ByteTuple, f: F) -> Op
     where F: Fn(usize) -> &'a ByteTuple
     {
         let hash = self.hash(tuple);

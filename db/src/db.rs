@@ -1,7 +1,7 @@
 use std::cell::{RefCell, Ref, RefMut};
 use std::collections::HashSet;
 
-use crate::index::{TupleIndex, Op};
+use crate::index::{TupleIndex, Op, KeyIndex};
 use crate::plan::{Contents, Attribute, Filter, Plan, Finisher};
 use crate::schema::Column;
 use crate::tuple::Tuple;
@@ -17,8 +17,10 @@ pub struct Database {
 struct Object {
     tuples: Vec<ByteTuple>,
     uniq_index: TupleIndex,
+    prim_key: Option<KeyIndex>,
     removed_ids: HashSet<usize>,
 }
+
 type ByteTuple = Vec<Vec<u8>>;
 
 impl Object {
@@ -28,7 +30,35 @@ impl Object {
         obj
     }
 
+    fn from_columns(columns: &[Column]) -> Self {
+        let indexed_column = columns.iter().enumerate().find(|(_, col)| col.indexed).map(|(i, _)| i);
+        Self{
+            tuples: Vec::new(),
+            uniq_index: TupleIndex::new(&[]),
+            prim_key: indexed_column.map(|col_pos| KeyIndex::new(col_pos, &[])),
+            removed_ids: HashSet::new(),
+        }
+    }
+
     fn add_tuple(&mut self, tuple: &Tuple) -> bool {
+        if let Some(key_index) = &mut self.prim_key {
+            match key_index.index(tuple.as_bytes(), |i| self.tuples.get(i).unwrap()) {
+                Op::Insert(id) => {
+                    println!("inserting {}", id);
+                    assert!(matches!(self.uniq_index.index(tuple, |i| self.tuples.get(i).unwrap()), Op::Insert(id)));
+                    self.tuples.insert(id, tuple.as_bytes().clone());
+                    return true;
+                }
+                Op::Replace(id) => {
+                    println!("replacing {}", id);
+                    assert!(matches!(self.uniq_index.index(tuple, |i| self.tuples.get(i).unwrap()), Op::Insert(id)));
+                    let _ = std::mem::replace(&mut self.tuples[id], tuple.as_bytes().clone());
+                    return true;
+                }
+                Op::Ignore => panic!("not expected"),
+            }
+        }
+
         match self.uniq_index.index(tuple, |i| self.tuples.get(i).unwrap()) {
             Op::Insert(i) => {
                 self.tuples.insert(i, tuple.as_bytes().clone());
@@ -52,6 +82,7 @@ impl Default for Object {
         Object{
             tuples: vec![],
             uniq_index: TupleIndex::new(&[]),
+            prim_key: None,
             removed_ids: HashSet::new(),
         }
     }
@@ -64,7 +95,7 @@ impl Database {
 
     fn create_table(&mut self, name: &str, columns: &[Column]) {
         self.schema.add_relation(self.objects.len(), &name, &columns);
-        self.objects.push(RefCell::new(Object::default()));
+        self.objects.push(RefCell::new(Object::from_columns(columns)));
     }
 
     pub fn execute_query(&self, query: &dsl::Query) -> Result<QueryResults, &'static str> {
@@ -373,7 +404,7 @@ mod tests {
         assert_eq!(result.results().get(0).unwrap().cell_by_name("count").unwrap().as_number(), Some(1));
     }
 
-    //#[test]
+    #[test]
     fn update() {
         let mut db = Database::default();
         db.create_table("document", &[Column::new("id", Type::NUMBER).indexed(), Column::new("content", Type::TEXT)]);
