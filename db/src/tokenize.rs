@@ -2,6 +2,7 @@
 pub enum Token {
     Symbol(String),
     SymbolWithType(String, String),
+    SymbolWithKeyType(String, String),
     Pipe,
 }
 
@@ -27,6 +28,7 @@ impl Token {
         match self {
             Token::Symbol(x) => x.to_string(),
             Token::SymbolWithType(x, y) => x.to_string() + "::" + y,
+            Token::SymbolWithKeyType(x, y) => x.to_string() + "::" + y + "::KEY",
             Token::Pipe => String::from("|"),
         }
     }
@@ -61,6 +63,10 @@ impl Scanner {
             false
         }
     }
+
+    fn expect_str(&mut self, expected: &str) -> bool {
+        expected.chars().all(|c| self.expect(c))
+    }
 }
 
 fn tokenize(source: &str) -> Option<Vec<Token>> {
@@ -86,7 +92,11 @@ fn read_symbol(scanner: &mut Scanner) -> Option<Token> {
     while let Some(ch) = scanner.next() {
         if ch == ':' {
             if scanner.expect(':') {
-                return Some(Token::SymbolWithType(s, read_type(scanner)?));
+                return match read_type(scanner) {
+                    (Some(t), false) => Some(Token::SymbolWithType(s, t)),
+                    (Some(t), true) => Some(Token::SymbolWithKeyType(s, t)),
+                    _ => None,
+                }
             } else {
                 return None
             }
@@ -101,21 +111,27 @@ fn read_symbol(scanner: &mut Scanner) -> Option<Token> {
     Some(Token::Symbol(s))
 }
 
-fn read_type(scanner: &mut Scanner) -> Option<String> {
+fn read_type(scanner: &mut Scanner) -> (Option<String>, bool) {
     let mut s = String::new();
 
     while let Some(ch) = scanner.next() {
         if ch.is_alphanumeric() {
             s.push(ch)
+        } else if ch == ':' {
+            if scanner.expect_str(":KEY") {
+                return (Some(s), true)
+            } else {
+                return (None, false)
+            }
         } else if ch.is_whitespace() {
             break
         } else {
-            return None;
+            return (None, false)
         }
     }
 
     assert!(!s.is_empty());
-    Some(s)
+    (Some(s), false)
 }
 
 fn read_string(scanner: &mut Scanner) -> Option<Token> {
@@ -146,6 +162,7 @@ mod tests {
         assert_eq!(tokenize("abc def ghi").unwrap(), vec![symbol("abc"), symbol("def"), symbol("ghi")]);
         assert_eq!(tokenize("abc:NUMBER"), None);
         assert_eq!(tokenize("abc::NUMBER").unwrap(), vec![symbol_with_type("abc", "NUMBER")]);
+        assert_eq!(tokenize("abc::NUMBER::KEY").unwrap(), vec![symbol_with_key_type("abc", "NUMBER")]);
         assert_eq!(tokenize("abc | def").unwrap(), vec![symbol("abc"), pipe(), symbol("def")]);
         assert_eq!(tokenize("create_table abc::TEXT").unwrap(), vec![symbol("create_table"), symbol_with_type("abc", "TEXT")]);
         assert_eq!(tokenize(r#"a "b cd" e"#).unwrap(), vec![symbol("a"), symbol("b cd"), symbol("e")]);
@@ -157,6 +174,10 @@ mod tests {
 
     fn symbol_with_type(s: &str, t: &str) -> Token {
         Token::SymbolWithType(s.to_string(), t.to_string())
+    }
+
+    fn symbol_with_key_type(s: &str, t: &str) -> Token {
+        Token::SymbolWithKeyType(s.to_string(), t.to_string())
     }
 
     fn pipe() -> Token {

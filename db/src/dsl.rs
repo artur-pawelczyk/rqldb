@@ -186,6 +186,11 @@ impl Command {
         self
     }
 
+    pub fn indexed_column(mut self, name: &str, kind: Type) -> Self {
+        self.columns.push(Column::new(name, kind).indexed());
+        self
+    }
+
     pub fn print(&self) -> String {
         let mut s = String::new();
         s.push_str("create_table ");
@@ -210,7 +215,11 @@ impl fmt::Display for Command {
 
 impl Column {
     fn print(&self) -> String {
-        self.name.clone() + "::" + self.kind.print()
+        if self.indexed {
+            self.name.clone() + "::" + self.kind.print() + "::KEY"
+        } else {
+            self.name.clone() + "::" + self.kind.print()
+        }
     }
 }
 
@@ -277,9 +286,9 @@ mod tests {
     #[test]
     fn create_table() {
         let query = Command::create_table("example")
-            .column("id", Type::NUMBER)
+            .indexed_column("id", Type::NUMBER)
             .column("contents", Type::TEXT);
 
-        assert_eq!("create_table example id::NUMBER contents::TEXT", query.to_string());
+        assert_eq!("create_table example id::NUMBER::KEY contents::TEXT", query.to_string());
     }
 }

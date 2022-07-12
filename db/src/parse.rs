@@ -138,6 +138,7 @@ pub fn parse_command(source: &str) -> Result<Command, ParseError> {
                 for arg in read_until_end(&mut tokenizer) {
                     match arg {
                         Token::SymbolWithType(name, kind) => { command = command.column(name.as_str(), str_to_type(kind.as_str())); },
+                        Token::SymbolWithKeyType(name, kind) => { command = command.indexed_column(name.as_str(), str_to_type(kind.as_str())); },
                         _ => return Err(ParseError("Expected a symbol with a type"))
                     }
                 }
@@ -209,6 +210,7 @@ mod tests {
     #[test]
     fn test_parse_command() {
         assert_parse_command("create_table example id::NUMBER content::TEXT");
+        assert_parse_command("create_table example id::NUMBER::KEY content::TEXT");
     }
 
     #[test]
