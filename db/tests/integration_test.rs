@@ -4,7 +4,7 @@ use rqldb::db::Database;
 fn prepare_db() -> Database {
     let mut db = Database::default();
 
-    db.execute_create(&parse_command("create_table document id::NUMBER title::TEXT content::TEXT type::NUMBER").unwrap());
+    db.execute_create(&parse_command("create_table document id::NUMBER::KEY title::TEXT content::TEXT type::NUMBER").unwrap());
     db.execute_create(&parse_command("create_table type id::NUMBER name::TEXT").unwrap());
 
     let insert = parse_query("tuple 1 artictle | insert_into type").unwrap();
@@ -64,4 +64,16 @@ fn test_single_join() {
     let query = parse_query("scan document | join type document.type type.id").unwrap();
     let result = db.execute_query(&query).unwrap();
     assert_eq!(result.results().len(), 2);
+}
+
+#[test]
+fn test_update() {
+    let db = prepare_db();
+
+    let insert = parse_query("tuple 1 updated_title content 2 | insert_into document").unwrap();
+    db.execute_query(&insert).unwrap();
+
+    let query = parse_query("scan document | filter document.id = 1").unwrap();
+    let result = db.execute_query(&query).unwrap();
+    assert_eq!(result.results().get(0).unwrap().cell_by_name("document.title").unwrap().as_string(), "updated_title");
 }
