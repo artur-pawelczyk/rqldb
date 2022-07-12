@@ -6,6 +6,7 @@ pub mod schema;
 pub mod plan;
 pub mod tuple;
 pub mod index;
+pub mod index2;
 
 use std::fmt;
 use std::cmp::Ordering;

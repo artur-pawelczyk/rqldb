@@ -44,13 +44,11 @@ impl Object {
         if let Some(key_index) = &mut self.prim_key {
             match key_index.index(tuple.as_bytes(), |i| self.tuples.get(i).unwrap()) {
                 Op::Insert(id) => {
-                    println!("inserting {}", id);
                     assert!(matches!(self.uniq_index.index(tuple, |i| self.tuples.get(i).unwrap()), Op::Insert(id)));
                     self.tuples.insert(id, tuple.as_bytes().clone());
                     return true;
                 }
                 Op::Replace(id) => {
-                    println!("replacing {}", id);
                     assert!(matches!(self.uniq_index.index(tuple, |i| self.tuples.get(i).unwrap()), Op::Insert(id)));
                     let _ = std::mem::replace(&mut self.tuples[id], tuple.as_bytes().clone());
                     return true;
