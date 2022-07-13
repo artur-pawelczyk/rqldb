@@ -14,6 +14,7 @@ pub(crate) struct Plan<'a> {
 }
 
 impl<'a> Plan<'a> {
+    #[cfg(test)]
     pub fn insert(rel: &'a Relation, values: &[String]) -> Self {
         Self{
             source: Source::from_tuple(values),
@@ -22,6 +23,7 @@ impl<'a> Plan<'a> {
         }
     }
 
+    #[cfg(test)]
     pub fn scan(rel: &'a Relation) -> Self {
         Self{
             source: Source::scan_table(rel),

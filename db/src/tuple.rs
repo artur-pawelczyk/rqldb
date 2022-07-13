@@ -1,6 +1,3 @@
-use std::collections::hash_map::DefaultHasher;
-use std::hash::Hasher;
-
 use crate::plan::Attribute;
 use crate::schema::Type;
 
