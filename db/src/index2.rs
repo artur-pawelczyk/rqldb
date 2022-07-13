@@ -4,19 +4,19 @@ use std::hash::Hasher;
 type ByteCell = Vec<u8>;
 type ByteTuple = Vec<ByteCell>;
 
-struct Index {
+pub(crate) struct Index {
     buckets: Vec<(u64, Node)>,
     len: usize,
     cell_id: Option<usize>,
 }
 
-struct IndexInsertion<'a> {
+pub(crate) struct IndexInsertion<'a> {
     tuples: &'a [ByteTuple],
     index: &'a mut Index,
 }
 
 impl Index {
-    fn new(tuples: &[ByteTuple]) -> Self {
+    pub(crate) fn new(tuples: &[ByteTuple]) -> Self {
         let mut instance = Self{ buckets: Vec::new(), len: 0, cell_id: None };
 
         for tuple in tuples {
@@ -26,7 +26,7 @@ impl Index {
         instance
     }
 
-    fn single_cell(tuples: &[ByteTuple], pos: usize) -> Self {
+    pub(crate) fn single_cell(tuples: &[ByteTuple], pos: usize) -> Self {
         let mut instance = Self{ buckets: Vec::new(), len: 0, cell_id: Some(pos) };
 
         for tuple in tuples {
@@ -176,7 +176,6 @@ impl<'a> Iterator for NodeIter<'a> {
 pub(crate) enum Op {
     Insert(usize),
     Replace(usize),
-    Ignore,
 }
 
 #[cfg(test)]

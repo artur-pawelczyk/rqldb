@@ -1,7 +1,7 @@
 use std::cell::{RefCell, Ref, RefMut};
 use std::collections::HashSet;
 
-use crate::index::{TupleIndex, Op, KeyIndex};
+use crate::index2::{Index, Op};
 use crate::plan::{Contents, Attribute, Filter, Plan, Finisher};
 use crate::schema::Column;
 use crate::tuple::Tuple;
@@ -16,8 +16,8 @@ pub struct Database {
 
 struct Object {
     tuples: Vec<ByteTuple>,
-    uniq_index: TupleIndex,
-    prim_key: Option<KeyIndex>,
+    uniq_index: Index,
+    prim_key: Option<Index>,
     removed_ids: HashSet<usize>,
 }
 
@@ -34,35 +34,33 @@ impl Object {
         let indexed_column = columns.iter().enumerate().find(|(_, col)| col.indexed).map(|(i, _)| i);
         Self{
             tuples: Vec::new(),
-            uniq_index: TupleIndex::new(&[]),
-            prim_key: indexed_column.map(|col_pos| KeyIndex::new(col_pos, &[])),
+            uniq_index: Index::new(&[]),
+            prim_key: indexed_column.map(|col_pos| Index::single_cell(&[], col_pos)),
             removed_ids: HashSet::new(),
         }
     }
 
     fn add_tuple(&mut self, tuple: &Tuple) -> bool {
         if let Some(key_index) = &mut self.prim_key {
-            match key_index.index(tuple.as_bytes(), |i| self.tuples.get(i).unwrap()) {
+            match key_index.on(&self.tuples).insert(tuple.as_bytes()) {
                 Op::Insert(id) => {
-                    assert!(matches!(self.uniq_index.index(tuple, |i| self.tuples.get(i).unwrap()), Op::Insert(id)));
                     self.tuples.insert(id, tuple.as_bytes().clone());
                     return true;
                 }
                 Op::Replace(id) => {
-                    assert!(matches!(self.uniq_index.index(tuple, |i| self.tuples.get(i).unwrap()), Op::Insert(id)));
                     let _ = std::mem::replace(&mut self.tuples[id], tuple.as_bytes().clone());
                     return true;
                 }
-                Op::Ignore => panic!("not expected"),
             }
-        }
-
-        match self.uniq_index.index(tuple, |i| self.tuples.get(i).unwrap()) {
-            Op::Insert(i) => {
-                self.tuples.insert(i, tuple.as_bytes().clone());
-                true
+        } else {
+            match self.uniq_index.on(&self.tuples).insert(tuple.as_bytes()) {
+                Op::Insert(i) => {
+                    self.tuples.insert(i, tuple.as_bytes().clone());
+                    true
+                }
+                _ => false,
             }
-            _ => false,
+            
         }
     }
 
@@ -79,7 +77,7 @@ impl Default for Object {
     fn default() -> Self {
         Object{
             tuples: vec![],
-            uniq_index: TupleIndex::new(&[]),
+            uniq_index: Index::new(&[]),
             prim_key: None,
             removed_ids: HashSet::new(),
         }
