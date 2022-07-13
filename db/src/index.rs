@@ -36,10 +36,6 @@ impl Index {
         instance
     }
 
-    fn len(&self) -> usize {
-        self.buckets.iter().map(|(_, node)| node.len()).fold(0usize, |acc, i| acc + i)
-    }
-
     fn index<'a, F>(&mut self, byte_tuple: &'a ByteTuple, f: F) -> Op
     where F: Fn(usize) -> Option<&'a ByteTuple>
     {
@@ -79,7 +75,7 @@ impl Index {
         }
     }
 
-    fn insert_into_bucket(&mut self, bucket_id: usize, entry: usize) {
+    fn insert_into_bucket(&mut self, _bucket_id: usize, _entry: usize) {
         todo!("Hash conflict cannot be handled")
     }
 
@@ -92,12 +88,6 @@ impl<'a> IndexInsertion<'a> {
     pub(crate) fn insert(self, new_tuple: &ByteTuple) -> Op {
         self.index.index(new_tuple, |id| self.tuples.get(id))
     }
-}
-
-fn hash(byte_tuple: &ByteTuple) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    byte_tuple.iter().for_each(|x| hasher.write(x));
-    hasher.finish()
 }
 
 enum Node {
@@ -116,32 +106,6 @@ impl Node {
 
     fn add(self, id: usize) -> Self {
         Node::Ref(id, Box::new(self))
-    }
-
-    fn len(&self) -> usize {
-        match self {
-            Self::Ref(_, rest) => 1 + rest.len(),
-            Self::End => 0,
-        }
-    }
-
-    fn find<'a, T, F>(&self, t: &'a T, f: F) -> Option<usize>
-    where T: PartialEq,
-          F: Fn(usize) -> Option<&'a T>
-    {
-        let mut current = self;
-        loop {
-            if let Self::Ref(i, next) = current {
-                if Some(t) == f(*i) {
-                    return Some(*i);
-                }
-                current = next;
-            } else {
-                break;
-            }
-        }
-
-        None
     }
 
     fn iter(&self) -> NodeIter {
@@ -190,15 +154,15 @@ mod tests {
         ];
 
         let mut index = Index::new(&tuples);
-        assert_eq!(index.len(), 2);
+        assert_eq!(index.len, 2);
 
         let new_tuple = byte_tuple(&["2", "other two"]);
         assert!(matches!(index.on(&tuples).insert(&new_tuple), Op::Insert(2)));
-        assert_eq!(index.len(), 3);
+        assert_eq!(index.len, 3);
 
         let duplicate = byte_tuple(&["2", "two"]);
         assert!(matches!(index.on(&tuples).insert(&duplicate), Op::Replace(1)));
-        assert_eq!(index.len(), 3);
+        assert_eq!(index.len, 3);
     }
 
     #[test]
