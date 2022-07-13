@@ -1,14 +1,103 @@
-use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
-use std::fmt;
 use std::hash::Hasher;
 
-use crate::tuple::Tuple;
+type ByteCell = Vec<u8>;
+type ByteTuple = Vec<ByteCell>;
 
-type ByteTuple = Vec<Vec<u8>>;
+pub(crate) struct Index {
+    buckets: Vec<(u64, Node)>,
+    len: usize,
+    cell_id: Option<usize>,
+}
 
-pub(crate) struct TupleIndex {
-    index: HashMap<u64, Node>,
+pub(crate) struct IndexInsertion<'a> {
+    tuples: &'a [ByteTuple],
+    index: &'a mut Index,
+}
+
+impl Index {
+    pub(crate) fn new(tuples: &[ByteTuple]) -> Self {
+        let mut instance = Self{ buckets: Vec::new(), len: 0, cell_id: None };
+
+        for tuple in tuples {
+            instance.index(tuple, |_| None);
+        }
+
+        instance
+    }
+
+    pub(crate) fn single_cell(tuples: &[ByteTuple], pos: usize) -> Self {
+        let mut instance = Self{ buckets: Vec::new(), len: 0, cell_id: Some(pos) };
+
+        for tuple in tuples {
+            instance.index(tuple, |_| None);
+        }
+
+        instance
+    }
+
+    fn len(&self) -> usize {
+        self.buckets.iter().map(|(_, node)| node.len()).fold(0usize, |acc, i| acc + i)
+    }
+
+    fn index<'a, F>(&mut self, byte_tuple: &'a ByteTuple, f: F) -> Op
+    where F: Fn(usize) -> Option<&'a ByteTuple>
+    {
+        let hash = self.hash(byte_tuple);
+        if let Some((same_hash_pos, same_hash_node)) = self.buckets.iter().enumerate().find(|(_, (h, _))| hash == *h).map(|(pos, (_, node))| (pos, node)) {
+            if let Some(matched) = self.find_in_node(same_hash_node, byte_tuple, f) {
+                Op::Replace(matched)
+            } else {
+                let id = self.len;
+                self.insert_into_bucket(same_hash_pos, id);
+                self.len += 1;
+                Op::Insert(id)
+            }
+        } else {
+            let id = self.len;
+            self.buckets.push((hash, Node::rel(id)));
+            self.len += 1;
+            Op::Insert(id)
+        }
+    }
+
+    fn hash(&self, byte_tuple: &ByteTuple) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        match self.cell_id {
+            Some(id) => byte_tuple.get(id).iter().for_each(|x| hasher.write(x)),
+            None => byte_tuple.iter().for_each(|x| hasher.write(x)),
+        }
+        hasher.finish()
+    }
+
+    fn find_in_node<'a, F>(&self, node: &Node, byte_tuple: &ByteTuple, f: F) -> Option<usize>
+    where F: Fn(usize) -> Option<&'a ByteTuple>
+    {
+        match self.cell_id {
+            Some(cell_id) => node.iter().find(|i| byte_tuple.get(cell_id) == f(*i).and_then(|x| x.get(cell_id))),
+            None => node.iter().find(|i| Some(byte_tuple) == f(*i)),
+        }
+    }
+
+    fn insert_into_bucket(&mut self, bucket_id: usize, entry: usize) {
+        todo!("Hash conflict cannot be handled")
+    }
+
+    pub(crate) fn on<'a>(&'a mut self, tuples: &'a [ByteTuple]) -> IndexInsertion<'a> {
+        IndexInsertion{ tuples, index: self }
+    }
+}
+
+impl<'a> IndexInsertion<'a> {
+    pub(crate) fn insert(self, new_tuple: &ByteTuple) -> Op {
+        self.index.index(new_tuple, |id| self.tuples.get(id))
+    }
+}
+
+fn hash(byte_tuple: &ByteTuple) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    byte_tuple.iter().for_each(|x| hasher.write(x));
+    hasher.finish()
 }
 
 enum Node {
@@ -38,12 +127,12 @@ impl Node {
 
     fn find<'a, T, F>(&self, t: &'a T, f: F) -> Option<usize>
     where T: PartialEq,
-          F: Fn(usize) -> &'a T
+          F: Fn(usize) -> Option<&'a T>
     {
         let mut current = self;
         loop {
             if let Self::Ref(i, next) = current {
-                if t == f(*i) {
+                if Some(t) == f(*i) {
                     return Some(*i);
                 }
                 current = next;
@@ -55,130 +144,38 @@ impl Node {
         None
     }
 
-    fn as_vec(&self) -> Vec<usize> {
-        let mut out = vec![];
-        let mut current = self;
-
-        loop {
-            if let Self::Ref(i, next) = current {
-                out.push(*i);
-                current = next;
-            } else {
-                break;
-            }
-        }
-
-        out
+    fn iter(&self) -> NodeIter {
+        NodeIter{ node: self }
     }
 }
 
-impl fmt::Debug for Node {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self.as_vec())
+impl Default for Node {
+    fn default() -> Self {
+        Node::End
     }
 }
 
-impl TupleIndex {
-    pub fn new(tuples: &[ByteTuple]) -> Self {
-        let mut index: HashMap<u64, Node> = HashMap::new();
-
-        tuples.iter().enumerate().for_each(|(i, byte_tuple)| {
-            let hash = Tuple::from_bytes(byte_tuple).hash();
-            if let Some(already_indexed) = index.get(&hash) {
-                if already_indexed.as_vec().iter().all(|i| &tuples[*i] != byte_tuple) {
-                    let entry = index.remove(&hash).map(|x| x.add(i)).unwrap_or_else(|| Node::rel(i));
-                    index.insert(hash, entry);
-                }
-            } else {
-                let entry = index.remove(&hash).map(|x| x.add(i)).unwrap_or_else(|| Node::rel(i));
-                index.insert(hash, entry);
-            }
-        });
-
-        Self{ index }
-    }
-
-    fn count(&self) -> usize {
-        self.index.values().fold(0usize, |acc, node| acc + node.len())
-    }
-
-    fn insert(&mut self, tuple: &Tuple) -> usize {
-        let id = self.count();
-        let hash = tuple.hash();
-        let node = self.index.remove(&hash).unwrap_or_else(|| Node::new());
-        self.index.insert(hash, node.add(id));
-        id
-    }
-
-    pub fn index<'a, F>(&mut self, tuple: &'a Tuple, f: F) -> Op
-    where F: Fn(usize) -> &'a ByteTuple
-    {
-        let hash = tuple.hash();
-        if let Some(already_indexed) = self.index.get(&hash) {
-            if let Some(_) = already_indexed.find(tuple.as_bytes(), f) {
-                Op::Ignore
-            } else {
-                Op::Insert(self.insert(tuple))
-            }
-        } else {
-            Op::Insert(self.insert(tuple))
-        }
-    }
+struct NodeIter<'a> {
+    node: &'a Node,
 }
 
-pub(crate) struct KeyIndex {
-    index: HashMap<u64, Node>,
-    pos: usize,
-}
+impl<'a> Iterator for NodeIter<'a> {
+    type Item = usize;
 
-impl KeyIndex {
-    pub(crate) fn new(pos: usize, tuples: &[ByteTuple]) -> Self {
-        let mut index = Self{ index: HashMap::new(), pos };
-        for (i, byte_tuple) in tuples.iter().enumerate(){
-            let hash = index.hash(byte_tuple);
-            index.map(hash, |x| x.add(i));
+    fn next(&mut self) -> Option<usize> {
+        match self.node {
+            Node::Ref(id, next) => {
+                self.node = next;
+                return Some(*id);
+            },
+            Node::End => None
         }
-
-        index
-    }
-
-    pub(crate) fn index<'a, F>(&mut self, tuple: &'a ByteTuple, f: F) -> Op
-    where F: Fn(usize) -> &'a ByteTuple
-    {
-        let hash = self.hash(tuple);
-        if let Some(already_indexed) = self.index.get(&hash) {
-            if let Some(id) = already_indexed.find(tuple.get(self.pos).unwrap(), |id| f(id).get(self.pos).unwrap()) {
-                return Op::Replace(id)
-            }
-        }
-
-        let id = self.len();
-        self.map(hash, |x| x.add(id));
-        Op::Insert(id)
-    }
-
-    fn hash(&self, byte_tuple: &ByteTuple) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        hasher.write(byte_tuple.get(self.pos).unwrap_or(&vec![]));
-        hasher.finish()
-    }
-
-    fn map<F>(&mut self, hash: u64, mapper: F)
-    where F: Fn(Node) -> Node
-    {
-        let node = self.index.remove(&hash).unwrap_or(Node::new());
-        self.index.insert(hash, mapper(node));
-    }
-
-    fn len(&self) -> usize {
-        self.index.values().fold(0, |acc, node| acc + node.len())
     }
 }
 
 pub(crate) enum Op {
     Insert(usize),
     Replace(usize),
-    Ignore,
 }
 
 #[cfg(test)]
@@ -186,68 +183,45 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_ignore_duplicates() {
+    fn test_index_whole_tuple() {
         let tuples = vec![
-            byte_tuple(&["1", "aaa"]),
-            byte_tuple(&["2", "bbb"]),
-            byte_tuple(&["2", "bbb"]),
+            byte_tuple(&["1", "one"]),
+            byte_tuple(&["2", "two"]),
         ];
 
-        let index = TupleIndex::new(&tuples);
-        assert_eq!(index.count(), 2);
+        let mut index = Index::new(&tuples);
+        assert_eq!(index.len(), 2);
+
+        let new_tuple = byte_tuple(&["2", "other two"]);
+        assert!(matches!(index.on(&tuples).insert(&new_tuple), Op::Insert(2)));
+        assert_eq!(index.len(), 3);
+
+        let duplicate = byte_tuple(&["2", "two"]);
+        assert!(matches!(index.on(&tuples).insert(&duplicate), Op::Replace(1)));
+        assert_eq!(index.len(), 3);
     }
 
     #[test]
-    fn test_empty_tuple_index() {
-        let mut index = TupleIndex::new(&[]);
-        let tuple_1 = byte_tuple(&["1", "aaa"]);
-
-        assert!(matches!(index.index(&Tuple::from_bytes(&tuple_1), |_| panic!()), Op::Insert(0)));
-    }
-
-    #[test]
-    fn test_generate_id() {
-        let mut tuples = vec![
-            byte_tuple(&["1", "aaa"]),
-            byte_tuple(&["2", "bbb"]),
-        ];
-        let mut index = TupleIndex::new(&tuples);
-
-        let new_tuple = byte_tuple(&["3", "ccc"]);
-        let new_entry = index.index(&Tuple::from_bytes(&new_tuple), |i| tuples.get(i).unwrap());
-        assert!(matches!(new_entry, Op::Insert(2)));
-        tuples.insert(2, new_tuple.clone());
-
-        let inserted_again = index.index(&Tuple::from_bytes(&new_tuple), |i| tuples.get(i).unwrap());
-        assert!(matches!(inserted_again, Op::Ignore));
-    }
-
-    #[test]
-    fn test_key_index() {
+    fn test_index_first_cell() {
         let tuples = vec![
-            byte_tuple(&["1", "aaa"]),
-            byte_tuple(&["2", "aaa"]),
+            byte_tuple(&["1", "content"]),
+            byte_tuple(&["2", "content"]),
         ];
-        let mut index = KeyIndex::new(0, &tuples);
 
-        let new_tuple = byte_tuple(&["3", "aaa"]);
-        let new_entry = index.index(&new_tuple, |i| tuples.get(i).unwrap());
-        assert!(matches!(new_entry, Op::Insert(2)));
+        let mut index = Index::single_cell(&tuples, 0);
 
-        let replacement = byte_tuple(&["1", "bbb"]);
-        let replaced = index.index(&replacement, |i| tuples.get(i).unwrap());
-        assert!(matches!(replaced, Op::Replace(0)));
+        let replacement = byte_tuple(&["1", "new content"]);
+        let op = index.on(&tuples).insert(&replacement);
+        assert!(matches!(op, Op::Replace(0)));
     }
 
     fn byte_tuple(cells: &[&str]) -> ByteTuple {
-        cells.iter().map(|s| cell(s)).collect()
-    }
-
-    fn cell(s: &str) -> Vec<u8> {
-        if let Result::Ok(num) = s.parse::<i32>() {
-            Vec::from(num.to_be_bytes())
-        } else {
-            Vec::from(s.as_bytes())
-        }
+        cells.iter().map(|s| {
+            if let Result::Ok(num) = s.parse::<i32>() {
+                Vec::from(num.to_be_bytes())
+            } else {
+                Vec::from(s.as_bytes())
+            }
+        }).collect()
     }
 }

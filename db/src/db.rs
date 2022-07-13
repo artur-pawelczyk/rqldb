@@ -1,7 +1,7 @@
 use std::cell::{RefCell, Ref, RefMut};
 use std::collections::HashSet;
 
-use crate::index2::{Index, Op};
+use crate::index::{Index, Op};
 use crate::plan::{Contents, Attribute, Filter, Plan, Finisher};
 use crate::schema::Column;
 use crate::tuple::Tuple;
