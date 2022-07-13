@@ -16,9 +16,8 @@ pub struct Database {
 
 struct Object {
     tuples: Vec<ByteTuple>,
-    uniq_index: Index,
-    prim_key: Option<Index>,
     removed_ids: HashSet<usize>,
+    index: Index,
 }
 
 type ByteTuple = Vec<Vec<u8>>;
@@ -34,34 +33,23 @@ impl Object {
         let indexed_column = columns.iter().enumerate().find(|(_, col)| col.indexed).map(|(i, _)| i);
         Self{
             tuples: Vec::new(),
-            uniq_index: Index::new(&[]),
-            prim_key: indexed_column.map(|col_pos| Index::single_cell(&[], col_pos)),
             removed_ids: HashSet::new(),
+            index: indexed_column.map(|i| Index::single_cell(&[], i)).unwrap_or_else(|| Index::new(&[])),
         }
     }
 
     fn add_tuple(&mut self, tuple: &Tuple) -> bool {
-        if let Some(key_index) = &mut self.prim_key {
-            match key_index.on(&self.tuples).insert(tuple.as_bytes()) {
-                Op::Insert(id) => {
-                    self.tuples.insert(id, tuple.as_bytes().clone());
-                    return true;
-                }
-                Op::Replace(id) => {
-                    let _ = std::mem::replace(&mut self.tuples[id], tuple.as_bytes().clone());
-                    return true;
-                }
+        match self.index.on(&self.tuples).insert(tuple.as_bytes()) {
+            Op::Insert(id) => {
+                self.tuples.insert(id, tuple.as_bytes().clone());
+                return true;
             }
-        } else {
-            match self.uniq_index.on(&self.tuples).insert(tuple.as_bytes()) {
-                Op::Insert(i) => {
-                    self.tuples.insert(i, tuple.as_bytes().clone());
-                    true
-                }
-                _ => false,
+            Op::Replace(id) => {
+                let _ = std::mem::replace(&mut self.tuples[id], tuple.as_bytes().clone());
+                return true;
             }
-            
         }
+
     }
 
     fn iter(&self) -> std::slice::Iter<ByteTuple> {
@@ -77,9 +65,8 @@ impl Default for Object {
     fn default() -> Self {
         Object{
             tuples: vec![],
-            uniq_index: Index::new(&[]),
-            prim_key: None,
             removed_ids: HashSet::new(),
+            index: Index::new(&[]),
         }
     }
 }

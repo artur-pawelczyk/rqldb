@@ -40,17 +40,6 @@ impl<'a> Tuple<'a> {
         self.rest = Some(other);
         self
     }
-
-    pub(crate) fn hash(&self) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        for cell in self.raw {
-            for byte in cell {
-                hasher.write_u8(*byte);
-            }
-        }
-
-        hasher.finish()
-    }
 }
 
 pub(crate) struct Cell<'a> {
