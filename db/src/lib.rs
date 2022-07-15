@@ -89,10 +89,6 @@ impl Cell {
         }
     }
 
-    // fn as_bytes(&self) -> Vec<u8> {
-    //     self.contents.clone()
-    // }
-
     pub fn into_bytes(self) -> Vec<u8> {
         self.contents
     }
@@ -108,6 +104,10 @@ impl Cell {
             },
             _ => None
         }
+    }
+
+    pub fn len(&self) -> usize {
+        self.contents.len()
     }
 }
 
@@ -157,5 +157,33 @@ impl QueryResults {
 
     pub fn tuple_at(&self, i: i32) -> Option<Tuple> {
         self.results.get(i as usize).map(|cells| Tuple{ attributes: &self.attributes, contents: cells })
+    }
+
+    pub fn columns(&self) -> Vec<Column> {
+        (0..self.attributes.len()).map(|col_pos| Column{ results: &self.results, col_pos, pos: 0}).collect()
+    }
+
+    pub fn column(&self, name: &str) -> Option<Column> {
+        if let Some(col_pos) = self.attributes().iter().enumerate().find(|(_, attr)| attr == &name).map(|(i, _)| i) {
+            Some(Column{ results: &self.results, col_pos, pos: 0 })
+        } else {
+            None
+        }
+    }
+}
+
+pub struct Column<'a> {
+    col_pos: usize,
+    results: &'a [Vec<Cell>],
+    pos: usize,
+}
+
+impl<'a> Iterator for Column<'a> {
+    type Item = &'a Cell;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let next = self.results.get(self.pos).and_then(|tuple| tuple.get(self.col_pos));
+        self.pos += 1;
+        next
     }
 }

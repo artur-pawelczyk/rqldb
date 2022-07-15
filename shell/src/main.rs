@@ -1,9 +1,15 @@
+mod table;
+
 use rqldb::*;
+use crate::table::Table;
+
 use rustyline::Editor;
 use clap::Parser;
 
+use std::cmp::{max, min};
 use std::io::prelude::*;
 use std::fs::File;
+use std::iter::zip;
 use std::path::Path;
 
 /// Interactive DB shell
@@ -59,9 +65,18 @@ fn handle_command(db: &mut Database, cmd: &str) {
 }
 
 fn print_result(result: &QueryResults) {
-    println!("{}", result.attributes().join(" | "));
-    for tuple in result.results().iter() {
-        let values: Vec<String> = tuple.contents().iter().map(|cell| cell.as_string()).collect();
-        println!("{}", values.join(" | "));
+    let mut table = Table::new();
+    for attr in result.attributes() {
+        table.add_title_cell(attr);
     }
+
+    for res_row in result.results() {
+        let mut row = table.row();
+        for cell in res_row.contents() {
+            row = row.cell(&cell.as_string());
+        }
+        row.add();
+    }
+
+    println!("{}", table.to_string());
 }
