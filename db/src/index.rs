@@ -5,7 +5,7 @@ type ByteCell = Vec<u8>;
 type ByteTuple = Vec<ByteCell>;
 
 pub(crate) struct Index {
-    buckets: Vec<(u64, Node)>,
+    buckets: Vec<Node>,
     len: usize,
     cell_id: Option<usize>,
 }
@@ -17,7 +17,11 @@ pub(crate) struct IndexInsertion<'a> {
 
 impl Index {
     pub(crate) fn new(tuples: &[ByteTuple]) -> Self {
-        let mut instance = Self{ buckets: Vec::new(), len: 0, cell_id: None };
+        let mut instance = Self{
+            buckets: (0..4).map(|_| Node::End).collect(),
+            len: 0,
+            cell_id: None
+        };
 
         for tuple in tuples {
             instance.index(tuple, |_| None);
@@ -27,7 +31,11 @@ impl Index {
     }
 
     pub(crate) fn single_cell(tuples: &[ByteTuple], pos: usize) -> Self {
-        let mut instance = Self{ buckets: Vec::new(), len: 0, cell_id: Some(pos) };
+        let mut instance = Self{
+            buckets: (0..16).map(|_| Node::End).collect(),
+            len: 0,
+            cell_id: Some(pos),
+        };
 
         for tuple in tuples {
             instance.index(tuple, |_| None);
@@ -40,8 +48,9 @@ impl Index {
     where F: Fn(usize) -> Option<&'a ByteTuple>
     {
         let hash = self.hash(byte_tuple);
-        if let Some((same_hash_pos, same_hash_node)) = self.buckets.iter().enumerate().find(|(_, (h, _))| hash == *h).map(|(pos, (_, node))| (pos, node)) {
-            if let Some(matched) = self.find_in_node(same_hash_node, byte_tuple, f) {
+        if let Some(same_hash_pos) = self.find_bucket(hash) {
+            let same_hash_node = &self.buckets[same_hash_pos];
+            if let Some(matched) = self.find_in_node(&same_hash_node, byte_tuple, f) {
                 Op::Replace(matched)
             } else {
                 let id = self.len;
@@ -51,9 +60,19 @@ impl Index {
             }
         } else {
             let id = self.len;
-            self.buckets.push((hash, Node::rel(id)));
+            let pos = hash as usize % self.buckets.len();
+            let _ = std::mem::replace(&mut self.buckets[pos], Node::rel(id));
             self.len += 1;
             Op::Insert(id)
+        }
+    }
+
+    fn find_bucket(&self, hash: u64) -> Option<usize> {
+        let pos = hash as usize % self.buckets.len();
+        if self.buckets[pos].is_empty() {
+            None
+        } else {
+            Some(pos)
         }
     }
 
@@ -75,8 +94,9 @@ impl Index {
         }
     }
 
-    fn insert_into_bucket(&mut self, _bucket_id: usize, _entry: usize) {
-        todo!("Hash conflict cannot be handled")
+    fn insert_into_bucket(&mut self, bucket_id: usize, entry: usize) {
+        let node = std::mem::take(&mut self.buckets[bucket_id]);
+        self.buckets[bucket_id] = node.add(entry);
     }
 
     pub(crate) fn on<'a>(&'a mut self, tuples: &'a [ByteTuple]) -> IndexInsertion<'a> {
@@ -90,6 +110,7 @@ impl<'a> IndexInsertion<'a> {
     }
 }
 
+#[derive(Debug)]
 enum Node {
     Ref(usize, Box<Node>),
     End,
@@ -110,6 +131,13 @@ impl Node {
 
     fn iter(&self) -> NodeIter {
         NodeIter{ node: self }
+    }
+
+    fn is_empty(&self) -> bool {
+        match self {
+            Self::End => true,
+            Self::Ref(_, _) => false,
+        }
     }
 }
 
