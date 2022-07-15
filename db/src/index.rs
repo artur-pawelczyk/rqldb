@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::Hasher;
 
@@ -102,6 +103,14 @@ impl Index {
     pub(crate) fn on<'a>(&'a mut self, tuples: &'a [ByteTuple]) -> IndexInsertion<'a> {
         IndexInsertion{ tuples, index: self }
     }
+
+    pub fn print_statistics(&self) {
+        let size = self.buckets.len();
+        let avg = self.len / size;
+        let max = self.buckets.iter().map(|x| x.len()).fold(0usize, |acc, x| max(acc, x));
+
+        println!("bucket size: {}; avg bucket size: {}; longest: {}", size, avg, max);
+    }
 }
 
 impl<'a> IndexInsertion<'a> {
@@ -137,6 +146,13 @@ impl Node {
         match self {
             Self::End => true,
             Self::Ref(_, _) => false,
+        }
+    }
+
+    fn len(&self) -> usize {
+        match self {
+            Node::Ref(_, next) => 1 + next.len(),
+            Node::End => 0,
         }
     }
 }

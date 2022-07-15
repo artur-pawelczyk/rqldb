@@ -37,6 +37,8 @@ fn main() {
 
 fn handle_command(db: &mut Database, cmd: &str) {
     if cmd.is_empty() {
+    } else if cmd == "stat" {
+        db.print_statistics();
     } else if cmd.starts_with("create") {
         let command = match parse_command(cmd) {
             Ok(x) => x,

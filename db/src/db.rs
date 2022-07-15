@@ -137,6 +137,14 @@ impl Database {
         Ok(sink.into_results())
     }
 
+    pub fn print_statistics(&self) {
+        for rel in &self.schema.relations {
+            let obj = self.objects.get(rel.id).unwrap().borrow();
+            println!("table {} index statistics", rel.name);
+            obj.index.print_statistics();
+        }
+    }
+
     fn create_sink<'a>(&'a self, plan: &'a Plan) -> Sink<'a> {
         match plan.finisher {
             Finisher::Return => Sink::Return(plan.final_attributes(), vec![]),
