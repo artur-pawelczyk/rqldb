@@ -19,7 +19,7 @@ pub(crate) struct IndexInsertion<'a> {
 impl Index {
     pub(crate) fn new(tuples: &[ByteTuple]) -> Self {
         let mut instance = Self{
-            buckets: (0..4).map(|_| Node::End).collect(),
+            buckets: Vec::new(),
             len: 0,
             cell_id: None
         };
@@ -33,7 +33,7 @@ impl Index {
 
     pub(crate) fn single_cell(tuples: &[ByteTuple], pos: usize) -> Self {
         let mut instance = Self{
-            buckets: (0..16).map(|_| Node::End).collect(),
+            buckets: Vec::new(),
             len: 0,
             cell_id: Some(pos),
         };
@@ -48,6 +48,8 @@ impl Index {
     fn index<'a, F>(&mut self, byte_tuple: &'a ByteTuple, f: F) -> Op
     where F: Fn(usize) -> Option<&'a ByteTuple>
     {
+        self.maybe_resize();
+
         let hash = self.hash(byte_tuple);
         if let Some(same_hash_pos) = self.find_bucket(hash) {
             let same_hash_node = &self.buckets[same_hash_pos];
@@ -55,14 +57,15 @@ impl Index {
                 Op::Replace(matched)
             } else {
                 let id = self.len;
-                self.insert_into_bucket(same_hash_pos, id);
+                let node = std::mem::take(&mut self.buckets[same_hash_pos]);
+                self.buckets[same_hash_pos] = node.add(id, hash);
                 self.len += 1;
                 Op::Insert(id)
             }
         } else {
             let id = self.len;
             let pos = hash as usize % self.buckets.len();
-            let _ = std::mem::replace(&mut self.buckets[pos], Node::rel(id));
+            let _ = std::mem::replace(&mut self.buckets[pos], Node::rel(id, hash));
             self.len += 1;
             Op::Insert(id)
         }
@@ -95,9 +98,22 @@ impl Index {
         }
     }
 
-    fn insert_into_bucket(&mut self, bucket_id: usize, entry: usize) {
-        let node = std::mem::take(&mut self.buckets[bucket_id]);
-        self.buckets[bucket_id] = node.add(entry);
+    fn maybe_resize(&mut self) {
+        if self.buckets.is_empty() {
+            self.buckets = (0..4).map(|_| Node::End).collect();
+        } if self.load_factor() > 0.75 {
+            let new_size = self.buckets.len() * 2;
+            let mut new_buckets: Vec<Node> = (0..new_size).map(|_| Node::End).collect();
+            for node in self.buckets.iter_mut().filter(|node| !node.is_empty()) {
+                let pos = node.hash() as usize % new_size;
+                new_buckets[pos] = std::mem::take(node);
+            }
+            self.buckets = new_buckets;
+        }
+    }
+
+    fn load_factor(&self) -> f32 {
+        (self.buckets.iter().filter(|node| !node.is_empty()).count() as f32) / (self.buckets.len() as f32)
     }
 
     pub(crate) fn on<'a>(&'a mut self, tuples: &'a [ByteTuple]) -> IndexInsertion<'a> {
@@ -106,10 +122,11 @@ impl Index {
 
     pub fn print_statistics(&self) {
         let size = self.buckets.len();
-        let avg = self.len / size;
+        let avg = self.len as f64 / size as f64;
         let max = self.buckets.iter().map(|x| x.len()).fold(0usize, |acc, x| max(acc, x));
+        let load_factor = self.load_factor();
 
-        println!("bucket size: {}; avg bucket size: {}; longest: {}", size, avg, max);
+        println!("bucket size: {}; avg bucket size: {}; longest: {}; load factor: {}", size, avg, max, load_factor);
     }
 }
 
@@ -121,7 +138,7 @@ impl<'a> IndexInsertion<'a> {
 
 #[derive(Debug)]
 enum Node {
-    Ref(usize, Box<Node>),
+    Ref(usize, u64, Box<Node>),
     End,
 }
 
@@ -130,12 +147,12 @@ impl Node {
         Node::End
     }
 
-    fn rel(id: usize) -> Self {
-        Self::new().add(id)
+    fn rel(id: usize, hash: u64) -> Self {
+        Self::new().add(id, hash)
     }
 
-    fn add(self, id: usize) -> Self {
-        Node::Ref(id, Box::new(self))
+    fn add(self, id: usize, hash: u64) -> Self {
+        Node::Ref(id, hash, Box::new(self))
     }
 
     fn iter(&self) -> NodeIter {
@@ -145,13 +162,20 @@ impl Node {
     fn is_empty(&self) -> bool {
         match self {
             Self::End => true,
-            Self::Ref(_, _) => false,
+            Self::Ref(_, _, _) => false,
         }
     }
 
     fn len(&self) -> usize {
         match self {
-            Node::Ref(_, next) => 1 + next.len(),
+            Node::Ref(_, _, next) => 1 + next.len(),
+            Node::End => 0,
+        }
+    }
+
+    fn hash(&self) -> u64 {
+        match self {
+            Node::Ref(_, hash, _) => *hash,
             Node::End => 0,
         }
     }
@@ -172,7 +196,7 @@ impl<'a> Iterator for NodeIter<'a> {
 
     fn next(&mut self) -> Option<usize> {
         match self.node {
-            Node::Ref(id, next) => {
+            Node::Ref(id, _, next) => {
                 self.node = next;
                 return Some(*id);
             },
