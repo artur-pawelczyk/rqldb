@@ -37,7 +37,7 @@ fn benchmark_insert(c: &mut Criterion) {
 
 fn benchmark_filter(c: &mut Criterion) {
     let db = create_database();
-    for i in 1..1000000 {
+    for i in 1..100000 {
         db.execute_query(&Query::tuple(&[i.to_string().as_str(), "12", "example_doc", "the content"]).insert_into("document")).unwrap();
     }
 
@@ -48,6 +48,7 @@ fn benchmark_filter(c: &mut Criterion) {
 fn benchmark_count(c: &mut Criterion) {
     let db = create_database();
 
+    // TODO: These are duplicated tuples
     let query = Query::tuple(&["1", "2", "example_doc", "the_content"]).insert_into("document");
     for _ in 0..1_000_000 {
         db.execute_query(&query).unwrap();
@@ -60,7 +61,7 @@ fn benchmark_count(c: &mut Criterion) {
 fn benchmark_parse(c: &mut Criterion) {
     let query = "scan example | join other example.id other.id | filter example.value > 5 | insert_into foo";
 
-    c.bench_function("parse query", |b| b.iter(|| parse_query(query)));
+    c.bench_function("parse query", |b| b.iter(|| parse_query(query).unwrap()));
 }
 
 criterion_group!(benches, benchmark_insert, benchmark_count, benchmark_parse, benchmark_filter);
