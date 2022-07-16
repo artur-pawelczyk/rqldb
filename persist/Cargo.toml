@@ -1,0 +1,8 @@
+[package]
+name = "rqldb-persist"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rqldb = { path = "../db" }
+bson = "2.3.0"

@@ -2,5 +2,6 @@
 
 members = [
         "db",
-        "shell",        
+        "shell",
+        "persist",
 ]

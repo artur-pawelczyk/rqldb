@@ -1,4 +1,6 @@
-#[derive(Default)]
+use std::{fmt, str::FromStr};
+
+#[derive(Debug, Default, PartialEq)]
 pub struct Schema {
     pub relations: Vec<Relation>,
 }
@@ -38,7 +40,7 @@ impl TableId for &String {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Column {
     pub name: String,
     pub kind: Type,
@@ -72,6 +74,34 @@ pub enum Type {
 impl Default for Type {
     fn default() -> Self {
         Self::NONE
+    }
+}
+
+impl fmt::Display for Type {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            Type::NUMBER => "NUMBER",
+            Type::TEXT => "TEXT",
+            Type::BYTE(n) => if n == &1 { "UINT8" } else if n == &2 { "UINT16" } else if n == &4 { "UINT32" } else { panic!() },
+            Type::NONE => panic!(),
+        };
+
+        write!(f, "{}", s)
+    }
+}
+
+impl FromStr for Type {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "NUMBER" => Ok(Type::NUMBER),
+            "TEXT" => Ok(Type::TEXT),
+            "UINT8" => Ok(Type::BYTE(8)),
+            "UINT16" => Ok(Type::BYTE(16)),
+            "UINT32" => Ok(Type::BYTE(32)),
+            _ => Err(()),
+        }
     }
 }
 
