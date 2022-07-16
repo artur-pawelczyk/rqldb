@@ -13,7 +13,8 @@ impl Table {
         }
     }
 
-    pub(crate) fn title(&self) -> Title {
+    #[allow(dead_code)]
+    fn title(&self) -> Title {
         Title{ table: self }
     }
 
@@ -21,11 +22,13 @@ impl Table {
         self.columns.push(Column::new(name));
     }
 
+    #[allow(dead_code)]
     pub(crate) fn row(&mut self) -> TempRow {
         TempRow{ table: self, row: Vec::new() }
     }
 
-    pub(crate) fn rows(&self) -> Vec<Row> {
+    #[allow(dead_code)]
+    fn rows(&self) -> Vec<Row> {
         self.rows.iter().map(|row| Row{ row, table: self }).collect()
     }
 }

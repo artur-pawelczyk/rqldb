@@ -6,10 +6,8 @@ use crate::table::Table;
 use rustyline::Editor;
 use clap::Parser;
 
-use std::cmp::{max, min};
 use std::io::prelude::*;
 use std::fs::File;
-use std::iter::zip;
 use std::path::Path;
 
 /// Interactive DB shell
