@@ -1,5 +1,7 @@
 use rqldb::schema::{Column, Schema};
 
+use std::io::BufRead;
+use std::io::BufReader;
 use std::io::Read;
 use std::io::Write;
 
@@ -63,10 +65,52 @@ fn read_schema<R: Read>(reader: R) -> Schema {
     schema
 }
 
+#[allow(dead_code)]
+type ByteTuple = Vec<Vec<u8>>;
+#[allow(dead_code)]
+fn write_object<W: Write>(writer: &mut W, tuples: &[ByteTuple]) {
+    writer.write(&[tuples.len() as u8]).unwrap();
+    for tuple in tuples {
+        writer.write(&[tuple.len() as u8]).unwrap();
+
+        for cell in tuple {
+            writer.write(&[cell.len() as u8]).unwrap();
+            writer.write(&cell).unwrap();
+        }
+    }
+}
+
+#[allow(dead_code)]
+fn read_object<R: Read>(reader: R) -> Vec<ByteTuple> {
+    let mut reader = BufReader::new(reader);
+
+    let n_tuples = reader.fill_buf().unwrap()[0] as usize;
+    reader.consume(1);
+
+    let mut tuples = Vec::with_capacity(n_tuples);
+    for _ in 0..n_tuples {
+        let n_cells = reader.fill_buf().unwrap()[0];
+        reader.consume(1);
+
+        let mut tuple = Vec::new();
+        for _ in 0..n_cells {
+            let n_bytes = reader.fill_buf().unwrap()[0] as usize;
+            reader.consume(1);
+            let cell = reader.fill_buf().unwrap()[0..n_bytes].to_vec();
+            reader.consume(n_bytes);
+            tuple.push(cell);
+        }
+
+        tuples.push(tuple);
+    }
+
+    tuples
+}
+
 #[cfg(test)]
 mod tests {
     use std::{io::Cursor, iter::zip};
-    use rqldb::schema::Type;
+    use rqldb::{schema::Type, Database, Query, Command};
 
     use super::*;
 
@@ -85,5 +129,32 @@ mod tests {
             assert_eq!(rel.name, saved_rel.name);
             assert_eq!(rel.columns, saved_rel.columns);
         }
+    }
+
+    #[test]
+    fn test_serialize_empty_object() {
+        let mut db = Database::default();
+        db.execute_create(&Command::create_table("example").indexed_column("id", Type::NUMBER).column("content", Type::TEXT));
+
+        let raw_object = db.raw_object("example").unwrap();
+        let mut out = Vec::new();
+        write_object(&mut out, raw_object.raw_tuples());
+        let saved_object = read_object(Cursor::new(out));
+        assert_eq!(raw_object.raw_tuples(), &saved_object);
+    }
+
+    #[test]
+    fn test_serialize_object() {
+        let mut db = Database::default();
+        db.execute_create(&Command::create_table("example").indexed_column("id", Type::NUMBER).column("content", Type::TEXT));
+
+        db.execute_query(&Query::tuple(&["1", "test"]).insert_into("example")).unwrap();
+        db.execute_query(&Query::tuple(&["2", "test"]).insert_into("example")).unwrap();
+
+        let raw_object = db.raw_object("example").unwrap();
+        let mut out = Vec::new();
+        write_object(&mut out, raw_object.raw_tuples());
+        let saved_object = read_object(Cursor::new(out));
+        assert_eq!(raw_object.raw_tuples(), &saved_object);
     }
 }
