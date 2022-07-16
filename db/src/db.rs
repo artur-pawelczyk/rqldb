@@ -6,7 +6,7 @@ use crate::plan::{Contents, Attribute, Filter, Plan, Finisher};
 use crate::schema::Column;
 use crate::tuple::Tuple;
 use crate::{schema::Schema, QueryResults, plan::compute_plan};
-use crate::{dsl, Cell};
+use crate::{dsl, Cell, Type};
 
 #[derive(Default)]
 pub struct Database {
@@ -73,12 +73,22 @@ impl Default for Object {
 
 impl Database {
     pub fn execute_create(&mut self, command: &dsl::Command) {
-        self.create_table(&command.name, &command.columns);
+        command.columns.iter().fold(self.create_table(&command.name), |acc, col| {
+            if col.indexed {
+                acc.indexed_column(&col.name, col.kind)
+            } else {
+                acc.column(&col.name, col.kind)
+            }
+        }).create();
     }
 
-    fn create_table(&mut self, name: &str, columns: &[Column]) {
+    pub fn create_table(&mut self, name: &str) -> TableCreation {
+        TableCreation{ db: self, name: name.to_string(), columns: Vec::new() }
+    }
+
+    fn create_table_impl(&mut self, name: String, columns: Vec<Column>) {
         self.schema.add_relation(self.objects.len(), &name, &columns);
-        self.objects.push(RefCell::new(Object::from_columns(columns)));
+        self.objects.push(RefCell::new(Object::from_columns(&columns)));
     }
 
     pub fn execute_query(&self, query: &dsl::Query) -> Result<QueryResults, &'static str> {
@@ -155,12 +165,40 @@ impl Database {
         Some(RawObjectView{ object: o.borrow() })
     }
 
+    pub fn schema(&self) -> &Schema {
+        &self.schema
+    }
+
     pub fn print_statistics(&self) {
         for rel in &self.schema.relations {
             let obj = self.objects.get(rel.id).unwrap().borrow();
             println!("table {} index statistics", rel.name);
             obj.index.print_statistics();
         }
+    }
+}
+
+pub struct TableCreation<'a> {
+    db: &'a mut Database,
+    name: String,
+    columns: Vec<Column>,
+}
+
+impl<'a> TableCreation<'a> {
+    #[must_use]
+    pub fn column(mut self, name: &str, kind: Type) -> Self {
+        self.columns.push(Column{ name: name.to_string(), kind, indexed: false });
+        self
+    }
+
+    #[must_use]
+    pub fn indexed_column(mut self, name: &str, kind: Type) -> Self {
+        self.columns.push(Column{ name: name.to_string(), kind, indexed: true });
+        self
+    }
+
+    pub fn create(self) {
+        self.db.create_table_impl(self.name, self.columns);
     }
 }
 
@@ -417,7 +455,7 @@ mod tests {
     #[test]
     fn update() {
         let mut db = Database::default();
-        db.create_table("document", &[Column::new("id", Type::NUMBER).indexed(), Column::new("content", Type::TEXT)]);
+        db.create_table("document").indexed_column("id", Type::NUMBER).column("content", Type::TEXT).create();
         let table = db.schema.find_relation("document").unwrap();
 
         db.execute_plan(Plan::insert(table, &["1".to_string(), "orig content".to_string()])).unwrap();
