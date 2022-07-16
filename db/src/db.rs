@@ -137,13 +137,7 @@ impl Database {
         Ok(sink.into_results())
     }
 
-    pub fn print_statistics(&self) {
-        for rel in &self.schema.relations {
-            let obj = self.objects.get(rel.id).unwrap().borrow();
-            println!("table {} index statistics", rel.name);
-            obj.index.print_statistics();
-        }
-    }
+
 
     fn create_sink<'a>(&'a self, plan: &'a Plan) -> Sink<'a> {
         match plan.finisher {
@@ -152,6 +146,20 @@ impl Database {
             Finisher::Insert(rel) => Sink::Insert(self.objects.get(rel.id).unwrap().borrow_mut()),
             Finisher::Delete(_) => Sink::Delete(vec![]),
             Finisher::Nil => Sink::NoOp,
+        }
+    }
+
+    pub fn raw_object(&self, name: &str) -> Option<RawObjectView> {
+        let rel = self.schema.find_relation(name)?;
+        let o = self.objects.get(rel.id)?;
+        Some(RawObjectView{ object: o.borrow() })
+    }
+
+    pub fn print_statistics(&self) {
+        for rel in &self.schema.relations {
+            let obj = self.objects.get(rel.id).unwrap().borrow();
+            println!("table {} index statistics", rel.name);
+            obj.index.print_statistics();
         }
     }
 }
@@ -235,6 +243,17 @@ impl<'a> Sink<'a> {
 fn tuple_to_cells(attrs: &[Attribute], tuple: &Tuple) -> Vec<Cell> {
     attrs.iter().map(|attr| Cell::from_bytes(attr.kind, tuple.cell_by_attr(attr).bytes())).collect()
 }
+
+pub struct RawObjectView<'a> {
+    object: Ref<'a, Object>,
+}
+
+impl<'a> RawObjectView<'a> {
+    pub fn raw_tuples(&self) -> &[ByteTuple] {
+        &self.object.tuples
+    }
+}
+    
 
 #[cfg(test)]
 mod tests {
