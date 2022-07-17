@@ -175,6 +175,10 @@ impl Database {
         Some(RawObjectView{ object: o.borrow() })
     }
 
+    pub fn raw_objects(&self) -> Vec<RawObjectView> {
+        self.objects.iter().map(|o| RawObjectView{ object: o.borrow() }).collect()
+    }
+
     pub fn schema(&self) -> &Schema {
         &self.schema
     }

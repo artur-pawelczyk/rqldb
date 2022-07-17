@@ -14,6 +14,9 @@ use bson::Array;
 
 pub fn write_db<W: Write>(writer: &mut W, db: &Database) {
     write_schema(writer, &db.schema());
+    for o in db.raw_objects() {
+       write_object(writer, o.raw_tuples());
+    }
 }
 
 pub fn read_db<R: Read>(reader: R) -> Database {
@@ -32,6 +35,12 @@ pub fn read_db<R: Read>(reader: R) -> Database {
                 acc.column(&col.name, col.kind)
             }
         }).create();
+    }
+
+    let mut object_id = 0usize;
+    while reader.has_some() {
+        db.recover_object(object_id, read_object(&mut reader));
+        object_id += 1;
     }
 
     db
@@ -66,6 +75,11 @@ impl<R: Read> ByteReader<R> {
         }
 
         Ok(out.into_iter().take(size).collect())
+    }
+
+    fn has_some(&mut self) -> bool {
+        println!("fill_buf() {:?}", self.reader.fill_buf().unwrap());
+        !self.reader.fill_buf().unwrap().is_empty()
     }
 }
 
@@ -143,23 +157,17 @@ fn write_object<W: Write>(writer: &mut W, tuples: &[ByteTuple]) {
 }
 
 #[allow(dead_code)]
-fn read_object<R: Read>(reader: R) -> Vec<ByteTuple> {
-    let mut reader = BufReader::new(reader);
-
-    let n_tuples = reader.fill_buf().unwrap()[0] as usize;
-    reader.consume(1);
+fn read_object<R: Read>(reader: &mut ByteReader<R>) -> Vec<ByteTuple> {
+    let n_tuples = reader.read_u8().unwrap() as usize;
 
     let mut tuples = Vec::with_capacity(n_tuples);
     for _ in 0..n_tuples {
-        let n_cells = reader.fill_buf().unwrap()[0];
-        reader.consume(1);
+        let n_cells = reader.read_u8().unwrap();
 
         let mut tuple = Vec::new();
         for _ in 0..n_cells {
-            let n_bytes = reader.fill_buf().unwrap()[0] as usize;
-            reader.consume(1);
-            let cell = reader.fill_buf().unwrap()[0..n_bytes].to_vec();
-            reader.consume(n_bytes);
+            let n_bytes = reader.read_u8().unwrap() as usize;
+            let cell = reader.read_bytes(n_bytes).unwrap();
             tuple.push(cell);
         }
 
@@ -201,7 +209,7 @@ mod tests {
         let raw_object = db.raw_object("example").unwrap();
         let mut out = Vec::new();
         write_object(&mut out, raw_object.raw_tuples());
-        let saved_object = read_object(Cursor::new(out));
+        let saved_object = read_object(&mut ByteReader::new(Cursor::new(out)));
         assert_eq!(raw_object.raw_tuples(), &saved_object);
     }
 
@@ -216,7 +224,7 @@ mod tests {
         let raw_object = db.raw_object("example").unwrap();
         let mut out = Vec::new();
         write_object(&mut out, raw_object.raw_tuples());
-        let saved_object = read_object(Cursor::new(out));
+        let saved_object = read_object(&mut ByteReader::new(Cursor::new(out)));
         assert_eq!(raw_object.raw_tuples(), &saved_object);
     }
 
@@ -235,5 +243,7 @@ mod tests {
 
         let saved_db = read_db(Cursor::new(out));
         assert!(saved_db.raw_object("example").is_some());
+        let result = saved_db.execute_query(&Query::scan("example")).unwrap();
+        assert_eq!(result.size(), 2);
     }
 }
