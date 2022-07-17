@@ -1,16 +1,31 @@
-use rqldb::{Database, Type};
-use rqldb::schema::Schema;
+mod object;
+mod schema;
+
+use object::{write_object, read_object};
+use rqldb::Database;
+use schema::{write_schema, read_schema};
 
 use std::cmp::min;
+use std::fs::File;
 use std::io::{self, Cursor};
 use std::io::BufRead;
 use std::io::BufReader;
 use std::io::Read;
 use std::io::Write;
 
-use bson::Document;
-use bson::Bson;
-use bson::Array;
+pub enum Error {
+    IOError(io::Error),
+}
+
+trait Persist {
+    fn write<W: Write>(db: &Database) -> Result<(), Error>;
+    fn read<R: Read>() -> Result<Database, Error>;
+}
+
+#[allow(dead_code)]
+struct FilePersist {
+    file: File,
+}
 
 pub fn write_db<W: Write>(writer: &mut W, db: &Database) {
     write_schema(writer, &db.schema());
@@ -46,28 +61,28 @@ pub fn read_db<R: Read>(reader: R) -> Database {
     db
 }
 
-struct ByteReader<R: Read> {
+pub(crate) struct ByteReader<R: Read> {
     reader: BufReader<R>,
 }
 
 impl<R: Read> ByteReader<R> {
-    fn new(reader: R) -> Self {
+    pub(crate) fn new(reader: R) -> Self {
         Self{ reader: BufReader::new(reader) }
     }
 
-    fn read_u8(&mut self) -> io::Result<u8> {
+    pub(crate) fn read_u8(&mut self) -> io::Result<u8> {
         let buf = self.reader.fill_buf()?;
         let x = buf[0];
         self.reader.consume(1);
         Ok(x)
     }
 
-    fn peek_u8(&mut self) -> io::Result<u8> {
+    pub(crate) fn peek_u8(&mut self) -> io::Result<u8> {
         let buf = self.reader.fill_buf()?;
         Ok(buf[0])
     }
 
-    fn read_bytes(&mut self, size: usize) -> io::Result<Vec<u8>> {
+    pub(crate) fn read_bytes(&mut self, size: usize) -> io::Result<Vec<u8>> {
         let mut out: Vec<u8> = Vec::with_capacity(size);
         while out.len() < size {
             out.extend(self.reader.fill_buf().unwrap());
@@ -77,156 +92,19 @@ impl<R: Read> ByteReader<R> {
         Ok(out.into_iter().take(size).collect())
     }
 
-    fn has_some(&mut self) -> bool {
+    pub(crate) fn has_some(&mut self) -> bool {
         println!("fill_buf() {:?}", self.reader.fill_buf().unwrap());
         !self.reader.fill_buf().unwrap().is_empty()
     }
 }
 
-#[allow(dead_code)]
-fn write_schema<W: Write>(writer: &mut W, schema: &Schema) {
-    let mut relations = Array::new();
-    for rel in &schema.relations {
-        let mut rel_doc = Document::new();
-        rel_doc.insert("id", rel.id as i64);
-        rel_doc.insert("name", rel.name.as_str());
-
-        let mut col_arr = Array::new();
-        for col in &rel.columns {
-            let mut col_doc = Document::new();
-            col_doc.insert("name", col.name.as_str());
-            col_doc.insert("kind", col.kind.to_string());
-            col_doc.insert("indexed", col.indexed);
-            col_arr.push(Bson::Document(col_doc));
-        }
-
-        rel_doc.insert("columns", col_arr);
-
-        relations.push(Bson::Document(rel_doc));
-    }
-
-    let mut doc = Document::new();
-    doc.insert("relations", relations);
-
-    doc.to_writer(writer).unwrap();
-}
-
-#[allow(dead_code)]
-fn read_schema<R: Read>(reader: R) -> Vec<(usize, String, Vec<Column>)> {
-    let doc = Document::from_reader(reader).unwrap();
-    let mut tables = Vec::new();
-
-    for rel_doc in doc.get_array("relations").unwrap().iter().map(|o| o.as_document().unwrap()) {
-        let id = rel_doc.get_i64("id").unwrap() as usize;
-        let name = rel_doc.get_str("name").unwrap();
-        let mut columns = Vec::new();
-        for col in rel_doc.get_array("columns").unwrap() {
-            let col_doc = col.as_document().unwrap();
-            let name = col_doc.get_str("name").unwrap();
-            let kind = col_doc.get_str("kind").unwrap().parse().unwrap();
-            let indexed = col_doc.get_bool("indexed").unwrap();
-
-            columns.push(Column{ name: name.to_string(), kind, indexed });
-        }
-
-        tables.push((id, name.to_string(), columns));
-    }
-
-    tables
-}
-
-struct Column {
-    name: String,
-    kind: Type,
-    indexed: bool,
-}
-
-#[allow(dead_code)]
-type ByteTuple = Vec<Vec<u8>>;
-#[allow(dead_code)]
-fn write_object<W: Write>(writer: &mut W, tuples: &[ByteTuple]) {
-    writer.write(&[tuples.len() as u8]).unwrap();
-    for tuple in tuples {
-        writer.write(&[tuple.len() as u8]).unwrap();
-
-        for cell in tuple {
-            writer.write(&[cell.len() as u8]).unwrap();
-            writer.write(&cell).unwrap();
-        }
-    }
-}
-
-#[allow(dead_code)]
-fn read_object<R: Read>(reader: &mut ByteReader<R>) -> Vec<ByteTuple> {
-    let n_tuples = reader.read_u8().unwrap() as usize;
-
-    let mut tuples = Vec::with_capacity(n_tuples);
-    for _ in 0..n_tuples {
-        let n_cells = reader.read_u8().unwrap();
-
-        let mut tuple = Vec::new();
-        for _ in 0..n_cells {
-            let n_bytes = reader.read_u8().unwrap() as usize;
-            let cell = reader.read_bytes(n_bytes).unwrap();
-            tuple.push(cell);
-        }
-
-        tuples.push(tuple);
-    }
-
-    tuples
-}
+pub(crate) type ByteTuple = Vec<Vec<u8>>;
 
 #[cfg(test)]
 mod tests {
-    use std::{io::Cursor, iter::zip};
-    use rqldb::{schema::{Column, Type}, Query, Command};
+    use rqldb::{Command, Type, Query};
 
     use super::*;
-
-    #[test]
-    fn test_serialize_schema() {
-        let mut schema = Schema::default();
-        schema.add_relation(0, "example", &[Column::new("id", Type::NUMBER).indexed(), Column::new("content", Type::TEXT)]);
-
-        let mut out = Vec::new();
-        write_schema(&mut out, &schema);
-
-        let saved_schema = read_schema(Cursor::new(out));
-
-        for (rel, saved_rel) in zip(schema.relations, saved_schema) {
-            assert_eq!(rel.id, saved_rel.0);
-            assert_eq!(rel.name, saved_rel.1);
-            assert_eq!(rel.columns.len(), saved_rel.2.len());
-        }
-    }
-
-    #[test]
-    fn test_serialize_empty_object() {
-        let mut db = Database::default();
-        db.execute_create(&Command::create_table("example").indexed_column("id", Type::NUMBER).column("content", Type::TEXT));
-
-        let raw_object = db.raw_object("example").unwrap();
-        let mut out = Vec::new();
-        write_object(&mut out, raw_object.raw_tuples());
-        let saved_object = read_object(&mut ByteReader::new(Cursor::new(out)));
-        assert_eq!(raw_object.raw_tuples(), &saved_object);
-    }
-
-    #[test]
-    fn test_serialize_object() {
-        let mut db = Database::default();
-        db.execute_create(&Command::create_table("example").indexed_column("id", Type::NUMBER).column("content", Type::TEXT));
-
-        db.execute_query(&Query::tuple(&["1", "test"]).insert_into("example")).unwrap();
-        db.execute_query(&Query::tuple(&["2", "test"]).insert_into("example")).unwrap();
-
-        let raw_object = db.raw_object("example").unwrap();
-        let mut out = Vec::new();
-        write_object(&mut out, raw_object.raw_tuples());
-        let saved_object = read_object(&mut ByteReader::new(Cursor::new(out)));
-        assert_eq!(raw_object.raw_tuples(), &saved_object);
-    }
 
     // TODO: test serialization of a table with deleted rows (do a vacuum before serialization)
 
