@@ -59,7 +59,7 @@ impl<'a> ToString for Cell<'a> {
                     _ => panic!()
                 }
             },
-            Type::TEXT => std::str::from_utf8(&self.raw).unwrap().to_string(),
+            Type::TEXT => std::str::from_utf8(self.raw).unwrap().to_string(),
             _ => todo!()
         }
     }

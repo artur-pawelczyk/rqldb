@@ -134,7 +134,7 @@ impl<'a> Iterator for ColumnIter<'a> {
 
 impl Relation {
 
-    pub fn columns<'a>(&'a self) -> ColumnIter<'a> {
+    pub fn columns(&self) -> ColumnIter {
         ColumnIter{ name: self.name.as_str(), raw: &self.columns, pos: 0 }
     }
     

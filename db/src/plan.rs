@@ -71,7 +71,7 @@ pub(crate) struct Join<'a> {
 
 impl<'a> Join<'a> {
     pub fn source_table(&self) -> &Relation {
-        &self.table
+        self.table
     }
 
     pub fn joinee_key(&self) -> &Attribute {
@@ -143,7 +143,7 @@ impl<'a> Source<'a> {
             },
 
             dsl::Source::Tuple(values) => {
-                Ok(Self::from_tuple(&values))
+                Ok(Self::from_tuple(values))
             }
         }
     }
@@ -298,7 +298,7 @@ fn compute_joins<'a>(plan: Plan<'a>, schema: &'a Schema, query: &dsl::Query) -> 
         if let Some(joinee_key) = joinee_attributes.iter().enumerate().find(|(_, a)| a.name == join_source.left).map(|(i,_)| i) {
             if let Some(joiner_key) = joiner_attributes.iter().enumerate().find(|(_, a)| a.name == join_source.right).map(|(i,_)| i) {
                 joins.push(Join{
-                    table: &joiner_table,
+                    table: joiner_table,
                     joinee_attributes, joiner_attributes,
                     joinee_key, joiner_key
                 })
@@ -315,7 +315,7 @@ fn compute_joins<'a>(plan: Plan<'a>, schema: &'a Schema, query: &dsl::Query) -> 
 
 fn table_attributes(table: &Relation) -> Vec<Attribute> {
     table.columns().enumerate()
-        .map(|(pos, (col_name, kind))| Attribute{ pos, name: col_name.to_string(), kind })
+        .map(|(pos, (col_name, kind))| Attribute{ pos, name: col_name, kind })
         .collect()
 }
 

@@ -60,7 +60,7 @@ impl Index {
         let hash = self.hash(byte_tuple);
         if let Some(same_hash_pos) = self.find_bucket(hash) {
             let same_hash_node = &self.buckets[same_hash_pos];
-            if let Some(matched) = self.find_in_node(&same_hash_node, byte_tuple, f) {
+            if let Some(matched) = self.find_in_node(same_hash_node, byte_tuple, f) {
                 Op::Replace(matched)
             } else {
                 let id = self.len;
@@ -108,7 +108,7 @@ impl Index {
     fn maybe_resize(&mut self) {
         if self.buckets.is_empty() {
             self.buckets = (0..4).map(|_| Node::End).collect();
-        } if self.load_factor() > 0.75 {
+        } else if self.load_factor() > 0.75 {
             let new_size = self.buckets.len() * 2;
             let mut new_buckets: Vec<Node> = (0..new_size).map(|_| Node::End).collect();
             for node in self.buckets.iter_mut().filter(|node| !node.is_empty()) {
@@ -130,7 +130,7 @@ impl Index {
     pub fn print_statistics(&self) {
         let size = self.buckets.len();
         let avg = self.len as f64 / size as f64;
-        let max = self.buckets.iter().map(|x| x.len()).fold(0usize, |acc, x| max(acc, x));
+        let max = self.buckets.iter().map(|x| x.len()).fold(0usize, max);
         let load_factor = self.load_factor();
 
         println!("bucket size: {}; avg bucket size: {}; longest: {}; load factor: {}", size, avg, max, load_factor);
@@ -205,7 +205,7 @@ impl<'a> Iterator for NodeIter<'a> {
         match self.node {
             Node::Ref(id, _, next) => {
                 self.node = next;
-                return Some(*id);
+                Some(*id)
             },
             Node::End => None
         }

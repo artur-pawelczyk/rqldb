@@ -51,11 +51,11 @@ impl Object {
         match self.index.on(&self.tuples).insert(tuple.as_bytes()) {
             Op::Insert(id) => {
                 self.tuples.insert(id, tuple.as_bytes().clone());
-                return true;
+                true
             }
             Op::Replace(id) => {
                 let _ = std::mem::replace(&mut self.tuples[id], tuple.as_bytes().clone());
-                return true;
+                true
             }
         }
 
@@ -149,9 +149,8 @@ impl Database {
         }
 
         drop(source);
-        match plan.finisher {
-            Finisher::Delete(rel) => sink.accept_object(self.objects.get(rel.id).unwrap().borrow_mut()),
-            _ => {},
+        if let Finisher::Delete(rel) = plan.finisher {
+            sink.accept_object(self.objects.get(rel.id).unwrap().borrow_mut());
         }
 
         Ok(sink.into_results())
@@ -276,9 +275,8 @@ impl<'a> Sink<'a> {
     }
 
     fn accept_object(&mut self, mut object: RefMut<Object>) {
-        match self {
-            Self::Delete(ids) => { object.remove_tuples(ids) },
-            _ => {},
+        if let Self::Delete(ids) = self {
+            object.remove_tuples(ids);
         }
     }
 
@@ -287,7 +285,7 @@ impl<'a> Sink<'a> {
             Self::Count(count) => QueryResults::count(count as u32),
             Self::Return(attributes, results) => {
                 QueryResults{
-                    attributes: attributes.into_iter().map(|attr| attr.name.to_string()).collect(),
+                    attributes: attributes.into_iter().map(|attr| attr.name).collect(),
                     results,
                 }
             }
