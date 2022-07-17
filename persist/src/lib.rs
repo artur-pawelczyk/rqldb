@@ -6,25 +6,92 @@ use rqldb::Database;
 use schema::{write_schema, read_schema};
 
 use std::cmp::min;
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::{self, Cursor};
 use std::io::BufRead;
 use std::io::BufReader;
 use std::io::Read;
 use std::io::Write;
+use std::path::PathBuf;
 
+#[derive(Debug)]
 pub enum Error {
     IOError(io::Error),
 }
 
-trait Persist {
-    fn write<W: Write>(db: &Database) -> Result<(), Error>;
-    fn read<R: Read>() -> Result<Database, Error>;
+impl From<io::Error> for Error {
+    fn from(e: io::Error) -> Error {
+        Error::IOError(e)
+    }
+}
+
+pub trait Persist {
+    fn write(&mut self, db: &Database) -> Result<(), Error>;
+    fn read(self) -> Result<Database, Error>;
 }
 
 #[allow(dead_code)]
-struct FilePersist {
+pub struct FilePersist {
     file: File,
+}
+
+impl FilePersist {
+    pub fn new(file: File) -> Self {
+        Self{ file }
+    }
+}
+
+impl Persist for FilePersist {
+    fn write(&mut self, db: &Database) -> Result<(), Error> {
+        write_db(&mut self.file, &db);
+        Ok(())
+    }
+
+    fn read(self) -> Result<Database, Error> {
+        Ok(read_db(self.file))
+    }
+}
+
+pub struct TempFilePersist {
+    path: PathBuf,
+}
+
+impl TempFilePersist {
+    pub fn new() -> Self {
+        fn try_open(i: i32) -> io::Result<PathBuf> {
+            let mut path = std::env::temp_dir();
+            path.push(format!("rqldb-{}", i));
+
+            OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create_new(true)
+                .open(path.clone())
+                .map(|_| path)
+        }
+
+        for i in 0..99 {
+            match try_open(i) {
+                Ok(path) => return Self{ path },
+                _ => {},
+            }
+        }
+
+        panic!()
+    }
+}
+
+impl Persist for TempFilePersist {
+    fn write(&mut self, db: &Database) -> Result<(), Error> {
+        let mut file = File::options().append(true).open(self.path.clone())?;
+        write_db(&mut file, &db);
+        Ok(())
+    }
+
+    fn read(self) -> Result<Database, Error> {
+        let file = File::open(self.path)?;
+        Ok(read_db(file))
+    }
 }
 
 pub fn write_db<W: Write>(writer: &mut W, db: &Database) {
@@ -123,5 +190,19 @@ mod tests {
         assert!(saved_db.raw_object("example").is_some());
         let result = saved_db.execute_query(&Query::scan("example")).unwrap();
         assert_eq!(result.size(), 2);
+    }
+
+    #[test]
+    fn test_write_to_file() {
+        let mut db = Database::default();
+        db.execute_create(&Command::create_table("example").indexed_column("id", Type::NUMBER).column("content", Type::TEXT));
+        db.execute_query(&Query::tuple(&["1", "test"]).insert_into("example")).unwrap();
+
+        let mut persist = TempFilePersist::new();
+        persist.write(&mut db).unwrap();
+
+        let saved_db = persist.read().unwrap();
+        let result = saved_db.execute_query(&Query::scan("example")).unwrap();
+        assert_eq!(result.size(), 1);
     }
 }
