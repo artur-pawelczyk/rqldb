@@ -82,6 +82,7 @@ impl Database {
         }).create();
     }
 
+    #[must_use]
     pub fn create_table(&mut self, name: &str) -> TableCreation {
         TableCreation{ db: self, name: name.to_string(), columns: Vec::new() }
     }
