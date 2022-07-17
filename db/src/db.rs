@@ -38,6 +38,15 @@ impl Object {
         }
     }
 
+    fn recover(&self, snapshot: Vec<ByteTuple>) -> Self {
+        let index = self.index.rebuild(&snapshot);
+        Self{
+            tuples: snapshot,
+            removed_ids: HashSet::new(),
+            index
+        }
+    }
+
     fn add_tuple(&mut self, tuple: &Tuple) -> bool {
         match self.index.on(&self.tuples).insert(tuple.as_bytes()) {
             Op::Insert(id) => {
@@ -168,6 +177,12 @@ impl Database {
 
     pub fn schema(&self) -> &Schema {
         &self.schema
+    }
+
+    pub fn recover_object(&self, id: usize, snapshot: Vec<ByteTuple>) {
+        let mut obj = self.objects.get(id).unwrap().borrow_mut();
+        let new_obj = obj.recover(snapshot);
+        *obj = new_obj;
     }
 
     pub fn print_statistics(&self) {
@@ -466,5 +481,23 @@ mod tests {
         println!("{:?}", result.results().get(0));
         assert_eq!(result.results().get(0).unwrap().cell_by_name("document.content").unwrap().as_string(), "new content");
         assert_eq!(result.size(), 1);
+    }
+
+    #[test]
+    fn recover_object() {
+        let mut db = Database::default();
+        db.create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT).create();
+        let table = db.schema.find_relation("document").unwrap();
+
+        db.execute_plan(Plan::insert(table, &["1".to_string(), "one".to_string()])).unwrap();
+        let snapshot = db.raw_object("document").unwrap().raw_tuples().to_vec();
+
+        db.execute_plan(Plan::insert(table, &["2".to_string(), "two".to_string()])).unwrap();
+        let all = db.execute_plan(Plan::scan(table)).unwrap();
+        assert_eq!(all.size(), 2);
+
+        db.recover_object(0, snapshot);
+        let all = db.execute_plan(Plan::scan(table)).unwrap();
+        assert_eq!(all.size(), 1);
     }
 }
