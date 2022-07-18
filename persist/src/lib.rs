@@ -7,12 +7,14 @@ use schema::{write_schema, read_schema};
 
 use std::cmp::min;
 use std::fs::{File, OpenOptions};
-use std::io::{self, Cursor};
+use std::io::{self, Cursor, ErrorKind};
 use std::io::BufRead;
 use std::io::BufReader;
 use std::io::Read;
 use std::io::Write;
 use std::path::{PathBuf, Path};
+use std::error;
+use std::fmt;
 
 #[derive(Debug)]
 pub enum Error {
@@ -25,9 +27,19 @@ impl From<io::Error> for Error {
     }
 }
 
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self::IOError(e) = self;
+        write!(f, "IOError: {}", e)
+    }
+}
+
+impl error::Error for Error {}
+
+// TODO: Split into two traits. "read" should consume self
 pub trait Persist {
     fn write(&mut self, db: &Database) -> Result<(), Error>;
-    fn read(self, db: Database) -> Result<Database, Error>;
+    fn read(&self, db: Database) -> Result<Database, Error>;
 }
 
 #[allow(dead_code)]
@@ -43,14 +55,18 @@ impl FilePersist {
 
 impl Persist for FilePersist {
     fn write(&mut self, db: &Database) -> Result<(), Error> {
-        let mut file = File::options().append(true).open(self.path.clone())?;
+        let mut file = File::options().create(true).append(true).open(self.path.clone())?;
         write_db(&mut file, &db);
         Ok(())
     }
 
-    fn read(self, _: Database) -> Result<Database, Error> {
-        let file = File::open(self.path.clone())?;
-        Ok(read_db(file))
+    fn read(&self, db: Database) -> Result<Database, Error> {
+        match File::open(self.path.clone()) {
+            Ok(f) => Ok(read_db(f)),
+            Err(e) if e.kind() == ErrorKind::NotFound => Ok(db),
+            Err(e) => return Err(e.into()),
+
+        }
     }
 }
 
@@ -90,8 +106,8 @@ impl Persist for TempFilePersist {
         Ok(())
     }
 
-    fn read(self, _: Database) -> Result<Database, Error> {
-        let file = File::open(self.path)?;
+    fn read(&self, _: Database) -> Result<Database, Error> {
+        let file = File::open(self.path.clone())?;
         Ok(read_db(file))
     }
 }

@@ -1,12 +1,13 @@
 mod table;
 
 use rqldb::*;
-use rqldb_persist::{Persist, Error as PersistError};
+use rqldb_persist::{Persist, Error as PersistError, FilePersist};
 use crate::table::Table;
 
 use rustyline::Editor;
 use clap::Parser;
 
+use std::error::Error;
 use std::io::prelude::*;
 use std::fs::File;
 use std::path::Path;
@@ -17,11 +18,15 @@ struct Args {
     /// Init file
     #[clap(long)]
     init: Option<String>,
+
+    /// Database file. If not provided, an in-memory database is created.
+    #[clap(value_name = "FILENAME")]
+    db_file: Option<String>,
 }
 
 fn main() {
     let args = Args::parse();
-    let mut shell = Shell::default();
+    let mut shell = args.db_file.map(|s| Shell::db_file(&s)).unwrap_or_else(Shell::default);
     if let Some(path) = args.init {
         let mut contents = String::new();
         let mut file = File::open(Path::new(&path)).unwrap();
@@ -55,6 +60,15 @@ impl Default for Shell {
 }
 
 impl Shell {
+    fn db_file(s: &str) -> Self {
+        let instance = Self{
+            persist: Box::new(FilePersist::new(Path::new(s))),
+            db: Database::default(),
+        };
+
+        instance.restore().unwrap()
+    }
+
     fn handle_command(&mut self, cmd: &str) {
         if cmd.is_empty() {
         } else if cmd == "save" {
@@ -79,6 +93,14 @@ impl Shell {
             }
         }
     }
+
+    fn restore(self) -> Result<Self, Box<dyn Error>> {
+        let new_db = self.persist.read(self.db)?;
+        Ok(Self{
+            db: new_db,
+            persist: self.persist,
+        })
+    }
 }
 
 struct NoOpPersist;
@@ -87,7 +109,7 @@ impl Persist for NoOpPersist {
         Ok(())
     }
 
-    fn read(self, db: Database) -> Result<Database, PersistError> {
+    fn read(&self, db: Database) -> Result<Database, PersistError> {
         Ok(db)
     }
 }
