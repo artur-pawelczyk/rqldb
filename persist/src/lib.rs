@@ -12,7 +12,7 @@ use std::io::BufRead;
 use std::io::BufReader;
 use std::io::Read;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{PathBuf, Path};
 
 #[derive(Debug)]
 pub enum Error {
@@ -27,28 +27,30 @@ impl From<io::Error> for Error {
 
 pub trait Persist {
     fn write(&mut self, db: &Database) -> Result<(), Error>;
-    fn read(self) -> Result<Database, Error>;
+    fn read(self, db: Database) -> Result<Database, Error>;
 }
 
 #[allow(dead_code)]
 pub struct FilePersist {
-    file: File,
+    path: PathBuf,
 }
 
 impl FilePersist {
-    pub fn new(file: File) -> Self {
-        Self{ file }
+    pub fn new(path: &Path) -> Self {
+        Self{ path: path.to_path_buf() }
     }
 }
 
 impl Persist for FilePersist {
     fn write(&mut self, db: &Database) -> Result<(), Error> {
-        write_db(&mut self.file, &db);
+        let mut file = File::options().append(true).open(self.path.clone())?;
+        write_db(&mut file, &db);
         Ok(())
     }
 
-    fn read(self) -> Result<Database, Error> {
-        Ok(read_db(self.file))
+    fn read(self, _: Database) -> Result<Database, Error> {
+        let file = File::open(self.path.clone())?;
+        Ok(read_db(file))
     }
 }
 
@@ -88,7 +90,7 @@ impl Persist for TempFilePersist {
         Ok(())
     }
 
-    fn read(self) -> Result<Database, Error> {
+    fn read(self, _: Database) -> Result<Database, Error> {
         let file = File::open(self.path)?;
         Ok(read_db(file))
     }
@@ -201,7 +203,7 @@ mod tests {
         let mut persist = TempFilePersist::new();
         persist.write(&mut db).unwrap();
 
-        let saved_db = persist.read().unwrap();
+        let saved_db = persist.read(db).unwrap();
         let result = saved_db.execute_query(&Query::scan("example")).unwrap();
         assert_eq!(result.size(), 1);
     }

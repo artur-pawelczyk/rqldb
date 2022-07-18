@@ -1,6 +1,7 @@
 mod table;
 
 use rqldb::*;
+use rqldb_persist::{Persist, Error as PersistError};
 use crate::table::Table;
 
 use rustyline::Editor;
@@ -20,47 +21,78 @@ struct Args {
 
 fn main() {
     let args = Args::parse();
-    let mut db = Database::default();
+    let mut shell = Shell::default();
     if let Some(path) = args.init {
         let mut contents = String::new();
         let mut file = File::open(Path::new(&path)).unwrap();
         file.read_to_string(&mut contents).unwrap();
         for line in contents.split('\n') {
-            handle_command(&mut db, line.trim());
+            shell.handle_command(line.trim());
         }
     }
 
     let mut editor = Editor::<()>::new();
     loop {
         match editor.readline("query> ") {
-            Ok(line) => handle_command(&mut db, &line),
+            Ok(line) => shell.handle_command(&line),
             Err(e) => { println!("{:?}", e); break; }
         }
     }
 }
 
-fn handle_command(db: &mut Database, cmd: &str) {
-    if cmd.is_empty() {
-    } else if cmd == "stat" {
-        db.print_statistics();
-    } else if cmd.starts_with("create") {
-        let command = match parse_command(cmd) {
-            Ok(x) => x,
-            Err(error) => { println!("{}", error); return; }
-        };
-        db.execute_create(&command);
-    } else {
-        let query = match parse_query(cmd) {
-            Ok(parsed) => parsed,
-            Err(error) => { println!("{}", error); return; }
-        };
+struct Shell {
+    persist: Box<dyn Persist>,
+    db: Database,
+}
 
-        match db.execute_query(&query) {
-            Result::Ok(response) => print_result(&response),
-            Result::Err(err) => println!("{}", err),
+impl Default for Shell {
+    fn default() -> Self {
+        Self{
+            persist: Box::new(NoOpPersist),
+            db: Database::default(),
         }
     }
 }
+
+impl Shell {
+    fn handle_command(&mut self, cmd: &str) {
+        if cmd.is_empty() {
+        } else if cmd == "save" {
+            self.persist.write(&self.db).unwrap();
+        } else if cmd == "stat" {
+            self.db.print_statistics();
+        } else if cmd.starts_with("create") {
+            let command = match parse_command(cmd) {
+                Ok(x) => x,
+                Err(error) => { println!("{}", error); return; }
+            };
+            self.db.execute_create(&command);
+        } else {
+            let query = match parse_query(cmd) {
+                Ok(parsed) => parsed,
+                Err(error) => { println!("{}", error); return; }
+            };
+
+            match self.db.execute_query(&query) {
+                Result::Ok(response) => print_result(&response),
+                Result::Err(err) => println!("{}", err),
+            }
+        }
+    }
+}
+
+struct NoOpPersist;
+impl Persist for NoOpPersist {
+    fn write(&mut self, _: &Database) -> Result<(), PersistError> {
+        Ok(())
+    }
+
+    fn read(self, db: Database) -> Result<Database, PersistError> {
+        Ok(db)
+    }
+}
+
+
 
 fn print_result(result: &QueryResults) {
     let mut table = Table::new();
