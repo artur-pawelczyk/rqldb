@@ -168,6 +168,14 @@ impl<R: Read> ByteReader<R> {
         Ok(i32::from_le_bytes(bytes))
     }
 
+    pub(crate) fn read_u32(&mut self) -> io::Result<i32> {
+        const LEN: usize = 4;
+        let buf = self.reader.fill_buf()?;
+        let bytes: [u8; LEN] = buf[0..LEN].try_into().unwrap();
+        self.reader.consume(LEN);
+        Ok(i32::from_le_bytes(bytes))
+    }
+
     pub(crate) fn read_bytes(&mut self, size: usize) -> io::Result<Vec<u8>> {
         let mut out: Vec<u8> = Vec::with_capacity(size);
         while out.len() < size {

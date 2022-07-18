@@ -3,27 +3,32 @@ use std::io::{Read, Write};
 use crate::{ByteTuple, ByteReader};
 
 pub(crate) fn write_object<W: Write>(writer: &mut W, tuples: &[ByteTuple]) {
-    writer.write(&[tuples.len() as u8]).unwrap();
+    writer.write(&size(tuples.len())).unwrap();
     for tuple in tuples {
-        writer.write(&[tuple.len() as u8]).unwrap();
+        writer.write(&size(tuple.len())).unwrap();
 
         for cell in tuple {
-            writer.write(&[cell.len() as u8]).unwrap();
+            writer.write(&size(cell.len())).unwrap();
             writer.write(&cell).unwrap();
         }
     }
 }
 
+fn size<T: TryInto<u32>>(val: T) -> [u8; 4] {
+    let i: u32 = val.try_into().unwrap_or_else(|_| panic!());
+    i.to_le_bytes()
+}
+
 pub(crate) fn read_object<R: Read>(reader: &mut ByteReader<R>) -> Vec<ByteTuple> {
-    let n_tuples = reader.read_u8().unwrap() as usize;
+    let n_tuples = reader.read_u32().unwrap() as usize;
 
     let mut tuples = Vec::with_capacity(n_tuples);
     for _ in 0..n_tuples {
-        let n_cells = reader.read_u8().unwrap();
+        let n_cells = reader.read_u32().unwrap();
 
         let mut tuple = Vec::new();
         for _ in 0..n_cells {
-            let n_bytes = reader.read_u8().unwrap() as usize;
+            let n_bytes = reader.read_u32().unwrap() as usize;
             let cell = reader.read_bytes(n_bytes).unwrap();
             tuple.push(cell);
         }
