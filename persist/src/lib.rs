@@ -121,7 +121,7 @@ pub fn write_db<W: Write>(writer: &mut W, db: &Database) {
 
 pub fn read_db<R: Read>(reader: R) -> Database {
     let mut reader = ByteReader::new(reader);
-    let schema_len = reader.peek_u8().unwrap() as usize;
+    let schema_len = reader.peek_i32().unwrap() as usize;
     let schema_bytes = reader.read_bytes(schema_len).unwrap();
 
     let mut db = Database::default();
@@ -162,9 +162,10 @@ impl<R: Read> ByteReader<R> {
         Ok(x)
     }
 
-    pub(crate) fn peek_u8(&mut self) -> io::Result<u8> {
+    pub(crate) fn peek_i32(&mut self) -> io::Result<i32> {
         let buf = self.reader.fill_buf()?;
-        Ok(buf[0])
+        let bytes: [u8; 4] = buf[0..4].try_into().unwrap();
+        Ok(i32::from_le_bytes(bytes))
     }
 
     pub(crate) fn read_bytes(&mut self, size: usize) -> io::Result<Vec<u8>> {
@@ -178,7 +179,6 @@ impl<R: Read> ByteReader<R> {
     }
 
     pub(crate) fn has_some(&mut self) -> bool {
-        println!("fill_buf() {:?}", self.reader.fill_buf().unwrap());
         !self.reader.fill_buf().unwrap().is_empty()
     }
 }
@@ -196,10 +196,20 @@ mod tests {
     #[test]
     fn test_serialize_db() {
         let mut db = Database::default();
-        db.execute_create(&Command::create_table("example").indexed_column("id", Type::NUMBER).column("content", Type::TEXT));
+        db.create_table("example")
+            .indexed_column("id", Type::NUMBER)
+            .column("title", Type::TEXT)
+            .column("content", Type::TEXT).create();
 
-        db.execute_query(&Query::tuple(&["1", "test"]).insert_into("example")).unwrap();
-        db.execute_query(&Query::tuple(&["2", "test"]).insert_into("example")).unwrap();
+        db.create_table("other")
+            .column("a", Type::TEXT)
+            .column("b", Type::TEXT)
+            .column("c", Type::TEXT)
+            .column("d", Type::TEXT)
+            .create();
+
+        db.execute_query(&Query::tuple(&["1", "test", "stuff"]).insert_into("example")).unwrap();
+        db.execute_query(&Query::tuple(&["2", "test2", "stuff"]).insert_into("example")).unwrap();
 
         let mut out = Vec::new();
         write_db(&mut out, &db);
