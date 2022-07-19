@@ -1,42 +1,43 @@
 use std::io::{Read, Write};
 
-use crate::{ByteTuple, ByteReader};
+use crate::{ByteTuple, ByteReader, Error};
 
-pub(crate) fn write_object<W: Write>(writer: &mut W, tuples: &[ByteTuple]) {
-    writer.write(&size(tuples.len())).unwrap();
+pub(crate) fn write_object<W: Write>(writer: &mut W, tuples: &[ByteTuple]) -> Result<(), Error> {
+    writer.write(&size(tuples.len()))?;
     for tuple in tuples {
-        writer.write(&size(tuple.len())).unwrap();
+        writer.write(&size(tuple.len()))?;
 
         for cell in tuple {
-            writer.write(&size(cell.len())).unwrap();
-            writer.write(&cell).unwrap();
+            writer.write(&size(cell.len()))?;
+            writer.write(&cell)?;
         }
     }
+
+    Ok(())
 }
 
-fn size<T: TryInto<u32>>(val: T) -> [u8; 4] {
-    let i: u32 = val.try_into().unwrap_or_else(|_| panic!());
-    i.to_le_bytes()
+fn size(val: usize) -> [u8; 4] {
+    (val as u32).to_le_bytes()
 }
 
-pub(crate) fn read_object<R: Read>(reader: &mut ByteReader<R>) -> Vec<ByteTuple> {
-    let n_tuples = reader.read_u32().unwrap() as usize;
+pub(crate) fn read_object<R: Read>(reader: &mut ByteReader<R>) -> Result<Vec<ByteTuple>, Error> {
+    let n_tuples = reader.read_u32()? as usize;
 
     let mut tuples = Vec::with_capacity(n_tuples);
     for _ in 0..n_tuples {
-        let n_cells = reader.read_u32().unwrap();
+        let n_cells = reader.read_u32()?;
 
         let mut tuple = Vec::new();
         for _ in 0..n_cells {
-            let n_bytes = reader.read_u32().unwrap() as usize;
-            let cell = reader.read_bytes(n_bytes).unwrap();
+            let n_bytes = reader.read_u32()? as usize;
+            let cell = reader.read_bytes(n_bytes)?;
             tuple.push(cell);
         }
 
         tuples.push(tuple);
     }
 
-    tuples
+    Ok(tuples)
 }
 
 #[cfg(test)]
@@ -54,8 +55,8 @@ mod tests {
 
         let raw_object = db.raw_object("example").unwrap();
         let mut out = Vec::new();
-        write_object(&mut out, raw_object.raw_tuples());
-        let saved_object = read_object(&mut ByteReader::new(Cursor::new(out)));
+        write_object(&mut out, raw_object.raw_tuples()).unwrap();
+        let saved_object = read_object(&mut ByteReader::new(Cursor::new(out))).unwrap();
         assert_eq!(raw_object.raw_tuples(), &saved_object);
     }
 
@@ -69,8 +70,8 @@ mod tests {
 
         let raw_object = db.raw_object("example").unwrap();
         let mut out = Vec::new();
-        write_object(&mut out, raw_object.raw_tuples());
-        let saved_object = read_object(&mut ByteReader::new(Cursor::new(out)));
+        write_object(&mut out, raw_object.raw_tuples()).unwrap();
+        let saved_object = read_object(&mut ByteReader::new(Cursor::new(out))).unwrap();
         assert_eq!(raw_object.raw_tuples(), &saved_object);
     }
 }

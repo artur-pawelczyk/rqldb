@@ -3,7 +3,9 @@ use std::io::{Read, Write};
 use bson::{Array, Document, Bson};
 use rqldb::{schema::Schema, Type};
 
-pub(crate) fn write_schema<W: Write>(writer: &mut W, schema: &Schema) {
+use crate::Error;
+
+pub(crate) fn write_schema<W: Write>(writer: &mut W, schema: &Schema) -> Result<(), Error> {
     let mut relations = Array::new();
     for rel in &schema.relations {
         let mut rel_doc = Document::new();
@@ -27,30 +29,37 @@ pub(crate) fn write_schema<W: Write>(writer: &mut W, schema: &Schema) {
     let mut doc = Document::new();
     doc.insert("relations", relations);
 
-    doc.to_writer(writer).unwrap();
+    doc.to_writer(writer)?;
+    Ok(())
 }
 
-pub(crate) fn read_schema<R: Read>(reader: R) -> Vec<(usize, String, Vec<Column>)> {
-    let doc = Document::from_reader(reader).unwrap();
+pub(crate) fn read_schema<R: Read>(reader: R) -> Result<Vec<Table>, Error> {
+    let doc = Document::from_reader(reader)?;
     let mut tables = Vec::new();
 
-    for rel_doc in doc.get_array("relations").unwrap().iter().map(|o| o.as_document().unwrap()) {
-        let id = rel_doc.get_i64("id").unwrap() as usize;
-        let name = rel_doc.get_str("name").unwrap();
+    for rel_doc in doc.get_array("relations")?.iter().flat_map(|o| o.as_document()) {
+        let id = rel_doc.get_i64("id")? as usize;
+        let name = rel_doc.get_str("name")?.to_string();
         let mut columns = Vec::new();
-        for col in rel_doc.get_array("columns").unwrap() {
-            let col_doc = col.as_document().unwrap();
-            let name = col_doc.get_str("name").unwrap();
-            let kind = col_doc.get_str("kind").unwrap().parse().unwrap();
-            let indexed = col_doc.get_bool("indexed").unwrap();
+        for col in rel_doc.get_array("columns")? {
+            let col_doc = col.as_document().ok_or(Error::UnexpectedValueError)?;
+            let name = col_doc.get_str("name")?;
+            let kind = col_doc.get_str("kind")?.parse().unwrap();
+            let indexed = col_doc.get_bool("indexed")?;
 
             columns.push(Column{ name: name.to_string(), kind, indexed });
         }
 
-        tables.push((id, name.to_string(), columns));
+        tables.push(Table{ id, name, columns });
     }
 
-    tables
+    Ok(tables)
+}
+
+pub(crate) struct Table {
+    pub(crate) id: usize,
+    pub(crate) name: String,
+    pub(crate) columns: Vec<Column>,
 }
 
 pub(crate) struct Column {
@@ -76,14 +85,14 @@ mod tests {
             .create();
 
         let mut out = Vec::new();
-        write_schema(&mut out, db.schema());
+        write_schema(&mut out, db.schema()).unwrap();
 
-        let saved_schema = read_schema(Cursor::new(out));
+        let saved_schema = read_schema(Cursor::new(out)).unwrap();
 
         for (rel, saved_rel) in zip(&db.schema().relations, saved_schema) {
-            assert_eq!(rel.id, saved_rel.0);
-            assert_eq!(rel.name, saved_rel.1);
-            assert_eq!(rel.columns.len(), saved_rel.2.len());
+            assert_eq!(rel.id, saved_rel.id);
+            assert_eq!(rel.name, saved_rel.name);
+            assert_eq!(rel.columns.len(), saved_rel.columns.len());
         }
     }
 

@@ -15,10 +15,15 @@ use std::io::Write;
 use std::path::{PathBuf, Path};
 use std::error;
 use std::fmt;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum Error {
     IOError(io::Error),
+    SerializationError(Box<dyn std::error::Error>),
+    DeserializationError(Box<dyn std::error::Error>),
+    BsonIOError(Arc<io::Error>),
+    UnexpectedValueError,
 }
 
 impl From<io::Error> for Error {
@@ -27,10 +32,33 @@ impl From<io::Error> for Error {
     }
 }
 
+impl From<bson::ser::Error> for Error {
+    fn from(e: bson::ser::Error) -> Self {
+        Self::SerializationError(Box::new(e))
+    }
+}
+
+impl From<bson::de::Error> for Error {
+    fn from(e: bson::de::Error) -> Self {
+        Self::DeserializationError(Box::new(e))
+    }
+}
+
+impl From<bson::document::ValueAccessError> for Error {
+    fn from(e: bson::document::ValueAccessError) -> Self {
+        Self::DeserializationError(Box::new(e))
+    }
+}
+
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Self::IOError(e) = self;
-        write!(f, "IOError: {}", e)
+        match self {
+            Self::IOError(e) => write!(f, "IO error: {}", e),
+            Self::SerializationError(e) => write!(f, "Serialization error: {}", e),
+            Self::DeserializationError(e) => write!(f, "Deserialization error: {}", e),
+            Self::BsonIOError(e) => write!(f, "Bson IO error: {}", e),
+            Self::UnexpectedValueError => write!(f, "Unexpected value while parsing schema"),
+        }
     }
 }
 
@@ -56,13 +84,13 @@ impl FilePersist {
 impl Persist for FilePersist {
     fn write(&mut self, db: &Database) -> Result<(), Error> {
         let mut file = File::options().create(true).append(true).open(self.path.clone())?;
-        write_db(&mut file, &db);
+        write_db(&mut file, &db)?;
         Ok(())
     }
 
     fn read(&self, db: Database) -> Result<Database, Error> {
         match File::open(self.path.clone()) {
-            Ok(f) => Ok(read_db(f)),
+            Ok(f) => Ok(read_db(f)?),
             Err(e) if e.kind() == ErrorKind::NotFound => Ok(db),
             Err(e) => return Err(e.into()),
 
@@ -102,33 +130,35 @@ impl TempFilePersist {
 impl Persist for TempFilePersist {
     fn write(&mut self, db: &Database) -> Result<(), Error> {
         let mut file = File::options().append(true).open(self.path.clone())?;
-        write_db(&mut file, &db);
+        write_db(&mut file, &db)?;
         Ok(())
     }
 
     fn read(&self, _: Database) -> Result<Database, Error> {
         let file = File::open(self.path.clone())?;
-        Ok(read_db(file))
+        Ok(read_db(file)?)
     }
 }
 
-pub fn write_db<W: Write>(writer: &mut W, db: &Database) {
-    write_schema(writer, &db.schema());
+pub fn write_db<W: Write>(writer: &mut W, db: &Database) -> Result<(), Error> {
+    write_schema(writer, &db.schema())?;
     for o in db.raw_objects() {
-       write_object(writer, o.raw_tuples());
+       write_object(writer, o.raw_tuples())?
     }
+
+    Ok(())
 }
 
-pub fn read_db<R: Read>(reader: R) -> Database {
+pub fn read_db<R: Read>(reader: R) -> Result<Database, Error> {
     let mut reader = ByteReader::new(reader);
-    let schema_len = reader.peek_i32().unwrap() as usize;
-    let schema_bytes = reader.read_bytes(schema_len).unwrap();
+    let schema_len = reader.peek_i32()? as usize;
+    let schema_bytes = reader.read_bytes(schema_len)?;
 
     let mut db = Database::default();
-    let mut tables = read_schema(Cursor::new(schema_bytes));
-    tables.sort_by_key(|x| x.0);
+    let mut tables = read_schema(Cursor::new(schema_bytes))?;
+    tables.sort_by_key(|x| x.id);
     for table in tables {
-        table.2.iter().fold(db.create_table(&table.1), |acc, col| {
+        table.columns.iter().fold(db.create_table(&table.name), |acc, col| {
             if col.indexed {
                 acc.indexed_column(&col.name, col.kind)
             } else {
@@ -138,12 +168,12 @@ pub fn read_db<R: Read>(reader: R) -> Database {
     }
 
     let mut object_id = 0usize;
-    while reader.has_some() {
-        db.recover_object(object_id, read_object(&mut reader));
+    while reader.has_some()? {
+        db.recover_object(object_id, read_object(&mut reader)?);
         object_id += 1;
     }
 
-    db
+    Ok(db)
 }
 
 pub(crate) struct ByteReader<R: Read> {
@@ -155,21 +185,15 @@ impl<R: Read> ByteReader<R> {
         Self{ reader: BufReader::new(reader) }
     }
 
-    pub(crate) fn read_u8(&mut self) -> io::Result<u8> {
-        let buf = self.reader.fill_buf()?;
-        let x = buf[0];
-        self.reader.consume(1);
-        Ok(x)
-    }
-
     pub(crate) fn peek_i32(&mut self) -> io::Result<i32> {
+        const LEN: usize = i32::BITS as usize / 8;
         let buf = self.reader.fill_buf()?;
-        let bytes: [u8; 4] = buf[0..4].try_into().unwrap();
+        let bytes: [u8; LEN] = buf[0..LEN].try_into().unwrap();
         Ok(i32::from_le_bytes(bytes))
     }
 
     pub(crate) fn read_u32(&mut self) -> io::Result<i32> {
-        const LEN: usize = 4;
+        const LEN: usize = u32::BITS as usize / 8;
         let buf = self.reader.fill_buf()?;
         let bytes: [u8; LEN] = buf[0..LEN].try_into().unwrap();
         self.reader.consume(LEN);
@@ -179,15 +203,15 @@ impl<R: Read> ByteReader<R> {
     pub(crate) fn read_bytes(&mut self, size: usize) -> io::Result<Vec<u8>> {
         let mut out: Vec<u8> = Vec::with_capacity(size);
         while out.len() < size {
-            out.extend(self.reader.fill_buf().unwrap());
+            out.extend(self.reader.fill_buf()?);
             self.reader.consume(min(size, out.len()));
         }
 
         Ok(out.into_iter().take(size).collect())
     }
 
-    pub(crate) fn has_some(&mut self) -> bool {
-        !self.reader.fill_buf().unwrap().is_empty()
+    pub(crate) fn has_some(&mut self) -> io::Result<bool> {
+        Ok(!self.reader.fill_buf()?.is_empty())
     }
 }
 
@@ -220,9 +244,9 @@ mod tests {
         db.execute_query(&Query::tuple(&["2", "test2", "stuff"]).insert_into("example")).unwrap();
 
         let mut out = Vec::new();
-        write_db(&mut out, &db);
+        write_db(&mut out, &db).unwrap();
 
-        let saved_db = read_db(Cursor::new(out));
+        let saved_db = read_db(Cursor::new(out)).unwrap();
         assert!(saved_db.raw_object("example").is_some());
         let result = saved_db.execute_query(&Query::scan("example")).unwrap();
         assert_eq!(result.size(), 2);
