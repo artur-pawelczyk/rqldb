@@ -4,7 +4,7 @@ use rqldb::*;
 fn create_database() -> Database {
     let mut db = Database::default();
     db.execute_create(&Command::create_table("document")
-                      .column("id", Type::NUMBER)
+                      .indexed_column("id", Type::NUMBER)
                       .column("type", Type::NUMBER)
                       .column("title", Type::TEXT)
                       .column("content", Type::TEXT));
