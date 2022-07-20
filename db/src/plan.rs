@@ -144,7 +144,8 @@ impl<'a> Source<'a> {
 
             dsl::Source::Tuple(values) => {
                 Ok(Self::from_tuple(values))
-            }
+            },
+            _ => Err("Not supported source"),
         }
     }
 

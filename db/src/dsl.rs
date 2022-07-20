@@ -2,6 +2,7 @@ use std::fmt;
 
 use crate::schema::{Column, Type};
 
+#[derive(Default)]
 pub struct Query {
     pub source: Source,
     pub join_sources: Vec<JoinSource>,
@@ -11,7 +12,17 @@ pub struct Query {
 
 impl Query {
     pub fn scan(table: &str) -> Self {
-        Self{source:  Source::TableScan(String::from(table)), join_sources: vec![], filters: vec![], finisher: Finisher::AllColumns}
+        Self{
+            source:  Source::TableScan(String::from(table)),
+            ..Self::default()
+        }
+    }
+
+    pub fn scan_index(index: &str, op: Operator, val: &str) -> Self {
+        Self{
+            source: Source::IndexScan(index.to_string(), op, val.to_string()),
+            ..Self::default()
+        }
     }
 
     pub fn tuple<T: ToString>(values: &[T]) -> Self {
@@ -98,16 +109,22 @@ impl Operator {
     }
 }
 
+#[derive(Default)]
 pub enum Source {
+    #[default]
+    Nil,
     TableScan(String),
+    IndexScan(String, Operator, String),
     Tuple(Vec<String>)
 }
 
 impl Source {
     fn print(&self) -> String {
         match self {
-            Source::TableScan(table) => "scan ".to_owned() + table,
-            Source::Tuple(values) => "tuple ".to_owned() + &print_tokens(values)
+            Source::Nil => "nil".to_string(),
+            Source::TableScan(table) => "scan ".to_string() + table,
+            Source::IndexScan(index, _, val) => format!("scan_index {} = {}", index, val),
+            Source::Tuple(values) => "tuple ".to_string() + &print_tokens(values)
         }
     }
 }
@@ -139,7 +156,9 @@ impl Filter {
     }
 }
 
+#[derive(Default)]
 pub enum Finisher {
+    #[default]
     AllColumns,
     Columns(Vec<String>),
     Insert(String),
@@ -181,7 +200,7 @@ impl Command {
         Command{name: name.to_string(), columns: Vec::new()}
     }
 
-    pub fn column(mut self, name: &str, kind: Type) -> Self {
+ pub fn column(mut self, name: &str, kind: Type) -> Self {
         self.columns.push(Column::new(name, kind));
         self
     }
@@ -271,6 +290,12 @@ mod tests {
     fn count() {
         let query = Query::scan("example").count();
         assert_eq!(query.to_string(), "scan example | count");
+    }
+
+    #[test]
+    fn index_scan() {
+        let query = Query::scan_index("example.id", Operator::EQ, "1");
+        assert_eq!(query.to_string(), "scan_index example.id = 1 | select_all");
     }
 
     #[test]
