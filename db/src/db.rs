@@ -116,6 +116,9 @@ impl Database {
                 let cells = values.iter().map(|val| cell(val)).collect();
                 ObjectView::Val(Object::temporary(cells))
             },
+            Contents::IndexScan(_, _) => {
+                ObjectView::Val(Object::temporary(vec![]))
+            },
             _ => todo!()
         };
 

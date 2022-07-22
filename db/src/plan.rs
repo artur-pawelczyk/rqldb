@@ -108,6 +108,7 @@ pub(crate) struct Source<'a> {
 pub(crate) enum Contents<'a> {
     TableScan(&'a Relation),
     Tuple(Vec<String>),
+    IndexScan(Column<'a>, u8),
     Nil,
 }
 
@@ -146,8 +147,10 @@ impl<'a> Source<'a> {
             dsl::Source::Tuple(values) => {
                 Ok(Self::from_tuple(values))
             },
-            dsl::Source::IndexScan(index, _, _val) => {
-                Ok(Self::scan_index(schema.find_column(index).ok_or("No such index")?))
+            dsl::Source::IndexScan(index, _, val) => {
+                let index = schema.find_column(index).ok_or("No such index")?;
+                let val: u8 = val.parse().map_err(|_| "Only u8 is supported for index search")?;
+                Ok(Self::scan_index(index, val))
             }
             _ => Err("Not supported source"),
         }
@@ -164,10 +167,10 @@ impl<'a> Source<'a> {
         Self{ attributes, contents: Contents::Tuple(values.to_vec()) }
     }
 
-    fn scan_index(index: Column) -> Self {
+    fn scan_index(index: Column<'a>, val: u8) -> Self {
         Self{
             attributes: vec![Attribute{ pos: 0, name: index.as_full_name(), kind: index.kind() }],
-            contents: Contents::Nil
+            contents: Contents::IndexScan(index, val),
         }
     }
 
@@ -479,6 +482,7 @@ mod tests {
 
         let source = compute_plan(&schema, &dsl::Query::scan_index("example.id", EQ, "1")).unwrap().source;
         assert_eq!(source.attributes[0], Attribute{ pos: 0, name: "example.id".to_string(), kind: Type::NUMBER });
+        assert!(matches!(source.contents, Contents::IndexScan(_, 1)));
     }
 
     fn source_attributes(source: &Source) -> Vec<Type> {
