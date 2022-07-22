@@ -1,5 +1,6 @@
 use crate::Cell;
 use crate::dsl;
+use crate::schema::Column;
 use crate::schema::{Schema, Relation, Type};
 use crate::tuple::Tuple;
 
@@ -146,7 +147,7 @@ impl<'a> Source<'a> {
                 Ok(Self::from_tuple(values))
             },
             dsl::Source::IndexScan(index, _, _val) => {
-                Ok(Self::scan_index(index))
+                Ok(Self::scan_index(schema.find_column(index).ok_or("No such index")?))
             }
             _ => Err("Not supported source"),
         }
@@ -163,9 +164,9 @@ impl<'a> Source<'a> {
         Self{ attributes, contents: Contents::Tuple(values.to_vec()) }
     }
 
-    fn scan_index(index: &str) -> Self {
+    fn scan_index(index: Column) -> Self {
         Self{
-            attributes: vec![Attribute{ pos: 0, name: index.to_string(), kind: Type::NONE }],
+            attributes: vec![Attribute{ pos: 0, name: index.as_full_name(), kind: index.kind() }],
             contents: Contents::Nil
         }
     }
@@ -471,8 +472,8 @@ mod tests {
         assert!(failure.is_err());
     }
 
-    //#[test]
-    fn _test_scan_index() {
+    #[test]
+    fn test_scan_index() {
         let mut schema = Schema::default();
         schema.create_table("example").indexed_column("id", Type::NUMBER).column("content", Type::TEXT).add();
 

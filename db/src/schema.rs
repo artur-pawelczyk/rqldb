@@ -43,6 +43,7 @@ impl TableId for &String {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Column<'a> {
     inner: &'a InnerColumn,
+    table: &'a Relation,
     pos: usize,
 }
 
@@ -57,6 +58,10 @@ impl<'a> Column<'a> {
 
     pub fn name(&self) -> &str {
         &self.inner.name
+    }
+
+    pub fn as_full_name(&self) -> String {
+        format!("{}.{}", self.table.name(), self.name())
     }
 
     pub fn kind(&self) -> Type {
@@ -131,6 +136,25 @@ impl Schema {
     pub fn find_relation<T: TableId>(&self, id: T) -> Option<&Relation> {
         id.find_in(self)
     }
+
+    /// # Examples
+    ///
+    /// ```
+    /// use rqldb::schema::Schema;
+    /// use rqldb::Type;
+    /// 
+    /// let mut schema = Schema::default();
+    /// schema.create_table("example").indexed_column("id", Type::NUMBER).column("name", Type::TEXT).add();
+    /// assert_eq!(schema.find_column("example.id").unwrap().name(), "id");
+    /// ```
+    pub fn find_column(&self, s: &str) -> Option<Column> {
+        let (rel_name, col_name) = {
+            let mut split = s.split('.');
+            (split.next()?, split.next()?)
+        };
+        
+        self.find_relation(rel_name).and_then(|rel| rel.find_column(col_name))
+    }
 }
 
 pub struct TableBuilder<'a> {
@@ -176,6 +200,10 @@ impl<'a> Iterator for ColumnIter<'a> {
 }
 
 impl Relation {
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
 
     pub fn columns(&self) -> ColumnIter {
         ColumnIter{ name: self.name.as_str(), raw: &self.columns, pos: 0 }
@@ -240,7 +268,21 @@ impl Relation {
     /// assert_eq!(schema.find_relation("example").unwrap().indexed_column().unwrap().name(), "id");
     /// ```
     pub fn indexed_column(&self) -> Option<Column> {
-        self.columns.iter().enumerate().find(|(_, col)| col.indexed).map(|(pos, col)| Column{ inner: col, pos })
+        self.columns.iter().enumerate().find(|(_, col)| col.indexed).map(|(pos, col)| Column{ table: self, inner: col, pos })
+    }
+
+    /// # Examples
+    ///
+    /// ```
+    /// use rqldb::schema::Schema;
+    /// use rqldb::Type;
+    /// 
+    /// let mut schema = Schema::default();
+    /// schema.create_table("example").indexed_column("id", Type::NUMBER).column("name", Type::TEXT).add();
+    /// assert_eq!(schema.find_relation("example").unwrap().find_column("name").unwrap().name(), "name");
+    /// ```
+    pub fn find_column(&self, name: &str) -> Option<Column> {
+        self.columns.iter().enumerate().find(|(_, col)| col.name == name).map(|(pos, col)| Column{ table: self, inner: col, pos })
     }
 
     pub fn full_attribute_names(&self) -> Vec<String> {
