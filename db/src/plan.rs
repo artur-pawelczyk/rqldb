@@ -91,7 +91,7 @@ impl<'a> Join<'a> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Attribute {
     pub pos: usize,
     pub name: String,
@@ -145,6 +145,9 @@ impl<'a> Source<'a> {
             dsl::Source::Tuple(values) => {
                 Ok(Self::from_tuple(values))
             },
+            dsl::Source::IndexScan(index, _, _val) => {
+                Ok(Self::scan_index(index))
+            }
             _ => Err("Not supported source"),
         }
     }
@@ -158,6 +161,13 @@ impl<'a> Source<'a> {
     fn from_tuple(values: &[String]) -> Self {
         let attributes = values.iter().enumerate().map(|(i, val)| Attribute::numbered(i).guess_type(val)).collect();
         Self{ attributes, contents: Contents::Tuple(values.to_vec()) }
+    }
+
+    fn scan_index(index: &str) -> Self {
+        Self{
+            attributes: vec![Attribute{ pos: 0, name: index.to_string(), kind: Type::NONE }],
+            contents: Contents::Nil
+        }
     }
 
     fn validate_with_finisher(self, finisher: &Finisher) -> Result<Source<'a>, &'static str> {
@@ -324,7 +334,7 @@ fn table_attributes(table: &Relation) -> Vec<Attribute> {
 mod tests {
     use super::*;
     use crate::dsl::Operator::{EQ, GT};
-    use crate::schema::{Column, Type};
+    use crate::schema::Type;
     
 
     type ByteTuple = Vec<Vec<u8>>;
@@ -332,7 +342,7 @@ mod tests {
     #[test]
     fn test_compute_filter() {
         let mut schema = Schema::default();
-        schema.add_relation(0, "example", &[col("id", Type::NUMBER), col("content", Type::TEXT), col("type", Type::NUMBER)]);
+        schema.create_table("example").column("id", Type::NUMBER).column("content", Type::TEXT).column("type", Type::NUMBER).add();
 
         let filters = expect_filters(compute_plan(&schema, &dsl::Query::scan("example").filter("example.id", EQ, "1").filter("example.type", EQ, "2")), 2);
         assert_eq!(filters.get(0).map(|x| x.attribute.pos), Some(0));
@@ -345,7 +355,7 @@ mod tests {
     #[test]
     fn test_apply_filter() {
         let mut schema = Schema::default();
-        schema.add_relation(0, "example", &[col("id", Type::NUMBER), col("content", Type::TEXT), col("type", Type::NUMBER)]);
+        schema.create_table("example").column("id", Type::NUMBER).column("content", Type::TEXT).column("type", Type::NUMBER).add();
         let tuple_1 = tuple(&["1", "content1", "11"]);
         let tuple_2 = tuple(&["2", "content2", "12"]);
 
@@ -380,8 +390,8 @@ mod tests {
     #[test]
     fn test_compute_join() {
         let mut schema = Schema::default();
-        schema.add_relation(0, "document", &[col("name", Type::TEXT), col("type_id", Type::NUMBER)]);
-        schema.add_relation(1, "type", &[col("id", Type::TEXT), col("name", Type::NUMBER)]);
+        schema.create_table("document").column("name", Type::TEXT).column("type_id", Type::NUMBER).add();
+        schema.create_table("type").column("id", Type::TEXT).column("name", Type::NUMBER).add();
 
         let joins = expect_join(compute_plan(&schema, &dsl::Query::scan("document").join("type", "document.type_id", "type.id")));
         assert_eq!(joins.source_table().name, "type");
@@ -400,8 +410,8 @@ mod tests {
     #[test]
     fn test_filter_after_join() {
         let mut schema = Schema::default();
-        schema.add_relation(0, "document", &[col("name", Type::TEXT), col("type_id", Type::NUMBER)]);
-        schema.add_relation(1, "type", &[col("id", Type::TEXT), col("name", Type::NUMBER)]);
+        schema.create_table("document").column("name", Type::TEXT).column("type_id", Type::NUMBER).add();
+        schema.create_table("type",).column("id", Type::TEXT).column("name", Type::NUMBER).add();
 
         let filter = expect_filter(compute_plan(&schema, &dsl::Query::scan("document").join("type", "document.type_id", "type.id").filter("type.name", EQ, "b")));
         assert_eq!(filter.attribute.pos, 3);
@@ -416,7 +426,7 @@ mod tests {
     #[test]
     fn test_source_types_for_select() {
         let mut schema = Schema::default();
-        schema.add_relation(0, "example", &[col("id", Type::NUMBER), col("content", Type::TEXT), col("type", Type::NUMBER)]);
+        schema.create_table("example").column("id", Type::NUMBER).column("content", Type::TEXT).column("type", Type::NUMBER).add();
 
         let result = compute_plan(&schema, &dsl::Query::scan("example")).unwrap();
         assert_eq!(source_attributes(&result.source), vec![Type::NUMBER, Type::TEXT, Type::NUMBER]);
@@ -426,7 +436,7 @@ mod tests {
     #[test]
     fn test_source_types_for_insert() {
         let mut schema = Schema::default();
-        schema.add_relation(0, "example", &[col("id", Type::NUMBER), col("content", Type::TEXT), col("title", Type::TEXT)]);
+        schema.create_table("example").column("id", Type::NUMBER).column("content", Type::TEXT).column("title", Type::TEXT).add();
 
         let result = compute_plan(&schema, &dsl::Query::tuple(&["1", "the-content", "title"]).insert_into("example")).unwrap();
         assert_eq!(source_attributes(&result.source), vec![Type::NUMBER, Type::TEXT, Type::TEXT]);
@@ -442,7 +452,7 @@ mod tests {
     #[test]
     fn test_compute_finisher() {
         let mut schema = Schema::default();
-        schema.add_relation(0, "example", &[col("id", Type::NUMBER), col("content", Type::TEXT)]);
+        schema.create_table("example").column("id", Type::NUMBER).column("content", Type::TEXT).add();
 
         let finisher = compute_plan(&schema, &dsl::Query::scan("example"))
             .unwrap().finisher;
@@ -461,8 +471,13 @@ mod tests {
         assert!(failure.is_err());
     }
 
-    fn col(name: &str, kind: Type) -> Column {
-        Column{ name: name.to_string(), kind, indexed: false }
+    //#[test]
+    fn _test_scan_index() {
+        let mut schema = Schema::default();
+        schema.create_table("example").indexed_column("id", Type::NUMBER).column("content", Type::TEXT).add();
+
+        let source = compute_plan(&schema, &dsl::Query::scan_index("example.id", EQ, "1")).unwrap().source;
+        assert_eq!(source.attributes[0], Attribute{ pos: 0, name: "example.id".to_string(), kind: Type::NUMBER });
     }
 
     fn source_attributes(source: &Source) -> Vec<Type> {

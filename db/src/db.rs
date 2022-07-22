@@ -3,7 +3,7 @@ use std::collections::HashSet;
 
 use crate::index::{Index, Op};
 use crate::plan::{Contents, Attribute, Filter, Plan, Finisher};
-use crate::schema::Column;
+use crate::schema::Relation;
 use crate::tuple::Tuple;
 use crate::{schema::Schema, QueryResults, plan::compute_plan};
 use crate::{dsl, Cell, Type};
@@ -29,12 +29,11 @@ impl Object {
         obj
     }
 
-    fn from_columns(columns: &[Column]) -> Self {
-        let indexed_column = columns.iter().enumerate().find(|(_, col)| col.indexed).map(|(i, _)| i);
+    fn from_table(table: &Relation) -> Self {
         Self{
             tuples: Vec::new(),
             removed_ids: HashSet::new(),
-            index: indexed_column.map(|i| Index::single_cell(&[], i)).unwrap_or_else(|| Index::new(&[])),
+            index: table.indexed_column().map(|col| Index::single_cell(&[], col.pos())).unwrap_or_else(|| Index::new(&[])),
         }
     }
 
@@ -92,13 +91,8 @@ impl Database {
     }
 
     #[must_use]
-    pub fn create_table(&mut self, name: &str) -> TableCreation {
-        TableCreation{ db: self, name: name.to_string(), columns: Vec::new() }
-    }
-
-    fn create_table_impl(&mut self, name: String, columns: Vec<Column>) {
-        self.schema.add_relation(self.objects.len(), &name, &columns);
-        self.objects.push(RefCell::new(Object::from_columns(&columns)));
+    pub fn create_table<'a>(&'a mut self, name: &'a str) -> TableCreation<'a> {
+        TableCreation{ db: self, name, columns: Vec::new() }
     }
 
     pub fn execute_query(&self, query: &dsl::Query) -> Result<QueryResults, &'static str> {
@@ -199,25 +193,33 @@ impl Database {
 
 pub struct TableCreation<'a> {
     db: &'a mut Database,
-    name: String,
-    columns: Vec<Column>,
+    name: &'a str,
+    columns: Vec<(&'a str, Type, bool)>,
 }
 
 impl<'a> TableCreation<'a> {
     #[must_use]
-    pub fn column(mut self, name: &str, kind: Type) -> Self {
-        self.columns.push(Column{ name: name.to_string(), kind, indexed: false });
+    pub fn column(mut self, name: &'a str, kind: Type) -> Self {
+        self.columns.push((name, kind, false));
         self
     }
 
     #[must_use]
-    pub fn indexed_column(mut self, name: &str, kind: Type) -> Self {
-        self.columns.push(Column{ name: name.to_string(), kind, indexed: true });
+    pub fn indexed_column(mut self, name: &'a str, kind: Type) -> Self {
+        self.columns.push((name, kind, true));
         self
     }
 
     pub fn create(self) {
-        self.db.create_table_impl(self.name, self.columns);
+        let table = self.columns.iter().fold(self.db.schema.create_table(self.name), |acc, x| {
+            if x.2 {
+                acc.indexed_column(x.0, x.1)
+            } else {
+                acc.column(x.0, x.1)
+            }
+        }).add();
+
+        self.db.objects.push(RefCell::new(Object::from_table(&table)));
     }
 }
 

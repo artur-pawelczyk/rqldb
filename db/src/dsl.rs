@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::schema::{Column, Type};
+use crate::schema::Type;
 
 #[derive(Default)]
 pub struct Query {
@@ -201,12 +201,12 @@ impl Command {
     }
 
  pub fn column(mut self, name: &str, kind: Type) -> Self {
-        self.columns.push(Column::new(name, kind));
+        self.columns.push(Column{ name: name.to_string(), kind, indexed: false });
         self
     }
 
     pub fn indexed_column(mut self, name: &str, kind: Type) -> Self {
-        self.columns.push(Column::new(name, kind).indexed());
+        self.columns.push(Column{ name: name.to_string(), kind, indexed: true });
         self
     }
 
@@ -230,6 +230,12 @@ impl fmt::Display for Command {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.print())
     }
+}
+
+pub struct Column {
+    pub name: String,
+    pub kind: Type,
+    pub indexed: bool,
 }
 
 impl Column {

@@ -1,6 +1,6 @@
 use std::{fmt, str::FromStr};
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Default, PartialEq)]
 pub struct Schema {
     pub relations: Vec<Relation>,
 }
@@ -9,7 +9,7 @@ pub struct Schema {
 pub struct Relation {
     pub id: usize,
     pub name: String,
-    pub columns: Vec<Column>
+    columns: Vec<InnerColumn>,
 }
 
 impl PartialEq for Relation {
@@ -41,27 +41,34 @@ impl TableId for &String {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Column {
-    pub name: String,
-    pub kind: Type,
-    pub indexed: bool,
+pub struct Column<'a> {
+    inner: &'a InnerColumn,
+    pos: usize,
 }
 
-impl Column {
-    pub fn new(name: &str, kind: Type) -> Self {
-        Self{
-            name: name.to_string(),
-            kind,
-            indexed: false,
-        }
+impl<'a> Column<'a> {
+    pub fn indexed(&self) -> bool {
+        self.inner.indexed
     }
 
-    pub fn indexed(self) -> Self {
-        Self{
-            indexed: true,
-            ..self
-        }
+    pub fn pos(&self) -> usize {
+        self.pos
     }
+
+    pub fn name(&self) -> &str {
+        &self.inner.name
+    }
+
+    pub fn kind(&self) -> Type {
+        self.inner.kind
+    }
+}
+
+#[derive(Debug, PartialEq)]
+struct InnerColumn {
+    name: String,
+    kind: Type,
+    indexed: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -106,9 +113,19 @@ impl FromStr for Type {
 }
 
 impl Schema {
-    pub fn add_relation(&mut self, id: usize, name: &str, columns: &[Column]) {
-        let relation = Relation{ id, name: name.to_string(), columns: columns.to_vec() };
-        self.relations.push(relation);
+    /// # Examples
+    ///
+    /// ```
+    /// use rqldb::schema::Schema;
+    /// use rqldb::Type;
+    /// 
+    /// let mut schema = Schema::default();
+    /// schema.create_table("example").indexed_column("id", Type::NUMBER).column("name", Type::TEXT).add();
+    /// assert!(schema.find_relation("example").is_some());
+    /// ```
+    #[must_use]
+    pub fn create_table(&mut self, name: &str) -> TableBuilder {
+        TableBuilder { schema: self, name: name.to_string(), columns: vec![] }
     }
 
     pub fn find_relation<T: TableId>(&self, id: T) -> Option<&Relation> {
@@ -116,9 +133,35 @@ impl Schema {
     }
 }
 
+pub struct TableBuilder<'a> {
+    schema: &'a mut Schema,
+    name: String,
+    columns: Vec<InnerColumn>,
+}
+
+impl<'a> TableBuilder<'a> {
+    #[must_use]
+    pub fn column(mut self, name: &str, kind: Type) -> Self {
+        self.columns.push(InnerColumn{ name: name.to_string(), kind, indexed: false });
+        self
+    }
+
+    #[must_use]
+    pub fn indexed_column(mut self, name: &str, kind: Type) -> Self {
+        self.columns.push(InnerColumn{ name: name.to_string(), kind, indexed: true });
+        self
+    }
+
+    pub fn add(self) -> &'a Relation {
+        let id = self.schema.relations.len();
+        self.schema.relations.push(Relation { id, name: self.name, columns: self.columns });
+        self.schema.relations.last().unwrap()
+    }
+}
+
 pub struct ColumnIter<'a> {
     name: &'a str,
-    raw: &'a [Column],
+    raw: &'a [InnerColumn],
     pos: usize,
 }
 
@@ -141,13 +184,13 @@ impl Relation {
     /// # Examples
     /// 
     /// ```
-    /// use rqldb::schema::{Column, Type, Relation};
+    /// use rqldb::schema::{Column, Type, Relation, Schema};
     ///
-    /// let relation = Relation{id: 0, name: "document".to_string(),
-    ///                         columns: vec![
-    ///                             Column::new("id", Type::NUMBER),
-    ///                             Column::new("content", Type::TEXT),
-    ///                         ]};
+    /// let mut schema = Schema::default();
+    /// let relation = schema.create_table("document")
+    ///     .column("id", Type::NUMBER)
+    ///     .column("content", Type::TEXT)
+    ///     .add();
     ///
     /// assert_eq!(relation.column_position("id"), Some(0));
     /// assert_eq!(relation.column_position("content"), Some(1));
@@ -167,13 +210,13 @@ impl Relation {
     /// # Examples
     /// 
     /// ```
-    /// use rqldb::schema::{Column, Type, Relation};
+    /// use rqldb::schema::{Column, Type, Relation, Schema};
     ///
-    /// let relation = Relation{id: 0, name: "document".to_string(),
-    ///                         columns: vec![
-    ///                             Column::new("id", Type::NUMBER),
-    ///                             Column::new("content", Type::TEXT),
-    ///                         ]};
+    /// let mut schema = Schema::default();
+    /// let relation = schema.create_table("document")
+    ///     .column("id", Type::NUMBER)
+    ///     .column("content", Type::TEXT)
+    ///     .add();
     ///
     /// assert_eq!(relation.column_type("id"), Some(Type::NUMBER));
     /// assert_eq!(relation.column_type("content"), Some(Type::TEXT));
@@ -184,6 +227,20 @@ impl Relation {
     /// ```
     pub fn column_type(&self, name: &str) -> Option<Type> {
         self.columns.iter().find(|col| self.column_name_matches(col, name)).map(|col| col.kind)
+    }
+
+    /// # Examples
+    ///
+    /// ```
+    /// use rqldb::schema::Schema;
+    /// use rqldb::Type;
+    /// 
+    /// let mut schema = Schema::default();
+    /// schema.create_table("example").indexed_column("id", Type::NUMBER).column("name", Type::TEXT).add();
+    /// assert_eq!(schema.find_relation("example").unwrap().indexed_column().unwrap().name(), "id");
+    /// ```
+    pub fn indexed_column(&self) -> Option<Column> {
+        self.columns.iter().enumerate().find(|(_, col)| col.indexed).map(|(pos, col)| Column{ inner: col, pos })
     }
 
     pub fn full_attribute_names(&self) -> Vec<String> {
@@ -198,7 +255,7 @@ impl Relation {
         self.columns.iter().map(|col| (format!("{}.{}", self.name, col.name), col.kind)).collect()
     }
 
-    fn column_name_matches(&self, col: &Column, name: &str) -> bool {
+    fn column_name_matches(&self, col: &InnerColumn, name: &str) -> bool {
         let parts: Vec<&str> = name.split('.').collect();
         match parts[..] {
             [first] => col.name == first,
