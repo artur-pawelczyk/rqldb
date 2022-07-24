@@ -321,7 +321,7 @@ fn compute_joins<'a>(plan: Plan<'a>, schema: &'a Schema, query: &dsl::Query) -> 
                 return Err("Joiner: no such column")
             }
         } else {
-            return Err("Joiee: no such column")
+            return Err("Joinee: no such column")
         }
     }
 
@@ -329,8 +329,8 @@ fn compute_joins<'a>(plan: Plan<'a>, schema: &'a Schema, query: &dsl::Query) -> 
 }
 
 fn table_attributes(table: &Relation) -> Vec<Attribute> {
-    table.columns().enumerate()
-        .map(|(pos, (col_name, kind))| Attribute{ pos, name: col_name, kind })
+    table.columns().peekable()
+        .map(|col| Attribute{ pos: col.pos(), name: col.as_full_name(), kind: col.kind() })
         .collect()
 }
 

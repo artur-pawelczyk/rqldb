@@ -5,7 +5,7 @@ pub struct Schema {
     pub relations: Vec<Relation>,
 }
 
-#[derive(Debug)]
+#[derive(Clone)]
 pub struct Relation {
     pub id: usize,
     pub name: String,
@@ -15,6 +15,13 @@ pub struct Relation {
 impl PartialEq for Relation {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
+    }
+}
+
+impl fmt::Debug for Relation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let columns: Vec<Column> = self.columns().collect();
+        write!(f, "Relation {}; {}; columns: {:?}", self.id, self.name, columns)
     }
 }
 
@@ -40,11 +47,17 @@ impl TableId for &String {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Column<'a> {
     inner: &'a InnerColumn,
     table: &'a Relation,
     pos: usize,
+}
+
+impl<'a> fmt::Debug for Column<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_full_name())
+    }
 }
 
 impl<'a> Column<'a> {
@@ -69,7 +82,7 @@ impl<'a> Column<'a> {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 struct InnerColumn {
     name: String,
     kind: Type,
@@ -184,18 +197,17 @@ impl<'a> TableBuilder<'a> {
 }
 
 pub struct ColumnIter<'a> {
-    name: &'a str,
-    raw: &'a [InnerColumn],
+    table: &'a Relation,
     pos: usize,
 }
 
 impl<'a> Iterator for ColumnIter<'a> {
-    type Item = (String, Type);
+    type Item = Column<'a>;
 
-    fn next(&mut self) -> Option<(String, Type)> {
+    fn next(&mut self) -> Option<Column<'a>> {
+        let next = self.table.columns.get(self.pos).map(|inner| Column{ inner, table: self.table, pos: self.pos });
         self.pos += 1;
-        self.raw.get(self.pos - 1)
-            .map(|col| (format!("{}.{}", self.name, col.name), col.kind))
+        next
     }
 }
 
@@ -206,7 +218,7 @@ impl Relation {
     }
 
     pub fn columns(&self) -> ColumnIter {
-        ColumnIter{ name: self.name.as_str(), raw: &self.columns, pos: 0 }
+        ColumnIter{ table: self, pos: 0 }
     }
     
     /// # Examples

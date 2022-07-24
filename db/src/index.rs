@@ -45,13 +45,6 @@ impl Index {
         instance
     }
 
-    pub(crate) fn rebuild(&self, tuples: &[ByteTuple]) -> Self {
-        match self.cell_id {
-            Some(pos) => Self::single_cell(tuples, pos),
-            None => Self::new(tuples),
-        }
-    }
-
     fn index<'a, F>(&mut self, byte_tuple: &'a ByteTuple, f: F) -> Op
     where F: Fn(usize) -> Option<&'a ByteTuple>
     {
