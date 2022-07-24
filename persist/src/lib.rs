@@ -3,6 +3,7 @@ mod schema;
 
 use object::{write_object, read_object};
 use rqldb::Database;
+use rqldb::schema::Schema;
 use schema::{write_schema, read_schema};
 
 use std::cmp::min;
@@ -154,18 +155,20 @@ pub fn read_db<R: Read>(reader: R) -> Result<Database, Error> {
     let schema_len = reader.peek_i32()? as usize;
     let schema_bytes = reader.read_bytes(schema_len)?;
 
-    let mut db = Database::default();
+    let mut schema = Schema::default();
     let mut tables = read_schema(Cursor::new(schema_bytes))?;
     tables.sort_by_key(|x| x.id);
     for table in tables {
-        table.columns.iter().fold(db.create_table(&table.name), |acc, col| {
+        table.columns.iter().fold(schema.create_table(&table.name), |acc, col| {
             if col.indexed {
                 acc.indexed_column(&col.name, col.kind)
             } else {
                 acc.column(&col.name, col.kind)
             }
-        }).create();
+        }).add();
     }
+
+    let mut db = Database::with_schema(schema);
 
     let mut object_id = 0usize;
     while reader.has_some()? {
@@ -228,17 +231,16 @@ mod tests {
     #[test]
     fn test_serialize_db() {
         let mut db = Database::default();
-        db.create_table("example")
-            .indexed_column("id", Type::NUMBER)
-            .column("title", Type::TEXT)
-            .column("content", Type::TEXT).create();
+        db.execute_create(&Command::create_table("example")
+                          .indexed_column("id", Type::NUMBER)
+                          .column("title", Type::TEXT)
+                          .column("content", Type::TEXT));
 
-        db.create_table("other")
-            .column("a", Type::TEXT)
-            .column("b", Type::TEXT)
-            .column("c", Type::TEXT)
-            .column("d", Type::TEXT)
-            .create();
+        db.execute_create(&Command::create_table("other")
+                          .column("a", Type::TEXT)
+                          .column("b", Type::TEXT)
+                          .column("c", Type::TEXT)
+                          .column("d", Type::TEXT));
 
         db.execute_query(&Query::tuple(&["1", "test", "stuff"]).insert_into("example")).unwrap();
         db.execute_query(&Query::tuple(&["2", "test2", "stuff"]).insert_into("example")).unwrap();

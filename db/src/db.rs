@@ -6,7 +6,7 @@ use crate::plan::{Contents, Attribute, Filter, Plan, Finisher};
 use crate::schema::Relation;
 use crate::tuple::Tuple;
 use crate::{schema::Schema, QueryResults, plan::compute_plan};
-use crate::{dsl, Cell, Type};
+use crate::{dsl, Cell};
 
 #[derive(Default)]
 pub struct Database {
@@ -83,19 +83,25 @@ impl Default for Object {
 }
 
 impl Database {
+    pub fn with_schema(schema: Schema) -> Self {
+        let objects = schema.relations.iter().map(Object::from_table).map(RefCell::new).collect();
+
+        Self{
+            schema,
+            objects,
+        }
+    }
+
     pub fn execute_create(&mut self, command: &dsl::Command) {
-        command.columns.iter().fold(self.create_table(&command.name), |acc, col| {
+        let table = command.columns.iter().fold(self.schema.create_table(&command.name), |acc, col| {
             if col.indexed {
                 acc.indexed_column(&col.name, col.kind)
             } else {
                 acc.column(&col.name, col.kind)
             }
-        }).create();
-    }
+        }).add();
 
-    #[must_use]
-    pub fn create_table<'a>(&'a mut self, name: &'a str) -> TableCreation<'a> {
-        TableCreation{ db: self, name, columns: Vec::new() }
+        self.objects.insert(table.id, RefCell::new(Object::from_table(table)));
     }
 
     pub fn execute_query(&self, query: &dsl::Query) -> Result<QueryResults, &'static str> {
@@ -194,38 +200,6 @@ impl Database {
             println!("table {} index statistics", rel.name);
             obj.index.print_statistics();
         }
-    }
-}
-
-pub struct TableCreation<'a> {
-    db: &'a mut Database,
-    name: &'a str,
-    columns: Vec<(&'a str, Type, bool)>,
-}
-
-impl<'a> TableCreation<'a> {
-    #[must_use]
-    pub fn column(mut self, name: &'a str, kind: Type) -> Self {
-        self.columns.push((name, kind, false));
-        self
-    }
-
-    #[must_use]
-    pub fn indexed_column(mut self, name: &'a str, kind: Type) -> Self {
-        self.columns.push((name, kind, true));
-        self
-    }
-
-    pub fn create(self) {
-        let table = self.columns.iter().fold(self.db.schema.create_table(self.name), |acc, x| {
-            if x.2 {
-                acc.indexed_column(x.0, x.1)
-            } else {
-                acc.column(x.0, x.1)
-            }
-        }).add();
-
-        self.db.objects.push(RefCell::new(Object::from_table(&table)));
     }
 }
 
@@ -481,7 +455,7 @@ mod tests {
     #[test]
     fn update() {
         let mut db = Database::default();
-        db.create_table("document").indexed_column("id", Type::NUMBER).column("content", Type::TEXT).create();
+        db.execute_create(&Command::create_table("document").indexed_column("id", Type::NUMBER).column("content", Type::TEXT));
         let table = db.schema.find_relation("document").unwrap();
 
         db.execute_plan(Plan::insert(table, &["1".to_string(), "orig content".to_string()])).unwrap();
@@ -495,7 +469,7 @@ mod tests {
     #[test]
     fn recover_object() {
         let mut db = Database::default();
-        db.create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT).create();
+        db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT));
         let table = db.schema.find_relation("document").unwrap().clone();
 
         db.execute_plan(Plan::insert(&table, &["1".to_string(), "one".to_string()])).unwrap();
