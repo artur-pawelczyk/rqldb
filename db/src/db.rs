@@ -212,15 +212,6 @@ enum ObjectView<'a> {
     Val(Object),
 }
 
-impl<'a> AsRef<Object> for ObjectView<'a> {
-    fn as_ref(&self) -> &Object {
-        match self {
-            Self::Ref(o) => o,
-            Self::Val(o) => o,
-        }
-    }
-}
-
 impl<'a> ObjectView<'a> {
     fn iter(&self) -> std::slice::Iter<ByteTuple> {
         match self {
