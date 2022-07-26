@@ -1,5 +1,6 @@
 use std::cell::{RefCell, Ref, RefMut};
 use std::collections::HashSet;
+use std::marker::PhantomData;
 
 use crate::index::{Index, Op};
 use crate::plan::{Contents, Attribute, Filter, Plan, Finisher};
@@ -9,20 +10,21 @@ use crate::{schema::Schema, QueryResults, plan::compute_plan};
 use crate::{dsl, Cell};
 
 #[derive(Default)]
-pub struct Database {
+pub struct Database<'a> {
     schema: Schema,
-    objects: Vec<RefCell<Object>>,
+    objects: Vec<RefCell<Object<'a>>>,
 }
 
-struct Object {
+struct Object<'a> {
     tuples: Vec<ByteTuple>,
     removed_ids: HashSet<usize>,
     index: Index,
+    marker: PhantomData<&'a ()>,
 }
 
 type ByteTuple = Vec<Vec<u8>>;
 
-impl Object {
+impl<'a> Object<'a> {
     fn temporary(byte_tuple: ByteTuple) -> Self {
         let mut obj = Self::default();
         obj.add_tuple(&Tuple::from_bytes(&byte_tuple));
@@ -34,6 +36,7 @@ impl Object {
             tuples: Vec::new(),
             removed_ids: HashSet::new(),
             index: table.indexed_column().map(|col| Index::single_cell(&[], col.pos())).unwrap_or_else(|| Index::new(&[])),
+            marker: PhantomData,
         }
     }
 
@@ -46,6 +49,7 @@ impl Object {
             tuples: snapshot,
             removed_ids: HashSet::new(),
             index,
+            marker: PhantomData,
         }
     }
 
@@ -72,17 +76,18 @@ impl Object {
     }
 }
 
-impl Default for Object {
+impl<'a> Default for Object<'a> {
     fn default() -> Self {
         Object{
             tuples: vec![],
             removed_ids: HashSet::new(),
             index: Index::new(&[]),
+            marker: PhantomData,
         }
     }
 }
 
-impl Database {
+impl<'obj> Database<'obj> {
     pub fn with_schema(schema: Schema) -> Self {
         let objects = schema.relations.iter().map(Object::from_table).map(RefCell::new).collect();
 
@@ -162,9 +167,7 @@ impl Database {
         Ok(sink.into_results())
     }
 
-
-
-    fn create_sink<'a>(&'a self, plan: &'a Plan) -> Sink<'a> {
+    fn create_sink<'a>(&'a self, plan: &Plan) -> Sink<'a, 'obj> {
         match plan.finisher {
             Finisher::Return => Sink::Return(plan.final_attributes(), vec![]),
             Finisher::Count => Sink::Count(0),
@@ -208,8 +211,8 @@ fn test_filters(filters: &[Filter], tuple: &Tuple) -> bool {
 }
 
 enum ObjectView<'a> {
-    Ref(Ref<'a, Object>),
-    Val(Object),
+    Ref(Ref<'a, Object<'a>>),
+    Val(Object<'a>),
 }
 
 impl<'a> ObjectView<'a> {
@@ -228,15 +231,15 @@ impl<'a> ObjectView<'a> {
     }
 }
 
-enum Sink<'a> {
+enum Sink<'a, 'obj> {
     Count(usize),
     Return(Vec<Attribute>, Vec<Vec<Cell>>),
-    Insert(RefMut<'a, Object>),
+    Insert(RefMut<'a, Object<'obj>>),
     Delete(Vec<usize>),
     NoOp,
 }
 
-impl<'a> Sink<'a> {
+impl<'a, 'obj> Sink<'a, 'obj> {
     fn accept_tuple(&mut self, idx: usize, tuple: &Tuple) {
         match self {
             Self::Count(ref mut count) => *count += 1,
@@ -274,7 +277,7 @@ fn tuple_to_cells(attrs: &[Attribute], tuple: &Tuple) -> Vec<Cell> {
 }
 
 pub struct RawObjectView<'a> {
-    object: Ref<'a, Object>,
+    object: Ref<'a, Object<'a>>,
 }
 
 impl<'a> RawObjectView<'a> {
