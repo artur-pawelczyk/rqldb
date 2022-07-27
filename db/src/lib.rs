@@ -1,6 +1,5 @@
 pub mod db;
 pub mod dsl;
-pub mod index;
 pub mod parse;
 pub mod plan;
 pub mod schema;

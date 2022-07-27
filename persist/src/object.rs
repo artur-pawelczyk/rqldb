@@ -1,10 +1,12 @@
 use std::io::{Read, Write};
 
+use rqldb::idmap::IdMap;
+
 use crate::{ByteTuple, ByteReader, Error};
 
-pub(crate) fn write_object<W: Write>(writer: &mut W, tuples: &[ByteTuple]) -> Result<(), Error> {
-    writer.write(&size(tuples.len()))?;
-    for tuple in tuples {
+pub(crate) fn write_object<W: Write>(writer: &mut W, tuples: &dyn IdMap<ByteTuple>) -> Result<(), Error> {
+    writer.write(&size(tuples.iter().count()))?;
+    for tuple in tuples.iter() {
         writer.write(&size(tuple.len()))?;
 
         for cell in tuple {
@@ -57,7 +59,7 @@ mod tests {
         let mut out = Vec::new();
         write_object(&mut out, raw_object.raw_tuples()).unwrap();
         let saved_object = read_object(&mut ByteReader::new(Cursor::new(out))).unwrap();
-        assert_eq!(raw_object.raw_tuples(), &saved_object);
+        assert_eq!(raw_object.raw_tuples().iter().cloned().collect::<Vec<ByteTuple>>(), saved_object);
     }
 
     #[test]
@@ -72,6 +74,6 @@ mod tests {
         let mut out = Vec::new();
         write_object(&mut out, raw_object.raw_tuples()).unwrap();
         let saved_object = read_object(&mut ByteReader::new(Cursor::new(out))).unwrap();
-        assert_eq!(raw_object.raw_tuples(), &saved_object);
+        assert_eq!(raw_object.raw_tuples().iter().cloned().collect::<Vec<ByteTuple>>(), saved_object);
     }
 }

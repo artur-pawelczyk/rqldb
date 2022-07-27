@@ -73,8 +73,6 @@ impl<'a> Shell<'a> {
         if cmd.is_empty() {
         } else if cmd == "save" {
             self.persist.write(&self.db).unwrap();
-        } else if cmd == "stat" {
-            self.db.print_statistics();
         } else if cmd.starts_with("create") {
             let command = match parse_command(cmd) {
                 Ok(x) => x,

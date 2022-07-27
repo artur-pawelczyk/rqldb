@@ -2,7 +2,7 @@ use std::cell::{RefCell, Ref, RefMut};
 use std::collections::HashSet;
 use std::marker::PhantomData;
 
-use crate::index::{Index, Op};
+use crate::idmap::{IdMap, HashIdMap, InsertResult, IdMapIter, KeyExtractor};
 use crate::plan::{Contents, Attribute, Filter, Plan, Finisher};
 use crate::schema::Relation;
 use crate::tuple::Tuple;
@@ -15,14 +15,16 @@ pub struct Database<'a> {
     objects: Vec<RefCell<Object<'a>>>,
 }
 
+type ByteCell = Vec<u8>;
+type ByteTuple = Vec<ByteCell>;
+
+#[allow(dead_code)]
 struct Object<'a> {
-    tuples: Vec<ByteTuple>,
+    tuples: Box<dyn IdMap<ByteTuple>>,
+    key: Option<usize>,
     removed_ids: HashSet<usize>,
-    index: Index,
     marker: PhantomData<&'a ()>,
 }
-
-type ByteTuple = Vec<Vec<u8>>;
 
 impl<'a> Object<'a> {
     fn temporary(byte_tuple: ByteTuple) -> Self {
@@ -32,42 +34,64 @@ impl<'a> Object<'a> {
     }
 
     fn from_table(table: &Relation) -> Self {
+        let indexed_column = table.indexed_column();
+        let tuples: Box<dyn IdMap<ByteTuple>> = if let Some(col) = indexed_column {
+            Box::new(HashIdMap::with_key_extractor(TupleKeyExtractor(col.pos())))
+        } else {
+            Box::new(HashIdMap::new())
+        };
+        
         Self{
-            tuples: Vec::new(),
+            tuples,
             removed_ids: HashSet::new(),
-            index: table.indexed_column().map(|col| Index::single_cell(&[], col.pos())).unwrap_or_else(|| Index::new(&[])),
+            key: table.indexed_column().map(|col| col.pos()),
             marker: PhantomData,
         }
     }
 
     fn recover(snapshot: Vec<ByteTuple>, table: &Relation) -> Self {
-        let index = table.indexed_column()
-            .map(|col| Index::single_cell(&snapshot, col.pos()))
-            .unwrap_or_else(|| Index::new(&snapshot));
+        if let Some(key_col) = table.indexed_column() {
+            let key = key_col.pos();
 
-        Self{
-            tuples: snapshot,
-            removed_ids: HashSet::new(),
-            index,
-            marker: PhantomData,
+            Self{
+                tuples: Box::new(HashIdMap::from_with_key_extractor(snapshot, TupleKeyExtractor(key))),
+                removed_ids: HashSet::new(),
+                key: Some(key),
+                marker: PhantomData,
+            }
+
+        } else {
+            Self{
+                tuples: Box::new(HashIdMap::from(snapshot)),
+                removed_ids: HashSet::new(),
+                key: None,
+                marker: PhantomData,
+            }            
         }
+
+
     }
 
     fn add_tuple(&mut self, tuple: &Tuple) -> bool {
-        match self.index.on(&self.tuples).insert(tuple.as_bytes()) {
-            Op::Insert(id) => {
-                self.tuples.insert(id, tuple.as_bytes().clone());
-                true
-            }
-            Op::Replace(id) => {
-                let _ = std::mem::replace(&mut self.tuples[id], tuple.as_bytes().clone());
-                true
-            }
+        match self.tuples.insert(tuple.as_bytes().to_vec()) {
+            InsertResult::Added(_) => true,
+            InsertResult::Replaced(_) => false,
         }
+
+        // match self.key_index.on(&self.tuples).insert(tuple.as_bytes()) {
+        //     Op::Insert(id) => {
+        //         self.tuples.insert(id, tuple.as_bytes().clone());
+        //         true
+        //     }
+        //     Op::Replace(id) => {
+        //         let _ = std::mem::replace(&mut self.tuples[id], tuple.as_bytes().clone());
+        //         true
+        //     }
+        // }
 
     }
 
-    fn iter(&self) -> std::slice::Iter<ByteTuple> {
+    fn iter(&'a self) -> IdMapIter<'a, ByteTuple> {
         self.tuples.iter()
     }
 
@@ -79,9 +103,9 @@ impl<'a> Object<'a> {
 impl<'a> Default for Object<'a> {
     fn default() -> Self {
         Object{
-            tuples: vec![],
+            tuples: Box::new(HashIdMap::new()),
             removed_ids: HashSet::new(),
-            index: Index::new(&[]),
+            key: None,
             marker: PhantomData,
         }
     }
@@ -196,13 +220,12 @@ impl<'obj> Database<'obj> {
         let new_obj = Object::recover(snapshot, &table);
         let _ = std::mem::replace(&mut self.objects[id], RefCell::new(new_obj));
     }
+}
 
-    pub fn print_statistics(&self) {
-        for rel in &self.schema.relations {
-            let obj = self.objects.get(rel.id).unwrap().borrow();
-            println!("table {} index statistics", rel.name);
-            obj.index.print_statistics();
-        }
+struct TupleKeyExtractor(usize);
+impl KeyExtractor<ByteTuple, ByteCell> for TupleKeyExtractor {
+    fn extract<'a>(&self, tuple: &'a ByteTuple) -> &'a ByteCell {
+        &tuple[self.0]
     }
 }
 
@@ -216,7 +239,7 @@ enum ObjectView<'a> {
 }
 
 impl<'a> ObjectView<'a> {
-    fn iter(&self) -> std::slice::Iter<ByteTuple> {
+    fn iter(&'a self) -> IdMapIter<'a, ByteTuple> {
         match self {
             Self::Ref(o) => o.iter(),
             Self::Val(o) => o.iter(),
@@ -281,8 +304,8 @@ pub struct RawObjectView<'a> {
 }
 
 impl<'a> RawObjectView<'a> {
-    pub fn raw_tuples(&self) -> &[ByteTuple] {
-        &self.object.tuples
+    pub fn raw_tuples(&'a self) -> &'a dyn IdMap<ByteTuple> {
+        self.object.tuples.as_ref()
     }
 }
     
@@ -467,7 +490,7 @@ mod tests {
         let table = db.schema.find_relation("document").unwrap().clone();
 
         db.execute_plan(Plan::insert(&table, &["1".to_string(), "one".to_string()])).unwrap();
-        let snapshot = db.raw_object("document").unwrap().raw_tuples().to_vec();
+        let snapshot = db.raw_object("document").unwrap().raw_tuples().iter().cloned().collect();
 
         db.execute_plan(Plan::insert(&table, &["2".to_string(), "two".to_string()])).unwrap();
         let all = db.execute_plan(Plan::scan(&table)).unwrap();
