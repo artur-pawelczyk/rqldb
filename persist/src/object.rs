@@ -25,9 +25,9 @@ pub(crate) fn read_object<R: Read>(reader: &mut ByteReader<R>) -> Result<Vec<Byt
 
     let mut tuples = Vec::with_capacity(n_tuples);
     for _ in 0..n_tuples {
-        let n_cells = reader.read_u32()?;
+        let n_cells = reader.read_u32()? as usize;
 
-        let mut tuple = Vec::new();
+        let mut tuple = Vec::with_capacity(n_cells);
         for _ in 0..n_cells {
             let n_bytes = reader.read_u32()? as usize;
             let cell = reader.read_bytes(n_bytes)?;

@@ -113,7 +113,7 @@ impl Index {
     }
 
     fn load_factor(&self) -> f32 {
-        (self.buckets.iter().filter(|node| !node.is_empty()).count() as f32) / (self.buckets.len() as f32)
+        (self.len as f32) / (self.buckets.len() as f32)
     }
 
     pub(crate) fn on<'a>(&'a mut self, tuples: &'a [ByteTuple]) -> IndexInsertion<'a> {

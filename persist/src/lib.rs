@@ -6,7 +6,6 @@ use rqldb::Database;
 use rqldb::schema::Schema;
 use schema::{write_schema, read_schema};
 
-use std::cmp::min;
 use std::fs::{File, OpenOptions};
 use std::io::{self, Cursor, ErrorKind};
 use std::io::BufRead;
@@ -91,7 +90,7 @@ impl Persist for FilePersist {
 
     fn read<'a>(&self, db: Database<'a>) -> Result<Database<'a>, Error> {
         match File::open(self.path.clone()) {
-            Ok(f) => Ok(read_db(f)?),
+            Ok(f) => Ok(read_db(f).unwrap()),
             Err(e) if e.kind() == ErrorKind::NotFound => Ok(db),
             Err(e) => return Err(e.into()),
 
@@ -152,11 +151,11 @@ pub fn write_db<W: Write>(writer: &mut W, db: &Database) -> Result<(), Error> {
 
 pub fn read_db<'a, R: Read>(reader: R) -> Result<Database<'a>, Error> {
     let mut reader = ByteReader::new(reader);
-    let schema_len = reader.peek_i32()? as usize;
-    let schema_bytes = reader.read_bytes(schema_len)?;
+    let schema_len = reader.peek_i32().unwrap() as usize;
+    let schema_bytes = reader.read_bytes(schema_len).unwrap();
 
     let mut schema = Schema::default();
-    let mut tables = read_schema(Cursor::new(schema_bytes))?;
+    let mut tables = read_schema(Cursor::new(schema_bytes)).unwrap();
     tables.sort_by_key(|x| x.id);
     for table in tables {
         table.columns.iter().fold(schema.create_table(&table.name), |acc, col| {
@@ -171,8 +170,8 @@ pub fn read_db<'a, R: Read>(reader: R) -> Result<Database<'a>, Error> {
     let mut db = Database::with_schema(schema);
 
     let mut object_id = 0usize;
-    while reader.has_some()? {
-        db.recover_object(object_id, read_object(&mut reader)?);
+    while reader.has_some().unwrap() {
+        db.recover_object(object_id, read_object(&mut reader).unwrap());
         object_id += 1;
     }
 
@@ -197,24 +196,20 @@ impl<R: Read> ByteReader<R> {
 
     pub(crate) fn read_u32(&mut self) -> io::Result<i32> {
         const LEN: usize = u32::BITS as usize / 8;
-        let buf = self.reader.fill_buf()?;
-        let bytes: [u8; LEN] = buf[0..LEN].try_into().unwrap();
-        self.reader.consume(LEN);
-        Ok(i32::from_le_bytes(bytes))
+        let mut buf = [0u8; LEN];
+        self.reader.read_exact(&mut buf).unwrap();
+        Ok(i32::from_le_bytes(buf))
     }
 
     pub(crate) fn read_bytes(&mut self, size: usize) -> io::Result<Vec<u8>> {
-        let mut out: Vec<u8> = Vec::with_capacity(size);
-        while out.len() < size {
-            out.extend(self.reader.fill_buf()?);
-            self.reader.consume(min(size, out.len()));
-        }
+        let mut out: Vec<u8> = vec![0; size];
+        self.reader.read_exact(&mut out).unwrap();
 
-        Ok(out.into_iter().take(size).collect())
+        Ok(out)
     }
 
     pub(crate) fn has_some(&mut self) -> io::Result<bool> {
-        Ok(!self.reader.fill_buf()?.is_empty())
+        Ok(!self.reader.fill_buf().unwrap().is_empty())
     }
 }
 
