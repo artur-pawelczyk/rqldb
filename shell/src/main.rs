@@ -32,14 +32,14 @@ fn main() {
         let mut file = File::open(Path::new(&path)).unwrap();
         file.read_to_string(&mut contents).unwrap();
         for line in contents.split('\n') {
-            shell.handle_command(line.trim());
+            shell.handle_command(line.trim(), false);
         }
     }
 
     let mut editor = Editor::<()>::new();
     loop {
         match editor.readline("query> ") {
-            Ok(line) => shell.handle_command(&line),
+            Ok(line) => shell.handle_command(&line, true),
             Err(e) => { println!("{:?}", e); break; }
         }
     }
@@ -69,7 +69,7 @@ impl<'a> Shell<'a> {
         instance.restore().unwrap()
     }
 
-    fn handle_command(&mut self, cmd: &str) {
+    fn handle_command(&mut self, cmd: &str, output: bool) {
         if cmd.is_empty() {
         } else if cmd == "save" {
             self.persist.write(&self.db).unwrap();
@@ -88,7 +88,7 @@ impl<'a> Shell<'a> {
             };
 
             match self.db.execute_query(&query) {
-                Result::Ok(response) => print_result(&response),
+                Result::Ok(response) => if output { print_result(&response) },
                 Result::Err(err) => println!("{}", err),
             }
         }
