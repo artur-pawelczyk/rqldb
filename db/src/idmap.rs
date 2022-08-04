@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::rc::Rc;
-use std::hash::Hash;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 pub trait IdMap<T>
 where T: Eq + Hash
@@ -31,8 +31,8 @@ pub(crate) struct HashIdMap<T, K>
 where T: Eq + Hash,
       K: Eq + Hash,
 {
-    inner: Vec<Rc<T>>,
-    hash: HashMap<Rc<T>, usize>,
+    inner: Vec<T>,
+    hash: HashMap<u64, Vec<usize>>,
     key_extractor: Box<dyn KeyExtractor<T, K>>,
 }
 
@@ -48,9 +48,9 @@ impl<T: Eq + Hash> HashIdMap<T, T> {
     pub(crate) fn from(source: Vec<T>) -> Self {
         let mut map = Self::new();
         for (id, val) in source.into_iter().enumerate() {
-            let r = Rc::new(val);
-            map.hash.insert(Rc::clone(&r), id);
-            map.inner.push(r);
+            let h = hash(&val);
+            map.inner.insert(id, val);
+            map.hash.entry(h).and_modify(|v| v.push(id)).or_insert_with(|| vec![id]);
         }
 
         map
@@ -73,16 +73,24 @@ where T: Eq + Hash,
     pub(crate) fn from_with_key_extractor(source: Vec<T>, e: impl KeyExtractor<T, K> + 'static) -> Self {
         let mut map = Self::with_key_extractor(e);
         for (id, val) in source.into_iter().enumerate() {
-            let r = Rc::new(val);
-            map.hash.insert(Rc::clone(&r), id);
-            map.inner.push(r);
+            let h = hash(&val);
+            map.inner.insert(id, val);
+            map.hash.entry(h).and_modify(|v| v.push(id)).or_insert_with(|| vec![id]);
         }
 
         map
     }
 
-    fn find_impl(&self, key: &K) -> Option<usize> {
-        self.inner.iter().position(|v| self.extract_key(v) == key)
+    fn find_id(&self, val: &T) -> Option<usize> {
+        let key = self.extract_key(val);
+        let key_hash = hash(key);
+        self.hash.get(&key_hash)?.iter().find(|id| {
+            if let Some(v) = self.inner.get(**id) {
+                key == self.extract_key(v)
+            } else {
+                false
+            }
+        }).map(|x| *x)
     }
 
     fn extract_key<'a>(&self, val: &'a T) -> &'a K {
@@ -99,26 +107,35 @@ impl<T, K> IdMap<T> for HashIdMap<T, K>
           K: Eq + Hash,
 {
     fn insert(&mut self, val: T) -> InsertResult {
-        let key = self.key_extractor.extract(&val);
-        if let Some(id) = self.find_impl(key) {
-            let _ = std::mem::replace(&mut self.inner[id], Rc::new(val));
+        if let Some(id) = self.find_id(&val) {
+            let _ = std::mem::replace(&mut self.inner[id], val);
             InsertResult::Replaced(id)
         } else {
             let id = self.inner.len();
-            let r = Rc::new(val);
-            self.hash.insert(Rc::clone(&r), id);
-            self.inner.push(r);
+            let h = hash(&self.extract_key(&val));
+            self.inner.insert(id, val);
+            self.hash.entry(h).and_modify(|v| v.push(id)).or_insert_with(|| vec![id]);
             InsertResult::Added(id)
         }
     }
 
     fn get(&self, id: usize) -> Option<&T> {
-        self.inner.get(id).map(|x| x.as_ref())
+        self.inner.get(id)
     }
 
     fn lookup_value(&self, val: &T) -> Option<usize> {
-        self.hash.get(val).copied()
-    }    
+        self.hash.get(&hash(&val))
+            .and_then(|v| {
+                v.iter().find(|id| {
+                    let a = unsafe {
+                        self.inner.get_unchecked(**id)
+                    };
+
+                    a == val
+                })
+            })
+            .map(|x| *x)
+    }
 
     fn iter(&self) -> IdMapIter<T> {
         IdMapIter{
@@ -130,7 +147,7 @@ impl<T, K> IdMap<T> for HashIdMap<T, K>
 pub struct IdMapIter<'a, T>
 where T: Eq + Hash,
 {
-    inner: std::slice::Iter<'a, Rc<T>>,
+    inner: std::slice::Iter<'a, T>,
 }
 
 #[allow(dead_code)]
@@ -140,7 +157,7 @@ where T: Eq + Hash,
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next().map(|x| x.as_ref())
+        self.inner.next()
     }
 }
 
@@ -155,10 +172,11 @@ impl<T> KeyExtractor<T, T> for IdentityExtractor {
     }
 }
 
-// struct FnKeyExtractor;
-// impl<A, B> KeyExtractor<A, B> for FnKeyExtractor {
-    
-// }
+fn hash<T: Hash>(x: &T) -> u64 {
+    let mut hasher = DefaultHasher::default();
+    x.hash(&mut hasher);
+    hasher.finish()
+}
 
 #[cfg(test)]
 mod tests {
