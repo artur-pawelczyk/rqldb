@@ -1,29 +1,119 @@
 #[derive(Clone, Debug, PartialEq)]
-pub enum Token {
-    Symbol(String),
-    SymbolWithType(String, String),
-    SymbolWithKeyType(String, String),
+pub enum Token<'a> {
+    Symbol(&'a str),
+    SymbolWithType(&'a str, &'a str),
+    SymbolWithKeyType(&'a str, &'a str),
     Pipe,
 }
 
-pub struct Tokenizer {
-    tokens: Vec<Token>,
-    pos: usize,
+pub struct Tokenizer<'a> {
+    source: &'a str,
 }
 
-impl Tokenizer {
-    pub fn from_str(source: &str) -> Self {
-        Self{ tokens: tokenize(source).unwrap(), pos: 0 }
+impl<'a> Tokenizer<'a> {
+    pub fn from_str(source: &'a str) -> Self {
+        Self{ source }
     }
 
-    pub fn next(&mut self) -> Option<&Token> {
-        let next = self.tokens.get(self.pos);
-        self.pos += 1;
-        next
+    pub fn next_2(&mut self) -> Option<Token> {
+        todo!()
     }
 }
 
-impl Token {
+impl<'a> Iterator for Tokenizer<'a> {
+    type Item = Token<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut chars = self.source.chars();
+
+        while let Some(ch) = chars.next() {
+            if ch == '|' {
+                self.source = &self.source[1..];
+                return Some(Token::Pipe)
+            } else if ch == '"' {
+                if let Some(s) = read_string(&self.source) {
+                    self.source = &self.source[s.len()+2..];
+                    return Some(s)
+                }
+            } else if ch.is_whitespace() {
+                self.source = &self.source[1..];
+            } else {
+                if let Some(sym) = read_symbol(&self.source) {
+                    self.source = &self.source[sym.len()..];
+                    return Some(sym)
+                } else {
+                    return None
+                }
+            }
+        }
+
+        None
+    }
+}
+
+fn read_symbol<'a>(source: &'a str) -> Option<Token<'a>> {
+    let part = read_util_whitespace(source);
+    let mut chars = part.char_indices();
+
+    while let Some((pos, ch)) = chars.next() {
+        if ch == ':' {
+            let name_end = pos;
+            if chars.next().map(|(_, ch)| ch) == Some(':') {
+                while let Some((pos, ch)) = chars.next() {
+                    if ch == ':' {
+                        let type_end = pos;
+                        if chars.next().map(|(_, ch)| ch) == Some(':') {
+                            return Some(Token::SymbolWithKeyType(&part[0..name_end], &part[name_end+2..type_end]));
+                        }
+                    }
+                }
+
+                return Some(Token::SymbolWithType(&part[0..name_end], &part[name_end+2..]))
+            }
+        }
+    }
+
+    if part.is_empty() {
+        None
+    } else {
+        Some(Token::Symbol(part))
+    }
+}
+
+fn read_string<'a>(source: &'a str) -> Option<Token<'a>> {
+    if source.chars().next() != Some('"') {
+        return None
+    }
+    
+    for (pos, ch) in source.char_indices().skip(1) {
+        if ch == '"' {
+            return Some(Token::Symbol(&source[1..pos]))
+        }
+    }
+
+    None
+}
+
+fn read_util_whitespace(source: &str) -> &str {
+    for (pos, ch) in source.char_indices() {
+        if ch.is_whitespace() {
+            return &source[0..pos];
+        }
+    }
+
+    source
+}
+
+impl<'a> Token<'a> {
+    fn len(&self) -> usize {
+        match self {
+            Token::Symbol(x) => x.len(),
+            Token::SymbolWithType(x, y) => x.len() + "::".len() + y.len(),
+            Token::SymbolWithKeyType(x, y) => x.len() + "::".len() + y.len() + "::KEY".len(),
+            Token::Pipe => "|".len(),
+        }
+    }
+
     pub fn to_string(&self) -> String {
         match self {
             Token::Symbol(x) => x.to_string(),
@@ -34,125 +124,6 @@ impl Token {
     }
 }
 
-struct Scanner {
-    chars: Vec<char>,
-    pos: usize,
-}
-
-impl Scanner {
-    fn from_str(source: &str) -> Self {
-        Self{ chars: source.chars().collect(), pos: 0 }
-    }
-
-    fn next(&mut self) -> Option<char> {
-        let next = self.chars.get(self.pos).copied();
-        self.pos += 1;
-        next
-    }
-
-    fn push_back(&mut self) {
-        if self.pos > 0 {
-            self.pos -= 1;
-        }
-    }
-
-    fn expect(&mut self, expected: char) -> bool {
-        if let Some(ch) = self.next() {
-            ch == expected
-        } else {
-            false
-        }
-    }
-
-    fn expect_str(&mut self, expected: &str) -> bool {
-        expected.chars().all(|c| self.expect(c))
-    }
-}
-
-fn tokenize(source: &str) -> Option<Vec<Token>> {
-    let mut tokens = vec![];
-    let mut scanner = Scanner::from_str(source);
-    while let Some(ch) = scanner.next() {
-        if ch == '|' {
-            tokens.push(Token::Pipe);
-        } else if ch == '"' {
-            scanner.push_back();
-            tokens.push(read_string(&mut scanner)?);
-        } else if !ch.is_whitespace() {
-            scanner.push_back();
-            tokens.push(read_symbol(&mut scanner)?);
-        }
-    }
-
-    Some(tokens)
-}
-
-fn read_symbol(scanner: &mut Scanner) -> Option<Token> {
-    let mut s = String::new();
-    while let Some(ch) = scanner.next() {
-        if ch == ':' {
-            if scanner.expect(':') {
-                return match read_type(scanner) {
-                    (Some(t), false) => Some(Token::SymbolWithType(s, t)),
-                    (Some(t), true) => Some(Token::SymbolWithKeyType(s, t)),
-                    _ => None,
-                }
-            } else {
-                return None
-            }
-        } else if ch.is_whitespace() {
-            break;
-        } else {
-            s.push(ch);
-        }
-    }
-
-    assert!(!s.is_empty());
-    Some(Token::Symbol(s))
-}
-
-fn read_type(scanner: &mut Scanner) -> (Option<String>, bool) {
-    let mut s = String::new();
-
-    while let Some(ch) = scanner.next() {
-        if ch.is_alphanumeric() {
-            s.push(ch)
-        } else if ch == ':' {
-            if scanner.expect_str(":KEY") {
-                return (Some(s), true)
-            } else {
-                return (None, false)
-            }
-        } else if ch.is_whitespace() {
-            break
-        } else {
-            return (None, false)
-        }
-    }
-
-    assert!(!s.is_empty());
-    (Some(s), false)
-}
-
-fn read_string(scanner: &mut Scanner) -> Option<Token> {
-    let mut s = String::new();
-    if scanner.expect('"') {
-        while let Some(ch) = scanner.next() {
-            if ch == '"' {
-                break;
-            } else {
-                s.push(ch);
-            }
-        }
-    }
-
-    if s.is_empty() {
-        None
-    } else {
-        Some(Token::Symbol(s))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -160,27 +131,38 @@ mod tests {
     #[test]
     fn test_tokenize() {
         assert_eq!(tokenize("abc def ghi").unwrap(), vec![symbol("abc"), symbol("def"), symbol("ghi")]);
-        assert_eq!(tokenize("abc:NUMBER"), None);
         assert_eq!(tokenize("abc::NUMBER").unwrap(), vec![symbol_with_type("abc", "NUMBER")]);
+        assert_eq!(tokenize("abc:NUMBER").unwrap(), vec![symbol("abc:NUMBER")]);
         assert_eq!(tokenize("abc::NUMBER::KEY").unwrap(), vec![symbol_with_key_type("abc", "NUMBER")]);
         assert_eq!(tokenize("abc | def").unwrap(), vec![symbol("abc"), pipe(), symbol("def")]);
         assert_eq!(tokenize("create_table abc::TEXT").unwrap(), vec![symbol("create_table"), symbol_with_type("abc", "TEXT")]);
+        assert_eq!(tokenize("document.id document.name").unwrap(), vec![symbol("document.id"), symbol("document.name")]);
         assert_eq!(tokenize(r#"a "b cd" e"#).unwrap(), vec![symbol("a"), symbol("b cd"), symbol("e")]);
     }
 
-    fn symbol(s: &str) -> Token {
-        Token::Symbol(s.to_string())
+    fn tokenize<'a>(source: &'a str) -> Option<Vec<Token<'a>>> {
+        let mut tokenizer = Tokenizer::from_str(source);
+        let mut v = Vec::new();
+        while let Some(t) = tokenizer.next() {
+            v.push(t);
+        }
+
+        Some(v)
     }
 
-    fn symbol_with_type(s: &str, t: &str) -> Token {
-        Token::SymbolWithType(s.to_string(), t.to_string())
+    fn symbol<'a>(s: &'a str) -> Token<'a> {
+        Token::Symbol(s)
     }
 
-    fn symbol_with_key_type(s: &str, t: &str) -> Token {
-        Token::SymbolWithKeyType(s.to_string(), t.to_string())
+    fn symbol_with_type<'a>(s: &'a str, t: &'a str) -> Token<'a> {
+        Token::SymbolWithType(s, t)
     }
 
-    fn pipe() -> Token {
+    fn symbol_with_key_type<'a>(s: &'a str, t: &'a str) -> Token<'a> {
+        Token::SymbolWithKeyType(s, t)
+    }
+
+    fn pipe<'a>() -> Token<'a> {
         Token::Pipe
     }
 }
