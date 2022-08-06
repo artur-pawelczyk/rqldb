@@ -12,21 +12,28 @@ use crate::{dsl, Cell};
 #[derive(Default)]
 pub struct Database<'a> {
     schema: Schema,
-    objects: Vec<RefCell<Object<'a>>>,
+    objects: Vec<RefCell<IndexedObject<'a>>>,
 }
 
 type ByteCell = Vec<u8>;
 type ByteTuple = Vec<ByteCell>;
 
+trait Object {
+    fn add_tuple(&mut self, tuple: &Tuple) -> bool;
+    fn iter<'a>(&'a self) -> IdMapIter<'a, ByteTuple>;
+    fn remove_tuples(&mut self, ids: &[usize]);
+    fn recover(snapshot: Vec<ByteTuple>, table: &Relation) -> Self;
+}
+
 #[allow(dead_code)]
-struct Object<'a> {
+struct IndexedObject<'a> {
     tuples: Box<dyn IdMap<ByteTuple>>,
     key: Option<usize>,
     removed_ids: HashSet<usize>,
     marker: PhantomData<&'a ()>,
 }
 
-impl<'a> Object<'a> {
+impl<'a> IndexedObject<'a> {
     fn temporary(byte_tuple: ByteTuple) -> Self {
         let mut obj = Self::default();
         obj.add_tuple(&Tuple::from_bytes(&byte_tuple));
@@ -48,6 +55,23 @@ impl<'a> Object<'a> {
             marker: PhantomData,
         }
     }
+}
+
+impl<'a> Object for IndexedObject<'a> {
+    fn add_tuple(&mut self, tuple: &Tuple) -> bool {
+        match self.tuples.insert(tuple.as_bytes().to_vec()) {
+            InsertResult::Added(_) => true,
+            InsertResult::Replaced(_) => false,
+        }
+    }
+
+    fn iter<'b>(&'b self) -> IdMapIter<'b, ByteTuple> {
+        self.tuples.iter()
+    }
+
+    fn remove_tuples(&mut self, ids: &[usize]) {
+        self.removed_ids.extend(ids);
+    }
 
     fn recover(snapshot: Vec<ByteTuple>, table: &Relation) -> Self {
         if let Some(key_col) = table.indexed_column() {
@@ -68,41 +92,12 @@ impl<'a> Object<'a> {
                 marker: PhantomData,
             }            
         }
-
-
-    }
-
-    fn add_tuple(&mut self, tuple: &Tuple) -> bool {
-        match self.tuples.insert(tuple.as_bytes().to_vec()) {
-            InsertResult::Added(_) => true,
-            InsertResult::Replaced(_) => false,
-        }
-
-        // match self.key_index.on(&self.tuples).insert(tuple.as_bytes()) {
-        //     Op::Insert(id) => {
-        //         self.tuples.insert(id, tuple.as_bytes().clone());
-        //         true
-        //     }
-        //     Op::Replace(id) => {
-        //         let _ = std::mem::replace(&mut self.tuples[id], tuple.as_bytes().clone());
-        //         true
-        //     }
-        // }
-
-    }
-
-    fn iter(&'a self) -> IdMapIter<'a, ByteTuple> {
-        self.tuples.iter()
-    }
-
-    fn remove_tuples(&mut self, ids: &[usize]) {
-        self.removed_ids.extend(ids);
     }
 }
 
-impl<'a> Default for Object<'a> {
+impl<'a> Default for IndexedObject<'a> {
     fn default() -> Self {
-        Object{
+        IndexedObject{
             tuples: Box::new(HashIdMap::new()),
             removed_ids: HashSet::new(),
             key: None,
@@ -113,7 +108,7 @@ impl<'a> Default for Object<'a> {
 
 impl<'obj> Database<'obj> {
     pub fn with_schema(schema: Schema) -> Self {
-        let objects = schema.relations.iter().map(Object::from_table).map(RefCell::new).collect();
+        let objects = schema.relations.iter().map(IndexedObject::from_table).map(RefCell::new).collect();
 
         Self{
             schema,
@@ -130,7 +125,7 @@ impl<'obj> Database<'obj> {
             }
         }).add();
 
-        self.objects.insert(table.id, RefCell::new(Object::from_table(table)));
+        self.objects.insert(table.id, RefCell::new(IndexedObject::from_table(table)));
     }
 
     pub fn execute_query(&self, query: &dsl::Query) -> Result<QueryResults, &'static str> {
@@ -152,15 +147,15 @@ impl<'obj> Database<'obj> {
             },
             Contents::Tuple(ref values) => {
                 let cells = values.iter().map(|val| cell(val)).collect();
-                ObjectView::Val(Object::temporary(cells))
+                ObjectView::Val(IndexedObject::temporary(cells))
             },
             Contents::IndexScan(_, _) => {
-                ObjectView::Val(Object::temporary(vec![]))
+                ObjectView::Val(IndexedObject::temporary(vec![]))
             },
             _ => todo!()
         };
 
-        let join_sources: Vec<Ref<Object>> = plan.joins.iter().map(|join| self.objects.get(join.source_table().id).unwrap().borrow()).collect();
+        let join_sources: Vec<Ref<IndexedObject>> = plan.joins.iter().map(|join| self.objects.get(join.source_table().id).unwrap().borrow()).collect();
         let mut sink = self.create_sink(&plan);
 
         for (idx, byte_tuple) in source.iter().enumerate() {
@@ -217,7 +212,7 @@ impl<'obj> Database<'obj> {
 
     pub fn recover_object(&mut self, id: usize, snapshot: Vec<ByteTuple>) {
         let table = self.schema.find_relation(id).unwrap();
-        let new_obj = Object::recover(snapshot, &table);
+        let new_obj = IndexedObject::recover(snapshot, &table);
         let _ = std::mem::replace(&mut self.objects[id], RefCell::new(new_obj));
     }
 }
@@ -234,8 +229,8 @@ fn test_filters(filters: &[Filter], tuple: &Tuple) -> bool {
 }
 
 enum ObjectView<'a> {
-    Ref(Ref<'a, Object<'a>>),
-    Val(Object<'a>),
+    Ref(Ref<'a, IndexedObject<'a>>),
+    Val(IndexedObject<'a>),
 }
 
 impl<'a> ObjectView<'a> {
@@ -257,7 +252,7 @@ impl<'a> ObjectView<'a> {
 enum Sink<'a, 'obj> {
     Count(usize),
     Return(Vec<Attribute>, Vec<Vec<Cell>>),
-    Insert(RefMut<'a, Object<'obj>>),
+    Insert(RefMut<'a, IndexedObject<'obj>>),
     Delete(Vec<usize>),
     NoOp,
 }
@@ -273,7 +268,7 @@ impl<'a, 'obj> Sink<'a, 'obj> {
         }
     }
 
-    fn accept_object(&mut self, mut object: RefMut<Object>) {
+    fn accept_object(&mut self, mut object: RefMut<IndexedObject>) {
         if let Self::Delete(ids) = self {
             object.remove_tuples(ids);
         }
@@ -300,7 +295,7 @@ fn tuple_to_cells(attrs: &[Attribute], tuple: &Tuple) -> Vec<Cell> {
 }
 
 pub struct RawObjectView<'a> {
-    object: Ref<'a, Object<'a>>,
+    object: Ref<'a, IndexedObject<'a>>,
 }
 
 impl<'a> RawObjectView<'a> {
