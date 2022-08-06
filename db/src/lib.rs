@@ -1,4 +1,4 @@
-pub mod db;
+ pub mod db;
 pub mod dsl;
 pub mod parse;
 pub mod plan;
@@ -6,6 +6,7 @@ pub mod schema;
 pub mod tokenize;
 pub mod tuple;
 pub mod idmap;
+pub mod object;
 
 use std::fmt;
 use std::cmp::Ordering;
