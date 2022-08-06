@@ -1,6 +1,6 @@
 use std::cell::{RefCell, Ref, RefMut};
 
-use crate::idmap::{IdMapIter, IdMap};
+use crate::idmap::IdMap;
 use crate::object::IndexedObject;
 use crate::plan::{Contents, Attribute, Filter, Plan, Finisher};
 use crate::tuple::Tuple;
@@ -138,7 +138,7 @@ enum ObjectView<'a> {
 }
 
 impl<'a> ObjectView<'a> {
-    fn iter(&'a self) -> IdMapIter<'a, ByteTuple> {
+    fn iter(&'a self) -> Box<dyn Iterator<Item = &'a ByteTuple> + 'a> {
         match self {
             Self::Ref(o) => o.iter(),
             Self::Val(o) => o.iter(),

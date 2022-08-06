@@ -1,13 +1,13 @@
 use std::{collections::HashSet, marker::PhantomData};
 
-use crate::{tuple::Tuple, schema::Relation, idmap::{IdMapIter, IdMap, HashIdMap, InsertResult, KeyExtractor}};
+use crate::{tuple::Tuple, schema::Relation, idmap::{IdMap, HashIdMap, InsertResult, KeyExtractor}};
 
 type ByteCell = Vec<u8>;
 type ByteTuple = Vec<ByteCell>;
 
 pub(crate) trait Object {
     fn add_tuple(&mut self, tuple: &Tuple) -> bool;
-    fn iter<'a>(&'a self) -> IdMapIter<'a, ByteTuple>;
+    fn iter<'a>(&'a self) -> Box<dyn Iterator<Item = &'a ByteTuple> + 'a>;
     fn remove_tuples(&mut self, ids: &[usize]);
     fn recover(snapshot: Vec<ByteTuple>, table: &Relation) -> Self;
 }
@@ -52,8 +52,8 @@ impl<'a> Object for IndexedObject<'a> {
         }
     }
 
-    fn iter<'b>(&'b self) -> IdMapIter<'b, ByteTuple> {
-        self.tuples.iter()
+    fn iter<'b>(&'b self) -> Box<dyn Iterator<Item = &'b ByteTuple> + 'b> {
+        Box::new(self.tuples.iter())
     }
 
     fn remove_tuples(&mut self, ids: &[usize]) {
