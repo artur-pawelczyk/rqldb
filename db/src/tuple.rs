@@ -18,7 +18,7 @@ impl<'a> Tuple<'a> {
     }
 
     pub(crate) fn cell_by_attr(&self, attr: &Attribute) -> Cell {
-        self.cell(attr.pos, attr.kind).unwrap()
+        self.cell(attr.pos(), attr.kind()).unwrap()
     }
 
     pub(crate) fn cell(&self, pos: usize, kind: Type) -> Option<Cell> {

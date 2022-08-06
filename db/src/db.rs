@@ -284,7 +284,7 @@ impl<'a, 'obj> Sink<'a, 'obj> {
             Self::Count(count) => QueryResults::count(count as u32),
             Self::Return(attributes, results) => {
                 QueryResults{
-                    attributes: attributes.into_iter().map(|attr| attr.name).collect(),
+                    attributes: attributes.into_iter().map(|attr| attr.into_name()).collect(),
                     results,
                 }
             }
@@ -296,7 +296,7 @@ impl<'a, 'obj> Sink<'a, 'obj> {
 }
 
 fn tuple_to_cells(attrs: &[Attribute], tuple: &Tuple) -> Vec<Cell> {
-    attrs.iter().map(|attr| Cell::from_bytes(attr.kind, tuple.cell_by_attr(attr).bytes())).collect()
+    attrs.iter().map(|attr| Cell::from_bytes(attr.kind(), tuple.cell_by_attr(attr).bytes())).collect()
 }
 
 pub struct RawObjectView<'a> {

@@ -88,16 +88,15 @@ impl<'a> Join<'a> {
         self.joinee_attributes.iter()
             .chain(self.joiner_attributes.iter())
             .enumerate()
-            .map(|(pos, attr)| Attribute{ pos, name: attr.name.to_string(), kind: attr.kind })
+            .map(|(pos, attr)| Attribute::Named(pos, attr.name(), attr.kind()))
             .collect()
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Attribute {
-    pub pos: usize,
-    pub name: String,
-    pub kind: Type,
+pub(crate) enum Attribute {
+    Numbered(usize, Type),
+    Named(usize, String, Type),
 }
 
 #[derive(Default)]
@@ -121,15 +120,18 @@ impl<'a> Default for Contents<'a> {
 
 impl Attribute {
     pub fn numbered(num: usize) -> Attribute {
-        Attribute{ pos: num, name: num.to_string(), kind: Type::default() }
+        Attribute::Numbered(num, Type::default())
     }
 
     pub fn named(pos: usize, name: &str) -> Attribute {
-        Attribute{ pos, name: name.to_string(), kind: Type::default() }
+        Attribute::Named(pos, name.to_string(), Type::default() )
     }
 
     pub fn with_type(self, kind: Type) -> Attribute {
-        Attribute{ pos: self.pos, name: self.name, kind }
+        match self {
+            Self::Numbered(pos, _) => Self::Numbered(pos, kind),
+            Self::Named(pos, name, _) => Self::Named(pos, name, kind),
+        }
     }
 
     fn guess_type(self, value: &str) -> Attribute {
@@ -139,7 +141,44 @@ impl Attribute {
             Type::TEXT
         };
 
-        Attribute{ kind, ..self }
+        self.with_type(kind)
+    }
+
+    pub fn pos(&self) -> usize {
+        match self {
+            Self::Numbered(i, _) => *i,
+            Self::Named(i, _, _) => *i,
+        }
+    }
+
+    pub fn into_name(self) -> String {
+        match self {
+            Self::Numbered(i, _) => i.to_string(),
+            Self::Named(_, s, _) => s,
+        }
+    }
+
+    fn name(&self) -> String {
+        match self {
+            Self::Numbered(i, _) => i.to_string(),
+            Self::Named(_, s, _) => s.to_string(),
+        }
+    }
+
+    pub fn kind(&self) -> Type {
+        match self {
+            Self::Numbered(_, t) => *t,
+            Self::Named(_, _, t) => *t,
+        }
+    }
+}
+
+impl PartialEq<str> for Attribute {
+    fn eq(&self, s: &str) -> bool {
+        match self {
+            Self::Numbered(i, _) => s.parse::<usize>().map_or(false, |n| n == *i),
+            Self::Named(_, name, _) => name == s,
+        }
     }
 }
 
@@ -175,7 +214,7 @@ impl<'a> Source<'a> {
 
     fn scan_index(index: Column<'a>, val: u8) -> Self {
         Self{
-            attributes: vec![Attribute{ pos: 0, name: index.as_full_name(), kind: index.kind() }],
+            attributes: vec![Attribute::Named(0, index.as_full_name(), index.kind())],
             contents: Contents::IndexScan(index, val),
         }
     }
@@ -188,7 +227,7 @@ impl<'a> Source<'a> {
                     return Err("Number of attributes in the tuple doesn't match the target table");
                 }
 
-                if zip(&self.attributes, target_types).any(|(attr, expected)| attr.kind != expected) {
+                if zip(&self.attributes, target_types).any(|(attr, expected)| attr.kind() != expected) {
                         return Err("Type incompatible with the target table");
                 }
 
@@ -240,7 +279,7 @@ fn compute_filters<'a>(plan: Plan<'a>, query: &dsl::Query) -> Result<Plan<'a>, &
     let attributes = plan.final_attributes();
     let mut filters = Vec::with_capacity(query.filters.len());
     for dsl_filter in &query.filters {
-        if let Some(attr) = attributes.iter().find(|attr| attr.name == filter_left(dsl_filter)) {
+        if let Some(attr) = attributes.iter().find(|attr| attr == &filter_left(dsl_filter)) {
             let op = filter_operator(dsl_filter);
             filters.push(Filter{
                 attribute: attr.clone(),
@@ -316,8 +355,8 @@ fn compute_joins<'a>(plan: Plan<'a>, schema: &'a Schema, query: &dsl::Query) -> 
 
         let joinee_attributes = table_attributes(joinee_table);
         let joiner_attributes = table_attributes(joiner_table);
-        if let Some(joinee_key) = joinee_attributes.iter().enumerate().find(|(_, a)| a.name == join_source.left).map(|(i,_)| i) {
-            if let Some(joiner_key) = joiner_attributes.iter().enumerate().find(|(_, a)| a.name == join_source.right).map(|(i,_)| i) {
+        if let Some(joinee_key) = joinee_attributes.iter().enumerate().find(|(_, a)| a == &join_source.left).map(|(i,_)| i) {
+            if let Some(joiner_key) = joiner_attributes.iter().enumerate().find(|(_, a)| a == &join_source.right).map(|(i,_)| i) {
                 joins.push(Join{
                     table: joiner_table,
                     joinee_attributes, joiner_attributes,
@@ -336,7 +375,7 @@ fn compute_joins<'a>(plan: Plan<'a>, schema: &'a Schema, query: &dsl::Query) -> 
 
 fn table_attributes(table: &Relation) -> Vec<Attribute> {
     table.columns().peekable()
-        .map(|col| Attribute{ pos: col.pos(), name: col.as_full_name(), kind: col.kind() })
+        .map(|col| Attribute::Named(col.pos(), col.as_full_name(), col.kind()))
         .collect()
 }
 
@@ -355,8 +394,8 @@ mod tests {
         schema.create_table("example").column("id", Type::NUMBER).column("content", Type::TEXT).column("type", Type::NUMBER).add();
 
         let filters = expect_filters(compute_plan(&schema, &dsl::Query::scan("example").filter("example.id", EQ, "1").filter("example.type", EQ, "2")), 2);
-        assert_eq!(filters.get(0).map(|x| x.attribute.pos), Some(0));
-        assert_eq!(filters.get(1).map(|x| x.attribute.pos), Some(2));
+        assert_eq!(filters.get(0).map(|x| x.attribute.pos()), Some(0));
+        assert_eq!(filters.get(1).map(|x| x.attribute.pos()), Some(2));
 
         let failure = compute_plan(&schema, &dsl::Query::scan("example").filter("not-a-column", EQ, "0"));
         assert!(failure.is_err());
@@ -424,7 +463,7 @@ mod tests {
         schema.create_table("type",).column("id", Type::TEXT).column("name", Type::NUMBER).add();
 
         let filter = expect_filter(compute_plan(&schema, &dsl::Query::scan("document").join("type", "document.type_id", "type.id").filter("type.name", EQ, "b")));
-        assert_eq!(filter.attribute.pos, 3);
+        assert_eq!(filter.attribute.pos(), 3);
     }
 
     fn expect_join<'a>(result: Result<Plan<'a>, &str>) -> Join<'a> {
@@ -487,16 +526,16 @@ mod tests {
         schema.create_table("example").indexed_column("id", Type::NUMBER).column("content", Type::TEXT).add();
 
         let source = compute_plan(&schema, &dsl::Query::scan_index("example.id", EQ, "1")).unwrap().source;
-        assert_eq!(source.attributes[0], Attribute{ pos: 0, name: "example.id".to_string(), kind: Type::NUMBER });
+        assert_eq!(source.attributes[0], Attribute::Named(0,"example.id".to_string(), Type::NUMBER));
         assert!(matches!(source.contents, Contents::IndexScan(_, 1)));
     }
 
     fn source_attributes(source: &Source) -> Vec<Type> {
-        source.attributes.iter().map(|attr| attr.kind).collect()
+        source.attributes.iter().map(|attr| attr.kind()).collect()
     }
 
-    fn attribute_names(attrs: &[Attribute]) -> Vec<&str> {
-        attrs.iter().map(|attr| attr.name.as_str()).collect()
+    fn attribute_names(attrs: &[Attribute]) -> Vec<String> {
+        attrs.iter().map(|attr| attr.name()).collect()
     }
 
     fn tuple(cells: &[&str]) -> ByteTuple {
