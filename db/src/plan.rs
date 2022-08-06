@@ -133,8 +133,13 @@ impl Attribute {
     }
 
     fn guess_type(self, value: &str) -> Attribute {
-        let kind = Cell::from_string(value).kind; // TODO: Unnecessary allocation
-        Attribute{ pos: self.pos, name: self.name, kind }
+        let kind = if value.parse::<i32>().is_ok() {
+            Type::NUMBER
+        } else {
+            Type::TEXT
+        };
+
+        Attribute{ kind, ..self }
     }
 }
 
