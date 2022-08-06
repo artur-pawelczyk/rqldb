@@ -51,13 +51,14 @@ impl<'a> Plan<'a> {
 
 pub(crate) struct Filter {
     attribute: Attribute,
-    right: Cell,
-    comp: Box<dyn Fn(&Cell, &Cell) -> bool>,
+    right: Vec<u8>,
+    comp: Box<dyn Fn(&[u8], &[u8]) -> bool>,
 }
 
 impl Filter {
     pub fn matches_tuple(&self, tuple: &Tuple) -> bool {
-        let left = Cell::from_bytes(self.attribute.kind, tuple.cell_by_attr(&self.attribute).bytes());
+        let cell = tuple.cell_by_attr(&self.attribute);
+        let left = cell.bytes();
         (self.comp)(&left, &self.right)
     }
 }
@@ -270,12 +271,12 @@ fn compute_finisher<'a>(plan: Plan<'a>, schema: &'a Schema, query: &dsl::Query) 
     }.map(|finisher| Plan{ finisher, ..plan })
 }
 
-fn right_as_cell(dsl_filter: &dsl::Filter) -> Cell {
+fn right_as_cell(dsl_filter: &dsl::Filter) -> Vec<u8> {
     let right = match dsl_filter {
         dsl::Filter::Condition(_, _, right) => right
     };
     
-    Cell::from_string(right)
+    Cell::from_string(right).into_bytes()
 
 }
 
