@@ -21,7 +21,7 @@ pub fn parse_query(query_str: &str) -> Result<Query, ParseError> {
         match token {
             Token::Symbol(name) => match name {
                 "select_all" => query = query.select_all(),
-                "insert_into" => query = query.insert_into(tokenizer.next().unwrap().to_string().as_str()),
+                "insert_into" => query = query.insert_into(read_symbol(tokenizer.next())?),
                 "filter" => {
                     let left = read_symbol(tokenizer.next())?;
                     let op = read_operator(tokenizer.next())?;
@@ -29,7 +29,7 @@ pub fn parse_query(query_str: &str) -> Result<Query, ParseError> {
                     if let Some(token) = tokenizer.next() {
                         if token != Token::Pipe { return Err(ParseError("Expected end of statement")); }
                     }
-                    query = query.filter(&left, op, &right);
+                    query = query.filter(left, op, right);
                 },
                 "join" => {
                     let table = read_symbol(tokenizer.next())?;
@@ -38,7 +38,7 @@ pub fn parse_query(query_str: &str) -> Result<Query, ParseError> {
                     if let Some(token) = tokenizer.next() {
                         if token != Token::Pipe { return Err(ParseError("Expected end of statement")); }
                     }
-                    query = query.join(&table, &left, &right);
+                    query = query.join(table, left, right);
                 },
                 "count" => {
                     if let Some(token) = tokenizer.next() {
@@ -90,10 +90,10 @@ fn read_operator(t: Option<Token>) -> Result<Operator, ParseError> {
     }
 }
 
-fn read_symbol(t: Option<Token>) -> Result<String, ParseError> {
+fn read_symbol<'a>(t: Option<Token<'a>>) -> Result<&'a str, ParseError> {
     if let Some(token) = t {
         match token {
-            Token::Symbol(name) => Ok(name.to_string()),
+            Token::Symbol(name) => Ok(name),
             _ => Err(ParseError("Expected a symbol"))
         }
     } else {
@@ -102,20 +102,20 @@ fn read_symbol(t: Option<Token>) -> Result<String, ParseError> {
 }
 
 fn read_table_scan<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query, ParseError> {
-    if let Some(table) = tokenizer.next() {
+    if let Some(Token::Symbol(table)) = tokenizer.next() {
         expect_pipe_or_end(tokenizer)?;
-        Ok(Query::scan(&table.to_string())) // TODO: clone not needed
+        Ok(Query::scan(table))
     } else { // TODO: Make sure "scan" has only one argument
         Err(ParseError("'scan' expects a table name"))
     }
 }
 
 fn read_tuple(tokenizer: &mut Tokenizer) -> Result<Query, ParseError> {
-    let mut values: Vec<String> = Vec::new();
+    let mut values: Vec<&str> = Vec::new();
 
     while let Some(token) = tokenizer.next() {
         match token {
-            Token::Symbol(name) => values.push(name.to_string()),
+            Token::Symbol(name) => values.push(name),
             Token::Pipe => break,
             _ => return Err(ParseError("Expected a symbol"))
         }
