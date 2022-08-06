@@ -22,15 +22,12 @@ fn query_single_number(db: &Database, query: &Query) -> Option<i32> {
 fn benchmark_insert(c: &mut Criterion) {
     c.bench_function("insert", |b| b.iter_with_setup(|| {
         let db = create_database();
-        let mut queries = vec![];
-        for i in 1..1000 {
-            queries.push(Query::tuple(&[i.to_string().as_str(), "12", "example_doc", "the content"]).insert_into("document"));
-        }
+        let ids: Vec<String> = (1..1000).map(|i| i.to_string()).collect();
 
-        (db, queries)
-    }, |(db, queries)| {
-        for q in queries {
-            db.execute_query(&q).unwrap();
+        (db, ids)
+    }, |(db, ids)| {
+        for id in ids {
+            db.execute_query(&Query::tuple(&[&id, "12", "example_doc", "the content"]).insert_into("document")).unwrap();
         }
     }));
 }

@@ -18,7 +18,7 @@ impl<'a> Plan<'a> {
     #[cfg(test)]
     pub fn insert(rel: &'a Relation, values: &[String]) -> Self {
         Self{
-            source: Source::from_tuple(values),
+            source: Source::from_tuple(values.to_vec()),
             finisher: Finisher::Insert(rel),
             ..Plan::default()
         }
@@ -141,11 +141,11 @@ impl<'a> Source<'a> {
     fn new(schema: &'a Schema, dsl_source: &dsl::Source) -> Result<Source<'a>, &'static str> {
         match dsl_source {
             dsl::Source::TableScan(name) => {
-                Ok(Self::scan_table(schema.find_relation(name).ok_or("No such table")?))
+                Ok(Self::scan_table(schema.find_relation(*name).ok_or("No such table")?))
             },
 
             dsl::Source::Tuple(values) => {
-                Ok(Self::from_tuple(values))
+                Ok(Self::from_tuple(values.iter().map(|s| s.to_string()).collect()))
             },
             dsl::Source::IndexScan(index, _, val) => {
                 let index = schema.find_column(index).ok_or("No such index")?;
@@ -162,7 +162,7 @@ impl<'a> Source<'a> {
         Source{ attributes, contents: Contents::TableScan(rel) }
     }
 
-    fn from_tuple(values: &[String]) -> Self {
+    fn from_tuple(values: Vec<String>) -> Self {
         let attributes = values.iter().enumerate().map(|(i, val)| Attribute::numbered(i).guess_type(val)).collect();
         Self{ attributes, contents: Contents::Tuple(values.to_vec()) }
     }
@@ -257,12 +257,12 @@ fn compute_filters<'a>(plan: Plan<'a>, query: &dsl::Query) -> Result<Plan<'a>, &
 
 fn compute_finisher<'a>(plan: Plan<'a>, schema: &'a Schema, query: &dsl::Query) -> Result<Plan<'a>, &'static str> {
     match &query.finisher {
-        dsl::Finisher::Insert(name) => schema.find_relation(name).map(Finisher::Insert).ok_or("No such target table"),
+        dsl::Finisher::Insert(name) => schema.find_relation(*name).map(Finisher::Insert).ok_or("No such target table"),
         dsl::Finisher::AllColumns => Ok(Finisher::Return),
         dsl::Finisher::Count => Ok(Finisher::Count),
         dsl::Finisher::Delete => {
             match &query.source {
-                dsl::Source::TableScan(name) => schema.find_relation(name).map(Finisher::Delete).ok_or("No table to delete"),
+                dsl::Source::TableScan(name) => schema.find_relation(*name).map(Finisher::Delete).ok_or("No table to delete"),
                 _ => Err("Illegal delete operation"),
             }
         }
@@ -285,7 +285,7 @@ fn filter_operator(filter: &dsl::Filter) -> dsl::Operator {
     }
 }
 
-fn filter_left(filter: &dsl::Filter) -> &str {
+fn filter_left<'a>(filter: &'a dsl::Filter) -> &'a str {
     match filter {
         dsl::Filter::Condition(left, _, _) => left
     }
@@ -300,10 +300,10 @@ fn compute_joins<'a>(plan: Plan<'a>, schema: &'a Schema, query: &dsl::Query) -> 
     let joinee_table = match &query.source {
         dsl::Source::TableScan(name) => Some(name),
         _ => todo!(),
-    }.and_then(|name| schema.find_relation(name)).ok_or("No such table")?;
+    }.and_then(|name| schema.find_relation(*name)).ok_or("No such table")?;
     
     for join_source in &query.join_sources {
-        let joiner_table = match schema.find_relation(&join_source.table) {
+        let joiner_table = match schema.find_relation(join_source.table) {
             Some(table) => table,
             None => return Err("No such table")
         };

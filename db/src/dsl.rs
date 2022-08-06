@@ -3,39 +3,39 @@ use std::fmt;
 use crate::schema::Type;
 
 #[derive(Default)]
-pub struct Query {
-    pub source: Source,
-    pub join_sources: Vec<JoinSource>,
-    pub filters: Vec<Filter>,
-    pub finisher: Finisher
+pub struct Query<'a> {
+    pub source: Source<'a>,
+    pub join_sources: Vec<JoinSource<'a>>,
+    pub filters: Vec<Filter<'a>>,
+    pub finisher: Finisher<'a>
 }
 
-impl Query {
-    pub fn scan(table: &str) -> Self {
+impl<'a> Query<'a> {
+    pub fn scan(table: &'a str) -> Self {
         Self{
-            source:  Source::TableScan(String::from(table)),
+            source:  Source::TableScan(table),
             ..Self::default()
         }
     }
 
-    pub fn scan_index(index: &str, op: Operator, val: &str) -> Self {
+    pub fn scan_index(index: &'a str, op: Operator, val: &'a str) -> Self {
         Self{
-            source: Source::IndexScan(index.to_string(), op, val.to_string()),
+            source: Source::IndexScan(index, op, val),
             ..Self::default()
         }
     }
 
-    pub fn tuple<T: ToString>(values: &[T]) -> Self {
-        Self{source: Source::Tuple(values.iter().map(|x| x.to_string()).collect()), join_sources: vec![], filters: Vec::new(), finisher: Finisher::AllColumns}
+    pub fn tuple(values: &[&'a str]) -> Self {
+        Self{source: Source::Tuple(values.to_vec()), join_sources: vec![], filters: Vec::new(), finisher: Finisher::AllColumns }
     }
 
-    pub fn join(mut self, table: &str, left: &str, right: &str) -> Self {
-        self.join_sources.push(JoinSource{table: table.to_string(), left: left.to_string(), right: right.to_string()});
+    pub fn join(mut self, table: &'a str, left: &'a str, right: &'a str) -> Self {
+        self.join_sources.push(JoinSource{ table, left, right });
         self
     }
 
-    pub fn filter(mut self, left: &str, op: Operator, right: &str) -> Self {
-        self.filters.push(Filter::Condition(left.to_string(), op, right.to_string()));
+    pub fn filter(mut self, left: &'a str, op: Operator, right: &'a str) -> Self {
+        self.filters.push(Filter::Condition(left, op, right));
         self
     }
 
@@ -44,13 +44,13 @@ impl Query {
         self
     }
 
-    pub fn select(mut self, columns: &[&str]) -> Self {
-        self.finisher = Finisher::Columns(columns.iter().map(|x| x.to_string()).collect());
+    pub fn select(mut self, columns: &[&'a str]) -> Self {
+        self.finisher = Finisher::Columns(columns.to_vec());
         self
     }
 
-    pub fn insert_into(mut self, name: &str) -> Self {
-        self.finisher = Finisher::Insert(name.to_string());
+    pub fn insert_into(mut self, name: &'a str) -> Self {
+        self.finisher = Finisher::Insert(name);
         self
     }
 
@@ -86,7 +86,7 @@ impl Query {
     }
 }
 
-impl fmt::Display for Query {
+impl<'a> fmt::Display for Query<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.print())
     }
@@ -110,15 +110,15 @@ impl Operator {
 }
 
 #[derive(Default)]
-pub enum Source {
+pub enum Source<'a> {
     #[default]
     Nil,
-    TableScan(String),
-    IndexScan(String, Operator, String),
-    Tuple(Vec<String>)
+    TableScan(&'a str),
+    IndexScan(&'a str, Operator, &'a str),
+    Tuple(Vec<&'a str>),
 }
 
-impl Source {
+impl<'a> Source<'a> {
     fn print(&self) -> String {
         match self {
             Source::Nil => "nil".to_string(),
@@ -129,26 +129,26 @@ impl Source {
     }
 }
 
-pub struct JoinSource {
-    pub table: String,
-    pub left: String,
-    pub right: String,
+pub struct JoinSource<'a> {
+    pub table: &'a str,
+    pub left: &'a str,
+    pub right: &'a str,
 }
 
-impl JoinSource {
+impl<'a> JoinSource<'a> {
     fn print(&self) -> String {
         "join".to_string()
-            + " " + self.table.as_str()
-            + " " + self.left.as_str()
-            + " " + self.right.as_str()
+            + " " + self.table
+            + " " + self.left
+            + " " + self.right
     }
 }
 
-pub enum Filter {
-    Condition(String, Operator, String)
+pub enum Filter<'a> {
+    Condition(&'a str, Operator, &'a str),
 }
 
-impl Filter {
+impl<'a> Filter<'a> {
     fn print(&self) -> String {
         match self {
             Filter::Condition(left, op, right) => "filter ".to_owned() + left + " " + &op.print() + " " + right
@@ -157,16 +157,16 @@ impl Filter {
 }
 
 #[derive(Default)]
-pub enum Finisher {
+pub enum Finisher<'a> {
     #[default]
     AllColumns,
-    Columns(Vec<String>),
-    Insert(String),
+    Columns(Vec<&'a str>),
+    Insert(&'a str),
     Count,
     Delete,
 }
 
-impl Finisher {
+impl<'a> Finisher<'a> {
     fn print(&self) -> String {
         match self {
             Finisher::AllColumns => "select_all".to_string(),
@@ -178,7 +178,7 @@ impl Finisher {
     }
 }
 
-fn print_tokens(tokens: &[String]) -> String {
+fn print_tokens(tokens: &[&str]) -> String {
     let mut s  = String::new();
     for token in tokens {
         s.push_str(token);

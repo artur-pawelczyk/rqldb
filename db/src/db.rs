@@ -351,7 +351,7 @@ mod tests {
             .column("content", Type::TEXT);
         db.execute_create(&command);
 
-        let insert_query = Query::tuple(&["1".to_string(), "something".to_string()]).insert_into("document");
+        let insert_query = Query::tuple(&["1", "something"]).insert_into("document");
         let insert_result = db.execute_query(&insert_query);
         assert!(insert_result.is_ok());
 
@@ -375,7 +375,7 @@ mod tests {
             .column("content", Type::TEXT);
         db.execute_create(&command);
 
-        let result = db.execute_query(&Query::tuple(&["not-a-number".to_string(), "random-text".to_string()]).insert_into("document"));
+        let result = db.execute_query(&Query::tuple(&["not-a-number", "random-text"]).insert_into("document"));
         assert!(result.is_err());
     }
 
@@ -386,7 +386,7 @@ mod tests {
 
         for i in 1..20 {
             let content = format!("example{}", i);
-            db.execute_query(&Query::tuple(&[i.to_string(), content]).insert_into("document")).expect("Insert");
+            db.execute_query(&Query::tuple(&[i.to_string().as_str(), content.as_str()]).insert_into("document")).expect("Insert");
         }
 
         let mut result = db.execute_query(&Query::scan("document").filter("document.id", Operator::EQ, "5")).unwrap();
@@ -426,7 +426,7 @@ mod tests {
         db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT));
 
         for i in 1..21 {
-            db.execute_query(&Query::tuple(&[i.to_string(), "example".to_string()]).insert_into("document")).expect("Insert");
+            db.execute_query(&Query::tuple(&[i.to_string().as_str(), "example"]).insert_into("document")).expect("Insert");
         }
 
         let result = db.execute_query(&Query::scan("document").count()).unwrap();

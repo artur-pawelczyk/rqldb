@@ -13,7 +13,7 @@ impl fmt::Display for ParseError {
     }
 }
 
-pub fn parse_query(query_str: &str) -> Result<Query, ParseError> {
+pub fn parse_query<'a>(query_str: &'a str) -> Result<Query<'a>, ParseError> {
     let mut tokenizer = Tokenizer::from_str(query_str);
     let mut query = read_source(&mut tokenizer)?;
 
@@ -56,7 +56,7 @@ pub fn parse_query(query_str: &str) -> Result<Query, ParseError> {
     Ok(query)
 }
 
-fn read_source(tokenizer: &mut Tokenizer) -> Result<Query, ParseError> {
+fn read_source<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query<'a>, ParseError> {
     let function = match tokenizer.next() {
         Some(x) => x,
         None => return Err(ParseError("Expected source function"))
@@ -101,7 +101,7 @@ fn read_symbol<'a>(t: Option<Token<'a>>) -> Result<&'a str, ParseError> {
     }
 }
 
-fn read_table_scan<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query, ParseError> {
+fn read_table_scan<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query<'a>, ParseError> {
     if let Some(Token::Symbol(table)) = tokenizer.next() {
         expect_pipe_or_end(tokenizer)?;
         Ok(Query::scan(table))
@@ -110,7 +110,7 @@ fn read_table_scan<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query, ParseErro
     }
 }
 
-fn read_tuple(tokenizer: &mut Tokenizer) -> Result<Query, ParseError> {
+fn read_tuple<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query<'a>, ParseError> {
     let mut values: Vec<&str> = Vec::new();
 
     while let Some(token) = tokenizer.next() {
