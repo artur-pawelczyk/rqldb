@@ -1,10 +1,8 @@
 use std::io::{Read, Write};
 
-use rqldb::idmap::IdMap;
-
 use crate::{ByteTuple, ByteReader, Error};
 
-pub(crate) fn write_object<W: Write>(writer: &mut W, tuples: &dyn IdMap<ByteTuple>) -> Result<(), Error> {
+pub(crate) fn write_object<W: Write>(writer: &mut W, tuples: &[ByteTuple]) -> Result<(), Error> {
     writer.write(&size(tuples.iter().count()))?;
     for tuple in tuples.iter() {
         writer.write(&size(tuple.len()))?;

@@ -1,6 +1,6 @@
 use std::{collections::HashSet, marker::PhantomData};
 
-use crate::{tuple::Tuple, schema::Relation, idmap::{IdMap, HashIdMap, InsertResult, KeyExtractor}};
+use crate::{tuple::Tuple, schema::Relation};
 
 type ByteCell = Vec<u8>;
 type ByteTuple = Vec<ByteCell>;
@@ -14,7 +14,7 @@ pub(crate) trait Object {
 
 #[allow(dead_code)]
 pub(crate) struct IndexedObject<'a> {
-    pub(crate) tuples: Box<dyn IdMap<ByteTuple>>,
+    pub(crate) tuples: Vec<ByteTuple>,
     key: Option<usize>,
     pub(crate) removed_ids: HashSet<usize>,
     marker: PhantomData<&'a ()>,
@@ -28,15 +28,8 @@ impl<'a> IndexedObject<'a> {
     }
 
     pub(crate) fn from_table(table: &Relation) -> Self {
-        let indexed_column = table.indexed_column();
-        let tuples: Box<dyn IdMap<ByteTuple>> = if let Some(col) = indexed_column {
-            Box::new(HashIdMap::with_key_extractor(TupleKeyExtractor(col.pos())))
-        } else {
-            Box::new(HashIdMap::new())
-        };
-        
         Self{
-            tuples,
+            tuples: Vec::new(),
             removed_ids: HashSet::new(),
             key: table.indexed_column().map(|col| col.pos()),
             marker: PhantomData,
@@ -46,9 +39,26 @@ impl<'a> IndexedObject<'a> {
 
 impl<'a> Object for IndexedObject<'a> {
     fn add_tuple(&mut self, tuple: &Tuple) -> bool {
-        match self.tuples.insert(tuple.as_bytes().to_vec()) {
-            InsertResult::Added(_) => true,
-            InsertResult::Replaced(_) => false,
+        match self.key {
+            Some(pos) => {
+                let to_find = &tuple.as_bytes()[pos];
+                if let Some(id) = self.tuples.iter().position(|x| &x[pos] == to_find) {
+                    let _ = std::mem::replace(&mut self.tuples[id], tuple.as_bytes().to_vec());
+                    false
+                } else {
+                    self.tuples.push(tuple.as_bytes().to_vec());
+                    true
+                }
+            },
+            None => {
+                if let Some(_) = self.tuples.iter().position(|x| x == tuple.as_bytes()) {
+                    false
+                } else {
+                    self.tuples.push(tuple.as_bytes().to_vec());
+                    true
+                }
+                
+            }
         }
     }
 
@@ -65,7 +75,7 @@ impl<'a> Object for IndexedObject<'a> {
             let key = key_col.pos();
 
             Self{
-                tuples: Box::new(HashIdMap::from_with_key_extractor(snapshot, TupleKeyExtractor(key))),
+                tuples: snapshot,
                 removed_ids: HashSet::new(),
                 key: Some(key),
                 marker: PhantomData,
@@ -73,7 +83,7 @@ impl<'a> Object for IndexedObject<'a> {
 
         } else {
             Self{
-                tuples: Box::new(HashIdMap::from(snapshot)),
+                tuples: snapshot,
                 removed_ids: HashSet::new(),
                 key: None,
                 marker: PhantomData,
@@ -85,7 +95,7 @@ impl<'a> Object for IndexedObject<'a> {
 impl<'a> Default for IndexedObject<'a> {
     fn default() -> Self {
         IndexedObject{
-            tuples: Box::new(HashIdMap::new()),
+            tuples: Vec::new(),
             removed_ids: HashSet::new(),
             key: None,
             marker: PhantomData,
@@ -93,10 +103,4 @@ impl<'a> Default for IndexedObject<'a> {
     }
 }
 
-struct TupleKeyExtractor(usize);
-impl KeyExtractor<ByteTuple, ByteCell> for TupleKeyExtractor {
-    fn extract<'a>(&self, tuple: &'a ByteTuple) -> &'a ByteCell {
-        &tuple[self.0]
-    }
-}
 

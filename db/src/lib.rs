@@ -5,7 +5,6 @@ pub mod plan;
 pub mod schema;
 pub mod tokenize;
 pub mod tuple;
-pub mod idmap;
 pub mod object;
 
 use std::fmt;

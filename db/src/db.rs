@@ -1,6 +1,5 @@
 use std::cell::{RefCell, Ref, RefMut};
 
-use crate::idmap::IdMap;
 use crate::object::IndexedObject;
 use crate::plan::{Contents, Attribute, Filter, Plan, Finisher};
 use crate::tuple::Tuple;
@@ -203,8 +202,8 @@ pub struct RawObjectView<'a> {
 }
 
 impl<'a> RawObjectView<'a> {
-    pub fn raw_tuples(&'a self) -> &'a dyn IdMap<ByteTuple> {
-        self.object.tuples.as_ref()
+    pub fn raw_tuples(&'a self) -> &'a [ByteTuple] {
+        &self.object.tuples
     }
 }
     
