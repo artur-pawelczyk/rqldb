@@ -62,7 +62,7 @@ impl<'obj> Database<'obj> {
             Contents::IndexScan(_, _) => {
                 ObjectView::Val(IndexedObject::temporary(vec![]))
             },
-            _ => todo!()
+            _ => unimplemented!()
         };
 
         let join_sources: Vec<Ref<IndexedObject>> = plan.joins.iter().map(|join| self.objects.get(join.source_table().id).unwrap().borrow()).collect();
