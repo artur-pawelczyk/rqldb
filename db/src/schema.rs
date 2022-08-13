@@ -80,6 +80,10 @@ impl<'a> Column<'a> {
     pub fn kind(&self) -> Type {
         self.inner.kind
     }
+
+    pub fn table(&self) -> &Relation {
+        self.table
+    }
 }
 
 #[derive(Clone, PartialEq)]

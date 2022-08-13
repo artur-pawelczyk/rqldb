@@ -42,6 +42,16 @@ fn benchmark_filter(c: &mut Criterion) {
     c.bench_function("filter", |b| b.iter(|| db.execute_query(&query).unwrap()));
 }
 
+fn benchmark_index_search(c: &mut Criterion) {
+    let db = create_database();
+    for i in 1..100000 {
+        db.execute_query(&Query::tuple(&[i.to_string().as_str(), "12", "example_doc", "the content"]).insert_into("document")).unwrap();
+    }
+
+    let query = Query::scan_index("document.id", Operator::EQ, "100");
+    c.bench_function("index search", |b| b.iter(|| db.execute_query(&query).unwrap()));
+}
+
 fn benchmark_count(c: &mut Criterion) {
     let db = create_database();
 
@@ -61,5 +71,5 @@ fn benchmark_parse(c: &mut Criterion) {
     c.bench_function("parse query", |b| b.iter(|| parse_query(query).unwrap()));
 }
 
-criterion_group!(benches, benchmark_insert, benchmark_count, benchmark_parse, benchmark_filter);
+criterion_group!(benches, benchmark_insert, benchmark_count, benchmark_parse, benchmark_filter, benchmark_index_search);
 criterion_main!(benches);

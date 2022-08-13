@@ -59,8 +59,13 @@ impl<'obj> Database<'obj> {
                 let cells = values.iter().map(|val| cell(val)).collect();
                 ObjectView::Val(IndexedObject::temporary(cells))
             },
-            Contents::IndexScan(_, _) => {
-                ObjectView::Val(IndexedObject::temporary(vec![]))
+            Contents::IndexScan(ref col, val) => {
+                let object = self.objects.get(col.table().id).unwrap().borrow();
+                if let Some(tuple) = object.find_in_index(&vec![0, 0, 0, val]) {
+                    ObjectView::Val(IndexedObject::temporary(tuple.clone()))
+                } else {
+                    ObjectView::Empty
+                }
             },
             _ => unimplemented!()
         };
@@ -134,6 +139,7 @@ fn test_filters(filters: &[Filter], tuple: &Tuple) -> bool {
 enum ObjectView<'a> {
     Ref(Ref<'a, IndexedObject<'a>>),
     Val(IndexedObject<'a>),
+    Empty,
 }
 
 impl<'a> ObjectView<'a> {
@@ -141,6 +147,7 @@ impl<'a> ObjectView<'a> {
         match self {
             Self::Ref(o) => o.iter(),
             Self::Val(o) => o.iter(),
+            Self::Empty => Box::new(std::iter::empty()),
         }
     }
 
@@ -148,6 +155,7 @@ impl<'a> ObjectView<'a> {
         match self {
             Self::Ref(object) => object.removed_ids.contains(&id),
             Self::Val(_) => false,
+            Self::Empty => false,
         }
     }
 }
@@ -397,5 +405,19 @@ mod tests {
         db.recover_object(0, snapshot);
         let all = db.execute_plan(Plan::scan(&table)).unwrap();
         assert_eq!(all.size(), 1);
+    }
+
+    #[test]
+    fn index_scan() {
+        let mut db = Database::default();
+        db.execute_create(&Command::create_table("document").indexed_column("id", Type::NUMBER).column("content", Type::TEXT));
+
+        for i in 1..20 {
+            let content = format!("example{}", i);
+            db.execute_query(&Query::tuple(&[i.to_string().as_str(), content.as_str()]).insert_into("document")).expect("Insert");
+        }
+
+        let result = db.execute_query(&Query::scan_index("document.id", Operator::EQ, "5")).unwrap();
+        assert_eq!(result.results()[0].cell_at(0).unwrap().as_number().unwrap(), 5);
     }
 }
