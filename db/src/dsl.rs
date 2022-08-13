@@ -1,6 +1,6 @@
-use std::fmt;
+use std::{fmt, str::FromStr};
 
-use crate::schema::Type;
+use crate::{schema::Type, parse::ParseError};
 
 #[derive(Default)]
 pub struct Query<'a> {
@@ -106,6 +106,17 @@ impl Operator {
             Operator::LT => "<",
             Operator::LE => "<=",
         }.to_string()
+    }
+}
+
+impl FromStr for Operator {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "=" => Ok(Self::EQ),
+            _ => Err(ParseError("Operator not recognized")),
+        }
     }
 }
 

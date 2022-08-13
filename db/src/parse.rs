@@ -5,7 +5,7 @@ use crate::tokenize::{Token, Tokenizer};
 use std::fmt;
 
 #[derive(Debug)]
-pub struct ParseError(&'static str);
+pub struct ParseError(pub &'static str);
 
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -66,6 +66,7 @@ fn read_source<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query<'a>, ParseErro
         Token::Symbol(name) => match name {
             "scan" => read_table_scan(tokenizer),
             "tuple" => read_tuple(tokenizer),
+            "scan_index" => read_index_scan(tokenizer),
             _ => Result::Err(ParseError("Unnokwn source function")),
         },
         _ => Err(ParseError("Expected a symbol"))
@@ -122,6 +123,15 @@ fn read_tuple<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query<'a>, ParseError
     }
 
     Ok(Query::tuple(&values))
+}
+
+fn read_index_scan<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query<'a>, ParseError> {
+    let index = read_symbol(tokenizer.next())?;
+    let op = read_symbol(tokenizer.next())?;
+    let val = read_symbol(tokenizer.next())?;
+    expect_pipe_or_end(tokenizer)?;
+
+    Ok(Query::scan_index(index, op.parse()?, val))
 }
 
 fn expect_pipe_or_end(tokenizer: &mut Tokenizer) -> Result<(), ParseError> {
@@ -182,6 +192,7 @@ mod tests {
         assert_parse("scan example | join other example.other_id example.id | select_all");
         assert_parse("scan example | count");
         assert_parse("scan example | filter example.id = 1 | delete");
+        assert_parse("scan_index example.id = 1 | select_all")
     }
 
     #[test]
