@@ -10,7 +10,7 @@ pub(crate) trait Object {
     fn iter<'a>(&'a self) -> Box<dyn Iterator<Item = &'a ByteTuple> + 'a>;
     fn remove_tuples(&mut self, ids: &[usize]);
     fn recover(snapshot: Vec<ByteTuple>, table: &Relation) -> Self;
-    fn find_in_index(&self, cell: &ByteCell) -> Option<&ByteTuple>;
+    fn find_in_index(&self, cell: &[u8]) -> Option<&ByteTuple>;
 }
 
 #[allow(dead_code)]
@@ -66,11 +66,11 @@ impl<'a> Object for IndexedObject<'a> {
         }
     }
 
-    fn find_in_index(&self, cell: &ByteCell) -> Option<&ByteTuple> {
+    fn find_in_index(&self, cell: &[u8]) -> Option<&ByteTuple> {
         match self.index {
             Index::Attr(pos, _) => {
                 let mut fake_tuple: ByteTuple = (0..pos).map(|_| Vec::new()).collect();
-                fake_tuple.push(cell.clone());
+                fake_tuple.push(cell.to_vec());
                 self.index.find(&fake_tuple).and_then(|id| self.tuples.get(id))
             }
             _ => todo!(),

@@ -1,4 +1,5 @@
 use crate::Cell;
+use crate::Operator;
 use crate::dsl;
 use crate::schema::Column;
 use crate::schema::{Schema, Relation, Type};
@@ -108,7 +109,7 @@ pub(crate) struct Source<'a> {
 pub(crate) enum Contents<'a> {
     TableScan(&'a Relation),
     Tuple(Vec<String>),
-    IndexScan(Column<'a>, u8),
+    IndexScan(Column<'a>, Cell),
     Nil,
 }
 
@@ -192,9 +193,11 @@ impl<'a> Source<'a> {
             dsl::Source::Tuple(values) => {
                 Ok(Self::from_tuple(values.iter().map(|s| s.to_string()).collect()))
             },
-            dsl::Source::IndexScan(index, _, val) => {
-                let index = schema.find_column(index).ok_or("No such index")?;
-                let val: u8 = val.parse().map_err(|_| "Only u8 is supported for index search")?;
+            dsl::Source::IndexScan(index, Operator::EQ, val) => {
+                let index = schema.find_column(index)
+                    .and_then(|col| if col.indexed() { Some(col) } else { None })
+                    .ok_or("Index not found")?;
+                let val = Cell::from_string(val);
                 Ok(Self::scan_index(index, val))
             }
             _ => Err("Not supported source"),
@@ -212,7 +215,7 @@ impl<'a> Source<'a> {
         Self{ attributes, contents: Contents::Tuple(values.to_vec()) }
     }
 
-    fn scan_index(index: Column<'a>, val: u8) -> Self {
+    fn scan_index(index: Column<'a>, val: Cell) -> Self {
         Self{
             attributes: vec![Attribute::Named(0, index.as_full_name(), index.kind())],
             contents: Contents::IndexScan(index, val),
@@ -527,7 +530,11 @@ mod tests {
 
         let source = compute_plan(&schema, &dsl::Query::scan_index("example.id", EQ, "1")).unwrap().source;
         assert_eq!(source.attributes[0], Attribute::Named(0,"example.id".to_string(), Type::NUMBER));
-        assert!(matches!(source.contents, Contents::IndexScan(_, 1)));
+        if let Contents::IndexScan(_, val) = source.contents {
+            assert_eq!(val, Cell::from_number(1));
+        } else {
+            panic!()
+        }
     }
 
     fn source_attributes(source: &Source) -> Vec<Type> {

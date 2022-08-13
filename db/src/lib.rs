@@ -15,6 +15,7 @@ pub use crate::db::Database;
 pub use crate::dsl::{Query, Operator, Command};
 pub use crate::parse::{parse_command, parse_query};
 
+#[derive(Debug)]
 pub struct QueryResults {
     attributes: Vec<String>,
     results: Vec<Vec<Cell>>
@@ -91,6 +92,10 @@ impl Cell {
 
     pub fn into_bytes(self) -> Vec<u8> {
         self.contents
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.contents
     }
 
     pub fn as_number(&self) -> Option<i32> {

@@ -53,15 +53,15 @@ impl<'obj> Database<'obj> {
 
         let source: ObjectView = match plan.source.contents {
             Contents::TableScan(rel) => {
-                ObjectView::Ref(self.objects.get(rel.id).unwrap().borrow())
+                ObjectView::Ref(self.objects.get(rel.id).expect("Already checked by the planner").borrow())
             },
             Contents::Tuple(ref values) => {
                 let cells = values.iter().map(|val| cell(val)).collect();
                 ObjectView::Val(IndexedObject::temporary(cells))
             },
-            Contents::IndexScan(ref col, val) => {
-                let object = self.objects.get(col.table().id).unwrap().borrow();
-                if let Some(tuple) = object.find_in_index(&vec![0, 0, 0, val]) {
+            Contents::IndexScan(ref col, ref val) => {
+                let object = self.objects.get(col.table().id).expect("Already checked by the planner").borrow();
+                if let Some(tuple) = object.find_in_index(val.as_bytes()) {
                     ObjectView::Val(IndexedObject::temporary(tuple.clone()))
                 } else {
                     ObjectView::Empty
@@ -417,7 +417,16 @@ mod tests {
             db.execute_query(&Query::tuple(&[i.to_string().as_str(), content.as_str()]).insert_into("document")).expect("Insert");
         }
 
-        let result = db.execute_query(&Query::scan_index("document.id", Operator::EQ, "5")).unwrap();
-        assert_eq!(result.results()[0].cell_at(0).unwrap().as_number().unwrap(), 5);
+        let tuple_found = db.execute_query(&Query::scan_index("document.id", Operator::EQ, "5")).unwrap();
+        assert_eq!(tuple_found.results()[0].cell_at(0).unwrap().as_number().unwrap(), 5);
+
+        let tuple_not_found = db.execute_query(&Query::scan_index("document.id", Operator::EQ, "500")).unwrap();
+        assert_eq!(tuple_not_found.size(), 0);
+
+        let missing_table = db.execute_query(&Query::scan_index("notable.id", Operator::EQ, "a"));
+        assert!(missing_table.is_err());
+
+        let missing_index = db.execute_query(&Query::scan_index("document.content", Operator::EQ, "a"));
+        assert!(missing_index.is_err());
     }
 }
