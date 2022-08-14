@@ -53,7 +53,7 @@ impl<'a> Plan<'a> {
 pub(crate) struct Filter {
     attribute: Attribute,
     right: Vec<u8>,
-    comp: Box<dyn Fn(&[u8], &[u8]) -> bool>,
+    comp: &'static dyn Fn(&[u8], &[u8]) -> bool,
 }
 
 impl Filter {
@@ -66,8 +66,8 @@ impl Filter {
 
 pub(crate) struct Join<'a> {
     table: &'a Relation,
-    pub joinee_attributes: Vec<Attribute>,
-    pub joiner_attributes: Vec<Attribute>,
+    joinee_attributes: Vec<Attribute>,
+    joiner_attributes: Vec<Attribute>,
     joinee_key: usize,
     joiner_key: usize,
 }
@@ -289,13 +289,13 @@ fn compute_filters<'a>(plan: Plan<'a>, query: &dsl::Query) -> Result<Plan<'a>, &
             filters.push(Filter{
                 attribute: attr.clone(),
                 right: right_as_cell(dsl_filter),
-                comp: Box::new(move |a, b| match op {
-                    dsl::Operator::EQ => a == b,
-                    dsl::Operator::GT => a > b,
-                    dsl::Operator::GE => a >= b,
-                    dsl::Operator::LT => a < b,
-                    dsl::Operator::LE => a <= b,
-                })
+                comp: match op {
+                    dsl::Operator::EQ => &|a, b| a == b,
+                    dsl::Operator::GT => &|a, b| a > b,
+                    dsl::Operator::GE => &|a, b| a >= b,
+                    dsl::Operator::LT => &|a, b| a < b,
+                    dsl::Operator::LE => &|a, b| a <= b,
+                }
             });
         } else {
             return Err("Column not found");

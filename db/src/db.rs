@@ -84,7 +84,7 @@ impl<'obj> Database<'obj> {
                         joinee
                     }
                 },
-                _ => todo!(),
+                _ => return Err("Multiple joins aren't supported")
             };
 
             if !source.is_removed(idx) && test_filters(&plan.filters, &tuple) {
