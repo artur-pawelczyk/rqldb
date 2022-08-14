@@ -1,4 +1,4 @@
-use std::{collections::{HashSet, HashMap}, marker::PhantomData};
+use std::{collections::{HashSet, HashMap}, marker::PhantomData, cell::Ref};
 
 use crate::{tuple::Tuple, schema::Relation};
 
@@ -9,6 +9,7 @@ pub(crate) trait Object {
     fn add_tuple(&mut self, tuple: &Tuple) -> bool;
     fn iter<'a>(&'a self) -> Box<dyn Iterator<Item = &'a ByteTuple> + 'a>;
     fn remove_tuples(&mut self, ids: &[usize]);
+    fn is_removed(&self, id: usize) -> bool;
     fn recover(snapshot: Vec<ByteTuple>, table: &Relation) -> Self;
     fn find_in_index(&self, cell: &[u8]) -> Option<&ByteTuple>;
 }
@@ -16,9 +17,9 @@ pub(crate) trait Object {
 #[allow(dead_code)]
 #[derive(Default)]
 pub(crate) struct IndexedObject<'a> {
-    pub(crate) tuples: Vec<ByteTuple>,
+    tuples: Vec<ByteTuple>,
     index: Index,
-    pub(crate) removed_ids: HashSet<usize>,
+    removed_ids: HashSet<usize>,
     marker: PhantomData<&'a ()>,
 }
 
@@ -85,6 +86,10 @@ impl<'a> Object for IndexedObject<'a> {
         self.removed_ids.extend(ids);
     }
 
+    fn is_removed(&self, id: usize) -> bool {
+        self.removed_ids.contains(&id)
+    }
+
     fn recover(snapshot: Vec<ByteTuple>, table: &Relation) -> Self {
         if let Some(key_col) = table.indexed_column() {
             let key = key_col.pos();
@@ -139,5 +144,22 @@ impl Index {
             Self::Uniq => None,
             Self::Attr(pos, inner) => inner.get(&tuple[*pos]).map(|x| *x),
         }
+    }
+}
+pub struct RawObjectView<'a> {
+    object: Ref<'a, IndexedObject<'a>>,
+}
+
+impl<'a> RawObjectView<'a> {
+    pub(crate) fn new(object: Ref<'a, IndexedObject<'a>>) -> Self {
+        Self{ object }
+    }
+
+    pub fn count(&self) -> usize {
+        self.object.tuples.len()
+    }
+
+    pub fn raw_tuples(&'a self) -> Box<dyn Iterator<Item = &'a ByteTuple> + 'a> {
+        Box::new(self.object.tuples.iter())
     }
 }

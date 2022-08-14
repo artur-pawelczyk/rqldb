@@ -143,7 +143,7 @@ impl Persist for TempFilePersist {
 pub fn write_db<W: Write>(writer: &mut W, db: &Database) -> Result<(), Error> {
     write_schema(writer, &db.schema())?;
     for o in db.raw_objects() {
-       write_object(writer, o.raw_tuples())?
+       write_object(writer, &o)?
     }
 
     Ok(())

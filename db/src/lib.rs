@@ -14,6 +14,7 @@ pub use crate::schema::Type;
 pub use crate::db::Database;
 pub use crate::dsl::{Query, Operator, Command};
 pub use crate::parse::{parse_command, parse_query};
+pub use crate::object::RawObjectView;
 
 #[derive(Debug)]
 pub struct QueryResults {

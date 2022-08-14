@@ -4,7 +4,7 @@ use crate::object::IndexedObject;
 use crate::plan::{Contents, Attribute, Filter, Plan, Finisher};
 use crate::tuple::Tuple;
 use crate::{schema::Schema, QueryResults, plan::compute_plan};
-use crate::{dsl, Cell};
+use crate::{dsl, Cell, RawObjectView};
 use crate::object::Object;
 
 #[derive(Default)]
@@ -114,11 +114,11 @@ impl<'obj> Database<'obj> {
     pub fn raw_object(&self, name: &str) -> Option<RawObjectView> {
         let rel = self.schema.find_relation(name)?;
         let o = self.objects.get(rel.id)?;
-        Some(RawObjectView{ object: o.borrow() })
+        Some(RawObjectView::new(o.borrow()))
     }
 
     pub fn raw_objects(&self) -> Vec<RawObjectView> {
-        self.objects.iter().map(|o| RawObjectView{ object: o.borrow() }).collect()
+       self.objects.iter().map(|o| RawObjectView::new(o.borrow())).collect()
     }
 
     pub fn schema(&self) -> &Schema {
@@ -153,7 +153,7 @@ impl<'a> ObjectView<'a> {
 
     fn is_removed(&self, id: usize) -> bool {
         match self {
-            Self::Ref(object) => object.removed_ids.contains(&id),
+            Self::Ref(object) => object.is_removed(id),
             Self::Val(_) => false,
             Self::Empty => false,
         }
@@ -205,16 +205,6 @@ fn tuple_to_cells(attrs: &[Attribute], tuple: &Tuple) -> Vec<Cell> {
     attrs.iter().map(|attr| Cell::from_bytes(attr.kind(), tuple.cell_by_attr(attr).bytes())).collect()
 }
 
-pub struct RawObjectView<'a> {
-    object: Ref<'a, IndexedObject<'a>>,
-}
-
-impl<'a> RawObjectView<'a> {
-    pub fn raw_tuples(&'a self) -> &'a [ByteTuple] {
-        &self.object.tuples
-    }
-}
-    
 
 #[cfg(test)]
 mod tests {
@@ -396,7 +386,7 @@ mod tests {
         let table = db.schema.find_relation("document").unwrap().clone();
 
         db.execute_plan(Plan::insert(&table, &["1".to_string(), "one".to_string()])).unwrap();
-        let snapshot = db.raw_object("document").unwrap().raw_tuples().iter().cloned().collect();
+        let snapshot = db.raw_object("document").unwrap().raw_tuples().cloned().collect();
 
         db.execute_plan(Plan::insert(&table, &["2".to_string(), "two".to_string()])).unwrap();
         let all = db.execute_plan(Plan::scan(&table)).unwrap();
