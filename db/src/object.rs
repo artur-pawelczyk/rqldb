@@ -5,20 +5,12 @@ use crate::{tuple::Tuple, schema::Relation};
 type ByteCell = Vec<u8>;
 type ByteTuple = Vec<ByteCell>;
 
-pub(crate) trait Object {
-    fn add_tuple(&mut self, tuple: &Tuple) -> bool;
-    fn iter<'a>(&'a self) -> Box<dyn Iterator<Item = &'a ByteTuple> + 'a>;
-    fn remove_tuples(&mut self, ids: &[usize]);
-    fn is_removed(&self, id: usize) -> bool;
-    fn recover(snapshot: Vec<ByteTuple>, table: &Relation) -> Self;
-    fn find_in_index(&self, cell: &[u8]) -> Option<&ByteTuple>;
-}
-
 #[allow(dead_code)]
 #[derive(Default)]
 pub(crate) struct IndexedObject<'a> {
     tuples: Vec<ByteTuple>,
     index: Index,
+    hash: HashMap<ByteCell, usize>,
     removed_ids: HashSet<usize>,
     marker: PhantomData<&'a ()>,
 }
@@ -35,22 +27,22 @@ impl<'a> IndexedObject<'a> {
 
         Self{
             tuples: Vec::new(),
-            index: key.map(|pos| Index::attr(pos)).unwrap_or(Index::Uniq),
-            removed_ids: HashSet::new(),
+            index: key.map(|pos| Index::Attr(pos)).unwrap_or(Index::Uniq),
+            hash: Default::default(),
+            removed_ids: Default::default(),
             marker: PhantomData,
         }
     }
-}
 
-impl<'a> Object for IndexedObject<'a> {
-    fn add_tuple(&mut self, tuple: &Tuple) -> bool {
+    pub(crate) fn add_tuple(&mut self, tuple: &Tuple) -> bool {
         match self.index {
-            Index::Attr(_, _) => {
-                if let Some(id) = self.index.find(tuple.as_bytes()) {
-                    let _ = std::mem::replace(&mut self.tuples[id], tuple.as_bytes().to_vec());
+            Index::Attr(key_pos) => {
+                let key = tuple.as_bytes().get(key_pos);
+                if let Some(id) = self.hash.get(key.unwrap()) {
+                    let _ = std::mem::replace(&mut self.tuples[*id], tuple.as_bytes().to_vec());
                     false
                 } else {
-                    self.index.index(tuple.as_bytes(), self.tuples.len());
+                    self.hash.insert(tuple.as_bytes()[key_pos].clone(), self.tuples.len());
                     self.tuples.push(tuple.as_bytes().to_vec());
                     true
                 }
@@ -67,37 +59,39 @@ impl<'a> Object for IndexedObject<'a> {
         }
     }
 
-    fn find_in_index(&self, cell: &[u8]) -> Option<&ByteTuple> {
+    pub(crate) fn find_in_index(&self, cell: &[u8]) -> Option<&ByteTuple> {
         match self.index {
-            Index::Attr(pos, _) => {
-                let mut fake_tuple: ByteTuple = (0..pos).map(|_| Vec::new()).collect();
-                fake_tuple.push(cell.to_vec());
-                self.index.find(&fake_tuple).and_then(|id| self.tuples.get(id))
+            Index::Attr(_) => {
+                self.hash.get(cell).and_then(|id| self.tuples.get(*id))
             }
             _ => todo!(),
         }
     }
 
-    fn iter<'b>(&'b self) -> Box<dyn Iterator<Item = &'b ByteTuple> + 'b> {
+    pub(crate) fn iter<'b>(&'b self) -> Box<dyn Iterator<Item = &'b ByteTuple> + 'b> {
         Box::new(self.tuples.iter())
     }
 
-    fn remove_tuples(&mut self, ids: &[usize]) {
+    pub(crate) fn remove_tuples(&mut self, ids: &[usize]) {
         self.removed_ids.extend(ids);
     }
 
-    fn is_removed(&self, id: usize) -> bool {
+    pub(crate) fn is_removed(&self, id: usize) -> bool {
         self.removed_ids.contains(&id)
     }
 
-    fn recover(snapshot: Vec<ByteTuple>, table: &Relation) -> Self {
+    pub(crate) fn recover(snapshot: Vec<ByteTuple>, table: &Relation) -> Self {
         if let Some(key_col) = table.indexed_column() {
             let key = key_col.pos();
-            let index = Index::from(&snapshot, key);
+            let index = Index::Attr(key);
+            let mut hash = HashMap::with_capacity(snapshot.len());
+            for (id, tuple) in snapshot.iter().enumerate() {
+                hash.insert(tuple[key].clone(), id);
+            }
 
             Self{
                 tuples: snapshot,
-                index,
+                index, hash,
                 removed_ids: HashSet::new(),
                 marker: PhantomData,
             }
@@ -105,6 +99,7 @@ impl<'a> Object for IndexedObject<'a> {
             Self{
                 tuples: snapshot,
                 index: Default::default(),
+                hash: Default::default(),
                 removed_ids: HashSet::new(),
                 marker: PhantomData,
             }
@@ -116,36 +111,9 @@ impl<'a> Object for IndexedObject<'a> {
 enum Index {
     #[default]
     Uniq,
-    Attr(usize, HashMap<ByteCell, usize>),
+    Attr(usize),
 }
 
-impl Index {
-    fn attr(pos: usize) -> Self {
-        Self::Attr(pos, HashMap::new())
-    }
-
-    fn from(tuples: &[ByteTuple], pos: usize) -> Self {
-        let mut inner = HashMap::with_capacity(tuples.len());
-        for (id, tuple) in tuples.iter().enumerate() {
-            inner.insert(tuple[pos].clone(), id);
-        }
-
-        Self::Attr(pos, inner)
-    }
-
-    fn index(&mut self, tuple: &ByteTuple, id: usize) {
-        if let Self::Attr(pos, inner) = self {
-            inner.insert(tuple[*pos].clone(), id);
-        }
-    }
-
-    fn find(&self, tuple: &ByteTuple) -> Option<usize> {
-        match self {
-            Self::Uniq => None,
-            Self::Attr(pos, inner) => inner.get(&tuple[*pos]).map(|x| *x),
-        }
-    }
-}
 pub struct RawObjectView<'a> {
     object: Ref<'a, IndexedObject<'a>>,
 }

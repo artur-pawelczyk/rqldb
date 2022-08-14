@@ -5,7 +5,6 @@ use crate::plan::{Contents, Attribute, Filter, Plan, Finisher};
 use crate::tuple::Tuple;
 use crate::{schema::Schema, QueryResults, plan::compute_plan};
 use crate::{dsl, Cell, RawObjectView};
-use crate::object::Object;
 
 #[derive(Default)]
 pub struct Database<'a> {
