@@ -59,13 +59,17 @@ impl<'a> IndexedObject<'a> {
         }
     }
 
-    pub(crate) fn find_in_index(&self, cell: &[u8]) -> Option<&ByteTuple> {
+    pub(crate) fn find_in_index(&self, cell: &[u8]) -> Option<usize> {
         match self.index {
             Index::Attr(_) => {
-                self.hash.get(cell).and_then(|id| self.tuples.get(*id))
+                self.hash.get(cell).map(|x| *x)
             }
             _ => todo!(),
         }
+    }
+
+    pub(crate) fn get(&self, id: usize) -> Option<&ByteTuple> {
+        self.tuples.get(id)
     }
 
     pub(crate) fn iter<'b>(&'b self) -> Box<dyn Iterator<Item = &'b ByteTuple> + 'b> {

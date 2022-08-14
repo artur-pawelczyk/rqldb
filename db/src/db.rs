@@ -60,8 +60,8 @@ impl<'obj> Database<'obj> {
             },
             Contents::IndexScan(ref col, ref val) => {
                 let object = self.objects.get(col.table().id).expect("Already checked by the planner").borrow();
-                if let Some(tuple) = object.find_in_index(val.as_bytes()) {
-                    ObjectView::Val(IndexedObject::temporary(tuple.clone()))
+                if let Some(tuple_id) = object.find_in_index(val.as_bytes()) {
+                    ObjectView::TupleRef(object, tuple_id)
                 } else {
                     ObjectView::Empty
                 }
@@ -137,6 +137,7 @@ fn test_filters(filters: &[Filter], tuple: &Tuple) -> bool {
 
 enum ObjectView<'a> {
     Ref(Ref<'a, IndexedObject<'a>>),
+    TupleRef(Ref<'a, IndexedObject<'a>>, usize),
     Val(IndexedObject<'a>),
     Empty,
 }
@@ -145,6 +146,7 @@ impl<'a> ObjectView<'a> {
     fn iter(&'a self) -> Box<dyn Iterator<Item = &'a ByteTuple> + 'a> {
         match self {
             Self::Ref(o) => o.iter(),
+            Self::TupleRef(o, id) => Box::new(std::iter::once_with(|| o.get(*id).unwrap())),
             Self::Val(o) => o.iter(),
             Self::Empty => Box::new(std::iter::empty()),
         }
@@ -153,8 +155,7 @@ impl<'a> ObjectView<'a> {
     fn is_removed(&self, id: usize) -> bool {
         match self {
             Self::Ref(object) => object.is_removed(id),
-            Self::Val(_) => false,
-            Self::Empty => false,
+            _ => false,
         }
     }
 }
@@ -407,7 +408,8 @@ mod tests {
         }
 
         let tuple_found = db.execute_query(&Query::scan_index("document.id", Operator::EQ, "5")).unwrap();
-        assert_eq!(tuple_found.results()[0].cell_at(0).unwrap().as_number().unwrap(), 5);
+        assert_eq!(tuple_found.results()[0].cell_at(0), Some(&Cell::from_number(5)));
+        assert_eq!(tuple_found.results()[0].cell_at(1), Some(&Cell::from_string("example5")));
 
         let tuple_not_found = db.execute_query(&Query::scan_index("document.id", Operator::EQ, "500")).unwrap();
         assert_eq!(tuple_not_found.size(), 0);

@@ -216,8 +216,10 @@ impl<'a> Source<'a> {
     }
 
     fn scan_index(index: Column<'a>, val: Cell) -> Self {
+        let attributes = index.table().attributes().iter().enumerate()
+            .map(|(i, (name, kind))| Attribute::named(i, name).with_type(*kind)).collect();
         Self{
-            attributes: vec![Attribute::Named(0, index.as_full_name(), index.kind())],
+            attributes,
             contents: Contents::IndexScan(index, val),
         }
     }
@@ -529,7 +531,8 @@ mod tests {
         schema.create_table("example").indexed_column("id", Type::NUMBER).column("content", Type::TEXT).add();
 
         let source = compute_plan(&schema, &dsl::Query::scan_index("example.id", EQ, "1")).unwrap().source;
-        assert_eq!(source.attributes[0], Attribute::Named(0,"example.id".to_string(), Type::NUMBER));
+        assert_eq!(source.attributes[0], Attribute::Named(0, "example.id".to_string(), Type::NUMBER));
+        assert_eq!(source.attributes[1], Attribute::Named(1, "example.content".to_string(), Type::TEXT));
         if let Contents::IndexScan(_, val) = source.contents {
             assert_eq!(val, Cell::from_number(1));
         } else {
