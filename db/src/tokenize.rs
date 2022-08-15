@@ -1,4 +1,4 @@
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Token<'a> {
     Symbol(&'a str),
     SymbolWithType(&'a str, &'a str),
@@ -24,25 +24,21 @@ impl<'a> Iterator for Tokenizer<'a> {
     type Item = Token<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut chars = self.source.chars();
-
-        while let Some(ch) = chars.next() {
+        for ch in self.source.chars() {
             if ch == '|' {
                 self.source = &self.source[1..];
                 return Some(Token::Pipe)
             } else if ch == '"' {
-                if let Some(s) = read_string(&self.source) {
+                if let Some(s) = read_string(self.source) {
                     self.source = &self.source[s.len()+2..];
                     return Some(s)
                 }
             } else if ch.is_whitespace() {
                 self.source = &self.source[1..];
             } else {
-                if let Some(sym) = read_symbol(&self.source) {
+                if let Some(sym) = read_symbol(self.source) {
                     self.source = &self.source[sym.len()..];
                     return Some(sym)
-                } else {
-                    return None
                 }
             }
         }
@@ -51,7 +47,7 @@ impl<'a> Iterator for Tokenizer<'a> {
     }
 }
 
-fn read_symbol<'a>(source: &'a str) -> Option<Token<'a>> {
+fn read_symbol(source: &str) -> Option<Token<'_>> {
     let part = read_util_whitespace(source);
     let mut chars = part.char_indices();
 
@@ -80,8 +76,8 @@ fn read_symbol<'a>(source: &'a str) -> Option<Token<'a>> {
     }
 }
 
-fn read_string<'a>(source: &'a str) -> Option<Token<'a>> {
-    if source.chars().next() != Some('"') {
+fn read_string(source: &str) -> Option<Token<'_>> {
+    if !source.starts_with('"') {
         return None
     }
     
@@ -141,16 +137,16 @@ mod tests {
     }
 
     fn tokenize<'a>(source: &'a str) -> Option<Vec<Token<'a>>> {
-        let mut tokenizer = Tokenizer::from_str(source);
+        let tokenizer = Tokenizer::from_str(source);
         let mut v = Vec::new();
-        while let Some(t) = tokenizer.next() {
+        for t in tokenizer {
             v.push(t);
         }
 
         Some(v)
     }
 
-    fn symbol<'a>(s: &'a str) -> Token<'a> {
+    fn symbol(s: &str) -> Token<'_> {
         Token::Symbol(s)
     }
 

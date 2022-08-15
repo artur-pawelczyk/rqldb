@@ -126,7 +126,7 @@ impl<'obj> Database<'obj> {
 
     pub fn recover_object(&mut self, id: usize, snapshot: Vec<ByteTuple>) {
         let table = self.schema.find_relation(id).unwrap();
-        let new_obj = IndexedObject::recover(snapshot, &table);
+        let new_obj = IndexedObject::recover(snapshot, table);
         let _ = std::mem::replace(&mut self.objects[id], RefCell::new(new_obj));
     }
 }

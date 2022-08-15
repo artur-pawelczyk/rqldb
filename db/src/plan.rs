@@ -60,7 +60,7 @@ impl Filter {
     pub fn matches_tuple(&self, tuple: &Tuple) -> bool {
         let cell = tuple.cell_by_attr(&self.attribute);
         let left = cell.bytes();
-        (self.comp)(&left, &self.right)
+        (self.comp)(left, &self.right)
     }
 }
 

@@ -50,7 +50,7 @@ impl<'a> Tuple<'a> {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct Cell {
     contents: Vec<u8>,
     kind: Type
@@ -58,7 +58,7 @@ pub struct Cell {
 
 impl Cell {
     fn from_bytes(kind: Type, bytes: &[u8]) -> Cell {
-        if let Some(first) = bytes.get(0) {
+        if let Some(first) = bytes.first() {
             let firstchar = *first as char;
             if let Some(num) = firstchar.to_digit(8) {
                 return Cell{contents: vec![num as u8], kind}

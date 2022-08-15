@@ -54,7 +54,7 @@ impl<'a> ToString for Cell<'a> {
     fn to_string(&self) -> String {
         match self.kind {
             Type::NUMBER => {
-                match <[u8; 4]>::try_from(self.raw.clone()) {
+                match <[u8; 4]>::try_from(self.raw) {
                     Ok(bytes) => i32::from_be_bytes(bytes).to_string(),
                     _ => panic!()
                 }
@@ -71,7 +71,7 @@ impl<'a> TryFrom<Cell<'a>> for i32 {
     fn try_from(cell: Cell) ->  Result<i32, ()> {
         match cell.kind {
             Type::NUMBER => {
-                match <[u8; 4]>::try_from(cell.raw.clone()) {
+                match <[u8; 4]>::try_from(cell.raw) {
                     Ok(bytes) => Ok(i32::from_be_bytes(bytes)),
                     _ => Err(()),
                 }

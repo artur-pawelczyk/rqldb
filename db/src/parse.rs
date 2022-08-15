@@ -13,7 +13,7 @@ impl fmt::Display for ParseError {
     }
 }
 
-pub fn parse_query<'a>(query_str: &'a str) -> Result<Query<'a>, ParseError> {
+pub fn parse_query(query_str: &str) -> Result<Query<'_>, ParseError> {
     let mut tokenizer = Tokenizer::from_str(query_str);
     let mut query = read_source(&mut tokenizer)?;
 
@@ -91,7 +91,7 @@ fn read_operator(t: Option<Token>) -> Result<Operator, ParseError> {
     }
 }
 
-fn read_symbol<'a>(t: Option<Token<'a>>) -> Result<&'a str, ParseError> {
+fn read_symbol(t: Option<Token<'_>>) -> Result<&str, ParseError> {
     if let Some(token) = t {
         match token {
             Token::Symbol(name) => Ok(name),
@@ -114,7 +114,7 @@ fn read_table_scan<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query<'a>, Parse
 fn read_tuple<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query<'a>, ParseError> {
     let mut values: Vec<&str> = Vec::new();
 
-    while let Some(token) = tokenizer.next() {
+    for token in tokenizer {
         match token {
             Token::Symbol(name) => values.push(name),
             Token::Pipe => break,
@@ -155,7 +155,7 @@ pub fn parse_command(source: &str) -> Result<Command, ParseError> {
                 };
                 command = Command::create_table(name);
 
-                while let Some(arg) = tokenizer.next() {
+                for arg in tokenizer.by_ref() {
                     match arg {
                         Token::SymbolWithType(name, kind) => { command = command.column(name, str_to_type(kind)); },
                         Token::SymbolWithKeyType(name, kind) => { command = command.indexed_column(name, str_to_type(kind)); },

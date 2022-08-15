@@ -27,7 +27,7 @@ impl<'a> IndexedObject<'a> {
 
         Self{
             tuples: Vec::new(),
-            index: key.map(|pos| Index::Attr(pos)).unwrap_or(Index::Uniq),
+            index: key.map(Index::Attr).unwrap_or(Index::Uniq),
             hash: Default::default(),
             removed_ids: Default::default(),
             marker: PhantomData,
@@ -48,7 +48,7 @@ impl<'a> IndexedObject<'a> {
                 }
             },
             Index::Uniq => {
-                if let Some(_) = self.tuples.iter().position(|x| x == tuple.as_bytes()) {
+                if self.tuples.iter().position(|x| x == tuple.as_bytes()).is_some() {
                     false
                 } else {
                     self.tuples.push(tuple.as_bytes().to_vec());
@@ -62,7 +62,7 @@ impl<'a> IndexedObject<'a> {
     pub(crate) fn find_in_index(&self, cell: &[u8]) -> Option<usize> {
         match self.index {
             Index::Attr(_) => {
-                self.hash.get(cell).map(|x| *x)
+                self.hash.get(cell).copied()
             }
             _ => todo!(),
         }

@@ -93,7 +93,7 @@ struct InnerColumn {
     indexed: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Type {
     BYTE(u8),
     NUMBER, TEXT,
