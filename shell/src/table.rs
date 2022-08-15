@@ -87,8 +87,8 @@ pub(crate) struct TempRow<'a> {
 }
 
 impl<'a> TempRow<'a> {
-    pub(crate) fn cell(mut self, content: &str) -> Self {
-        self.row.push(content.to_string());
+    pub(crate) fn cell(mut self, content: String) -> Self {
+        self.row.push(content);
         self
     }
 
@@ -158,7 +158,7 @@ mod tests {
         table.add_title_cell("123");
         table.add_title_cell("123");
 
-        table.row().cell("a").cell("b").add();
+        table.row().cell("a".to_string()).cell("b".to_string()).add();
         assert_eq!(table.rows().get(0).unwrap().to_string(), "| a   | b   |");
 
         assert_eq!(table.to_string(),
@@ -172,7 +172,7 @@ mod tests {
         let mut table = Table::new();
         table.add_title_cell("a");
         table.add_title_cell("b");
-        table.row().cell("aaa").cell("bbbb").add();
+        table.row().cell("aaa".to_string()).cell("bbbb".to_string()).add();
 
         assert_eq!(table.to_string(),
                    "| a   | b    |\n\
