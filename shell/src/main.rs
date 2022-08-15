@@ -112,8 +112,6 @@ impl Persist for NoOpPersist {
     }
 }
 
-
-
 fn print_result(result: &QueryResults) {
     let mut table = Table::new();
     for attr in result.attributes() {
@@ -128,5 +126,5 @@ fn print_result(result: &QueryResults) {
         row.add();
     }
 
-    println!("{}", table.to_string());
+    println!("{}", table);
 }

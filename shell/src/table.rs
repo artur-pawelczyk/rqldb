@@ -1,4 +1,5 @@
-use std::{iter::zip, cmp::max};
+use std::{iter::zip, cmp::max, fmt::Display};
+use std::fmt;
 
 pub(crate) struct Table {
     columns: Vec<Column>,
@@ -33,31 +34,28 @@ impl Table {
     }
 }
 
-impl ToString for Table {
-    fn to_string(&self) -> String {
-        let mut s = String::new();
+impl Display for Table {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}\n", self.title())?;
 
-        s.push_str(self.title().to_string().as_str());
-        s.push('\n');
-
-        s.push('|');
-        s.push_str(self.columns.iter().map(Column::as_line).collect::<Vec<String>>().join("|").as_str());
-        s.push('|');
+        let mut iter = self.columns.iter().peekable();
+        while let Some(col) = iter.next() {
+            write!(f, "|{}", col.as_line())?;
+            if iter.peek().is_none() {
+                write!(f, "|")?;
+            }
+        }
 
         for row in &self.rows {
-            s.push('\n');
+            write!(f, "\n")?;
             for (column, cell) in zip(self.columns.iter(), row.iter()) {
-                s.push('|');
-                s.push_str(column.render_cell(cell).as_str());
+                let padding = column.width - 1;
+                write!(f, "| {:w$}", cell, w = padding)?;
             }
-            s.push('|');
+            write!(f, "|")?;
         }
 
-        if s.chars().last() == Some('\n') {
-            s.pop();
-        }
-
-        s
+        Ok(())
     }
 }
 
@@ -73,21 +71,13 @@ impl Column {
     }
 
     fn as_line(&self) -> String {
-        String::from_utf8((0..self.width).map(|_| b'-').collect()).unwrap()        
+        String::from_utf8((0..self.width).map(|_| b'-').collect()).unwrap() // TODO: Remove allcation
     }
+}
 
-    fn render(&self) -> String {
-        self.render_cell(&self.name)
-    }
-
-    fn render_cell(&self, content: &str) -> String {
-        let mut s = " ".to_string();
-        s.push_str(content);
-        while s.len() < self.width {
-            s.push(' ');
-        }
-
-        s
+impl Display for Column {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, " {:w$}", self.name, w = self.width - 1)
     }
 }
 
@@ -116,18 +106,17 @@ struct Row<'a> {
     row: &'a [String],
 }
 
-impl<'a> ToString for Row<'a> {
-    fn to_string(&self) -> String {
-        if self.table.columns.is_empty() {
-            return "".to_string()
+impl<'a> Display for Row<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let len = self.row.len();
+        for (i, cell) in self.row.iter().enumerate() {
+            let last = i+1 == len;
+            write!(f, "| {:w$}", cell, w = self.table.columns[i].width - 1)?;
+
+            if last { write!(f, "|")?; }
         }
 
-        let joined = (0..self.table.columns.len())
-            .map(|i| {
-                self.table.columns[i].render_cell(&self.row[i])
-            }).collect::<Vec<String>>().join("|");
-
-        format!("|{}|", joined)
+        Ok(())
     }
 }
 
@@ -135,18 +124,15 @@ struct Title<'a> {
     table: &'a Table,
 }
 
-impl<'a> ToString for Title<'a> {
-    fn to_string(&self) -> String {
-        if self.table.columns.is_empty() {
-            return "".to_string()
+impl<'a> Display for Title<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut iter = self.table.columns.iter().peekable();
+        while let Some(col) = iter.next() {
+            write!(f, "|{}", col)?;
+            if iter.peek().is_none() { write!(f, "|")?; }
         }
 
-        let joined = self.table.columns.iter()
-            .map(|col| {
-                col.render()
-            }).collect::<Vec<String>>().join("|");
-
-        format!("|{}|", joined)
+        Ok(())
     }
 }
 
