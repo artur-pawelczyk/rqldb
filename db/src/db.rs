@@ -1,5 +1,6 @@
 use std::cell::{RefCell, Ref, RefMut};
 
+use crate::dump::{dump_values, dump_create};
 use crate::object::IndexedObject;
 use crate::plan::{Contents, Attribute, Filter, Plan, Finisher};
 use crate::tuple::Tuple;
@@ -110,14 +111,14 @@ impl<'obj> Database<'obj> {
         }
     }
 
-    pub fn raw_object(&self, name: &str) -> Option<RawObjectView> {
+    pub fn raw_object<'a>(&'a self, name: &str) -> Option<RawObjectView<'a>> {
         let rel = self.schema.find_relation(name)?;
         let o = self.objects.get(rel.id)?;
-        Some(RawObjectView::new(o.borrow()))
+        Some(RawObjectView{ rel, object: o.borrow() })
     }
 
     pub fn raw_objects(&self) -> Vec<RawObjectView> {
-       self.objects.iter().map(|o| RawObjectView::new(o.borrow())).collect()
+        self.schema.relations.iter().flat_map(|rel| self.raw_object(rel.name())).collect()
     }
 
     pub fn schema(&self) -> &Schema {
@@ -128,6 +129,18 @@ impl<'obj> Database<'obj> {
         let table = self.schema.find_relation(id).unwrap();
         let new_obj = IndexedObject::recover(snapshot, table);
         let _ = std::mem::replace(&mut self.objects[id], RefCell::new(new_obj));
+    }
+
+    pub fn dump(&self, name: &str) -> String {
+        let mut out = String::new();
+        let rel = self.schema.find_relation(name).unwrap();
+        out.push_str(&dump_create(rel).to_string());
+        for tuple in dump_values(&self.raw_object(name).unwrap()) {
+            out += &tuple;
+            out.push('\n');
+        }
+
+        out
     }
 }
 

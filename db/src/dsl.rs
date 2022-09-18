@@ -2,7 +2,7 @@ use std::{fmt, str::FromStr};
 
 use crate::{schema::Type, parse::ParseError};
 
-#[derive(Default)]
+#[derive(Debug, Default, PartialEq)]
 pub struct Query<'a> {
     pub source: Source<'a>,
     pub join_sources: Vec<JoinSource<'a>>,
@@ -120,7 +120,7 @@ impl FromStr for Operator {
     }
 }
 
-#[derive(Default)]
+#[derive(Debug, Default, PartialEq)]
 pub enum Source<'a> {
     #[default]
     Nil,
@@ -140,6 +140,7 @@ impl<'a> Source<'a> {
     }
 }
 
+#[derive(Debug, PartialEq)]
 pub struct JoinSource<'a> {
     pub table: &'a str,
     pub left: &'a str,
@@ -155,6 +156,7 @@ impl<'a> JoinSource<'a> {
     }
 }
 
+#[derive(Debug, PartialEq)]
 pub enum Filter<'a> {
     Condition(&'a str, Operator, &'a str),
 }
@@ -167,7 +169,7 @@ impl<'a> Filter<'a> {
     }
 }
 
-#[derive(Default)]
+#[derive(Debug, Default, PartialEq)]
 pub enum Finisher<'a> {
     #[default]
     AllColumns,
@@ -201,6 +203,7 @@ fn print_tokens(tokens: &[&str]) -> String {
     s
 }
 
+#[derive(PartialEq, Debug)]
 pub struct Command {
     pub name: String,
     pub columns: Vec<Column>
@@ -211,7 +214,7 @@ impl Command {
         Command{name: name.to_string(), columns: Vec::new()}
     }
 
- pub fn column(mut self, name: &str, kind: Type) -> Self {
+    pub fn column(mut self, name: &str, kind: Type) -> Self {
         self.columns.push(Column{ name: name.to_string(), kind, indexed: false });
         self
     }
@@ -243,6 +246,7 @@ impl fmt::Display for Command {
     }
 }
 
+#[derive(PartialEq, Debug)]
 pub struct Column {
     pub name: String,
     pub kind: Type,

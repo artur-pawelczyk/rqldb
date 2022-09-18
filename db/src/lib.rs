@@ -6,6 +6,7 @@ pub mod schema;
 pub mod tokenize;
 pub mod tuple;
 pub mod object;
+pub mod dump;
 
 use std::fmt;
 use std::cmp::Ordering;

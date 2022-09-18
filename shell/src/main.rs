@@ -79,6 +79,11 @@ impl<'a> Shell<'a> {
                 Err(error) => { println!("{}", error); return; }
             };
             self.db.execute_create(&command);
+        } else if cmd.starts_with("dump") {
+            match cmd.split_ascii_whitespace().collect::<Vec<&str>>()[..] {
+                ["dump", name] => println!("{}", self.db.dump(name)),
+                _ => println!("Wrong command"),
+            }
         } else {
             let query = match parse_query(cmd) {
                 Ok(parsed) => parsed,

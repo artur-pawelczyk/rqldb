@@ -1,6 +1,6 @@
 use std::{collections::{HashSet, HashMap}, marker::PhantomData, cell::Ref};
 
-use crate::{tuple::Tuple, schema::Relation};
+use crate::{tuple::Tuple, schema::Relation, Type};
 
 type ByteCell = Vec<u8>;
 type ByteTuple = Vec<ByteCell>;
@@ -119,19 +119,24 @@ enum Index {
 }
 
 pub struct RawObjectView<'a> {
-    object: Ref<'a, IndexedObject<'a>>,
+    pub(crate) object: Ref<'a, IndexedObject<'a>>,
+    pub(crate) rel: &'a Relation,
 }
 
 impl<'a> RawObjectView<'a> {
-    pub(crate) fn new(object: Ref<'a, IndexedObject<'a>>) -> Self {
-        Self{ object }
-    }
-
     pub fn count(&self) -> usize {
         self.object.tuples.len()
     }
 
     pub fn raw_tuples(&'a self) -> Box<dyn Iterator<Item = &'a ByteTuple> + 'a> {
         Box::new(self.object.tuples.iter())
+    }
+
+    pub fn name(&self) -> &str {
+        self.rel.name()
+    }
+
+    pub fn types(&self) -> Vec<Type> {
+        self.rel.types()
     }
 }
