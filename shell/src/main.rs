@@ -19,9 +19,14 @@ struct Args {
     #[clap(long)]
     init: Option<String>,
 
+    /// When specified, execute the command and exit
+    #[clap(short, long)]
+    command: Option<String>,
+
     /// Database file. If not provided, an in-memory database is created.
     #[clap(value_name = "FILENAME")]
     db_file: Option<String>,
+
 }
 
 fn main() {
@@ -36,11 +41,15 @@ fn main() {
         }
     }
 
-    let mut editor = Editor::<()>::new();
-    loop {
-        match editor.readline("query> ") {
-            Ok(line) => shell.handle_command(&line, true),
-            Err(e) => { println!("{:?}", e); break; }
+    if let Some(command) = args.command {
+        shell.handle_command(&command, true);
+    } else {
+        let mut editor = Editor::<()>::new();
+        loop {
+            match editor.readline("query> ") {
+                Ok(line) => shell.handle_command(&line, true),
+                Err(e) => { println!("{:?}", e); break; }
+            }
         }
     }
 }
@@ -81,6 +90,9 @@ impl<'a> Shell<'a> {
             self.db.execute_create(&command);
         } else if cmd.starts_with("dump") {
             match cmd.split_ascii_whitespace().collect::<Vec<&str>>()[..] {
+                ["dump"] => for obj in self.db.raw_objects() {
+                    println!("{}", self.db.dump(obj.name()));
+                },
                 ["dump", name] => println!("{}", self.db.dump(name)),
                 _ => println!("Wrong command"),
             }
