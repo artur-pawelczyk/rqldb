@@ -135,11 +135,22 @@ impl<'obj> Database<'obj> {
         let mut out = String::new();
         let rel = self.schema.find_relation(name).unwrap();
         out.push_str(&dump_create(rel).to_string());
+        out.push('\n');
         for tuple in dump_values(&self.raw_object(name).unwrap()) {
             out += &tuple;
             out.push('\n');
         }
 
+        out
+    }
+
+    pub fn dump_all(&self) -> String {
+        let mut out = String::new();
+        for rel in &self.schema.relations {
+            out += &self.dump(rel.name());
+        }
+
+        out.pop();
         out
     }
 }
@@ -432,5 +443,21 @@ mod tests {
 
         let missing_index = db.execute_query(&Query::scan_index("document.content", Operator::EQ, "a"));
         assert!(missing_index.is_err());
+    }
+
+    #[test]
+    fn dump_all() {
+        let mut db = Database::default();
+        db.execute_create(&Command::create_table("first").indexed_column("id", Type::NUMBER).column("content", Type::TEXT));
+        db.execute_create(&Command::create_table("second").column("num", Type::NUMBER));
+        db.execute_query(&Query::tuple(&["1", "one"]).insert_into("first")).unwrap();
+
+        let expected = concat!(
+            "create_table first id::NUMBER::KEY content::TEXT\n",
+            "tuple 1 one | insert_into first\n",
+            "create_table second num::NUMBER",
+        );
+
+        assert_eq!(db.dump_all(), expected);
     }
 }
