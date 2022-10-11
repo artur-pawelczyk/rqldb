@@ -193,9 +193,21 @@ impl<'a> Finisher<'a> {
 
 fn print_tokens(tokens: &[&str]) -> String {
     let mut s  = String::new();
+
     for token in tokens {
+        let quote = token.contains(' ');
+        if quote {
+            s.push('"');
+        }
+
         s.push_str(token);
+
+        if quote {
+            s.push('"');
+        }
+
         s.push(' ');
+
     }
 
     if !s.is_empty() { s.pop(); }
@@ -336,5 +348,12 @@ mod tests {
             .column("contents", Type::TEXT);
 
         assert_eq!("create_table example id::NUMBER::KEY contents::TEXT", query.to_string());
+    }
+
+    #[test]
+    fn quotes() {
+        let query = Query::tuple(&["1", "foo bar"]).insert_into("example");
+
+        assert_eq!("tuple 1 \"foo bar\" | insert_into example", query.to_string());
     }
 }
