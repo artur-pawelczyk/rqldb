@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::BTreeMap, fmt, str::FromStr};
+use std::{borrow::Cow, collections::{BTreeMap, HashMap}, fmt, str::FromStr};
 
 use crate::{parse::ParseError, schema::Type};
 
@@ -190,6 +190,12 @@ impl<'a> IntoTuple<'a> for &'a BTreeMap<&str, String> {
 }
 
 impl<'a> IntoTuple<'a> for &'a BTreeMap<&str, &str> {
+    fn into_tuple(self) -> Vec<TupleAttr<'a>> {
+        self.iter().map(|(k, v)| TupleAttr { kind: None, name: k, value: Cow::Borrowed(v) }).collect()
+    }
+}
+
+impl<'a> IntoTuple<'a> for &'a HashMap<&'a str, &'a str> {
     fn into_tuple(self) -> Vec<TupleAttr<'a>> {
         self.iter().map(|(k, v)| TupleAttr { kind: None, name: k, value: Cow::Borrowed(v) }).collect()
     }

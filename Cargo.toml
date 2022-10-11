@@ -4,4 +4,5 @@ members = [
         "db",
         "shell",
         "live-storage",
+        "import",
 ]
