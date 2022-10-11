@@ -1,0 +1,8 @@
+[package]
+name = "cities"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rqldb = { path = "../db" }
+csv = "1.1.6"
