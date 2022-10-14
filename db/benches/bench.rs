@@ -71,5 +71,14 @@ fn benchmark_parse(c: &mut Criterion) {
     c.bench_function("parse query", |b| b.iter(|| parse_query(query).unwrap()));
 }
 
-criterion_group!(benches, benchmark_insert, benchmark_count, benchmark_parse, benchmark_filter, benchmark_index_search);
+fn benchmark_query_to_string(c: &mut Criterion) {
+    let scan_query = Query::scan("document").join("type", "document.type_id", "type.id").filter("document.id", Operator::EQ, "1");
+    let insert_query = Query::tuple(&["1", "foo", "bar"]).insert_into("document");
+
+    c.bench_function("dump scan query", |b| b.iter(|| scan_query.to_string()));
+    c.bench_function("dump insert query", |b| b.iter(|| insert_query.to_string()));
+
+}
+
+criterion_group!(benches, benchmark_insert, benchmark_count, benchmark_parse, benchmark_filter, benchmark_index_search, benchmark_query_to_string);
 criterion_main!(benches);
