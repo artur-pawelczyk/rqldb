@@ -54,7 +54,7 @@ mod tests {
 
         let rel = schema.find_relation("example").unwrap();
 
-        assert_eq!(dump_create(&rel), Command::create_table("example")
+        assert_eq!(dump_create(rel), Command::create_table("example")
                    .indexed_column("id", Type::NUMBER)
                    .column("content", Type::TEXT));
     }

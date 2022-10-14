@@ -48,7 +48,7 @@ impl<'a> IndexedObject<'a> {
                 }
             },
             Index::Uniq => {
-                if self.tuples.iter().position(|x| x == tuple.as_bytes()).is_some() {
+                if self.tuples.iter().any(|x| x == tuple.as_bytes()) {
                     false
                 } else {
                     self.tuples.push(tuple.as_bytes().to_vec());
