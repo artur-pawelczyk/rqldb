@@ -63,32 +63,22 @@ impl<'a> Query<'a> {
         self.finisher = Finisher::Delete;
         self
     }
-
-    pub fn print(&self) -> String {
-        let mut s = String::new();
-
-        s.push_str(&self.source.print());
-
-        for join in &self.join_sources {
-            s.push_str(" | ");
-            s.push_str(&join.print());
-        }
-
-        for filter in &self.filters {
-            s.push_str(" | ");
-            s.push_str(&filter.print());
-        }
-
-        s.push_str(" | ");
-        s.push_str(&self.finisher.print());
-
-        s
-    }
 }
 
 impl<'a> fmt::Display for Query<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.print())
+        write!(f, "{}", &self.source.print())?;
+        for join in &self.join_sources {
+            write!(f, " | {}", &join.print())?;
+        }
+
+        for filter in &self.filters {
+            write!(f, " | {}", &filter.print())?;
+        }
+
+        write!(f, " | {}", &self.finisher.print())?;
+
+        Ok(())
     }
 }
     
