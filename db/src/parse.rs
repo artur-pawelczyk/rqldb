@@ -40,6 +40,11 @@ pub fn parse_query(query_str: &str) -> Result<Query<'_>, ParseError> {
                     }
                     query = query.join(table, left, right);
                 },
+                "apply" => {
+                    let function = read_symbol(tokenizer.next())?;
+                    let args = read_tuple(&mut tokenizer)?;
+                    query = query.apply(function, &args);
+                }
                 "count" => {
                     if let Some(token) = tokenizer.next() {
                         if token != Token::Pipe { return Err(ParseError("Expected end of statement")); }
@@ -65,7 +70,7 @@ fn read_source<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query<'a>, ParseErro
     match function {
         Token::Symbol(name) => match name {
             "scan" => read_table_scan(tokenizer),
-            "tuple" => read_tuple(tokenizer),
+            "tuple" => read_tuple(tokenizer).map(|values| Query::tuple(&values)),
             "scan_index" => read_index_scan(tokenizer),
             _ => Result::Err(ParseError("Unnokwn source function")),
         },
@@ -111,7 +116,7 @@ fn read_table_scan<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query<'a>, Parse
     }
 }
 
-fn read_tuple<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query<'a>, ParseError> {
+fn read_tuple<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Vec<&'a str>, ParseError> {
     let mut values: Vec<&str> = Vec::new();
 
     for token in tokenizer {
@@ -122,7 +127,7 @@ fn read_tuple<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query<'a>, ParseError
         }
     }
 
-    Ok(Query::tuple(&values))
+    Ok(values)
 }
 
 fn read_index_scan<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query<'a>, ParseError> {
@@ -192,7 +197,8 @@ mod tests {
         assert_parse("scan example | join other example.other_id example.id | select_all");
         assert_parse("scan example | count");
         assert_parse("scan example | filter example.id = 1 | delete");
-        assert_parse("scan_index example.id = 1 | select_all")
+        assert_parse("scan_index example.id = 1 | select_all");
+        assert_parse("scan example | apply sum example.n");
     }
 
     #[test]
