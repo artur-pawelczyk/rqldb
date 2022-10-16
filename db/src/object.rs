@@ -1,3 +1,4 @@
+use std::fmt;
 use std::{collections::{HashSet, HashMap}, marker::PhantomData, cell::Ref};
 
 use crate::{tuple::Tuple, schema::Relation, Type};
@@ -108,6 +109,12 @@ impl<'a> IndexedObject<'a> {
                 marker: PhantomData,
             }
         }
+    }
+}
+
+impl<'a> fmt::Debug for IndexedObject<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "IndexedObject")
     }
 }
 

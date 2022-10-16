@@ -48,6 +48,19 @@ impl<'a> Cell<'a> {
     pub fn bytes(&self) -> &[u8] {
         self.raw
     }
+
+    pub fn as_number(&self) -> Option<i32> {
+        match self.kind {
+            Type::NUMBER => {
+                let bytes: Result<[u8; 4], _> = self.raw.clone().try_into();
+                match bytes {
+                    Ok(x) => Some(i32::from_be_bytes(x)),
+                    _ => None
+                }
+            },
+            _ => None
+        }
+    }
 }
 
 impl<'a> ToString for Cell<'a> {

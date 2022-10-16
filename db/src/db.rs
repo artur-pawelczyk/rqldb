@@ -5,7 +5,7 @@ use crate::object::IndexedObject;
 use crate::plan::{Contents, Attribute, Filter, Plan, Finisher};
 use crate::tuple::Tuple;
 use crate::{schema::Schema, QueryResults, plan::compute_plan};
-use crate::{dsl, Cell, RawObjectView};
+use crate::{dsl, Cell, RawObjectView, Type};
 
 #[derive(Default)]
 pub struct Database<'a> {
@@ -104,6 +104,7 @@ impl<'obj> Database<'obj> {
     fn create_sink<'a>(&'a self, plan: &Plan) -> Sink<'a, 'obj> {
         match plan.finisher {
             Finisher::Return => Sink::Return(plan.final_attributes(), vec![]),
+            Finisher::Apply => Sink::Sum(0),
             Finisher::Count => Sink::Count(0),
             Finisher::Insert(rel) => Sink::Insert(self.objects.get(rel.id).unwrap().borrow_mut()),
             Finisher::Delete(_) => Sink::Delete(vec![]),
@@ -184,8 +185,10 @@ impl<'a> ObjectView<'a> {
     }
 }
 
+#[derive(Debug)]
 enum Sink<'a, 'obj> {
     Count(usize),
+    Sum(i32),
     Return(Vec<Attribute>, Vec<Vec<Cell>>),
     Insert(RefMut<'a, IndexedObject<'obj>>),
     Delete(Vec<usize>),
@@ -196,6 +199,7 @@ impl<'a, 'obj> Sink<'a, 'obj> {
     fn accept_tuple(&mut self, idx: usize, tuple: &Tuple) {
         match self {
             Self::Count(ref mut count) => *count += 1,
+            Self::Sum(ref mut sum) => *sum += tuple.cell(1, Type::NUMBER).unwrap().as_number().unwrap(),
             Self::Return(attrs, ref mut results) => results.push(tuple_to_cells(attrs, tuple)),
             Self::Insert(object) => { object.add_tuple(tuple); },
             Self::Delete(ref mut tuples) => tuples.push(idx),
@@ -212,6 +216,7 @@ impl<'a, 'obj> Sink<'a, 'obj> {
     fn into_results(self) -> QueryResults {
         match self {
             Self::Count(count) => QueryResults::count(count as u32),
+            Self::Sum(n) => QueryResults::count(n as u32),
             Self::Return(attributes, results) => {
                 QueryResults{
                     attributes: attributes.into_iter().map(|attr| attr.into_name()).collect(),
@@ -338,6 +343,22 @@ mod tests {
         let type_name = tuple.cell_by_name("type.name").unwrap().as_string();
         assert_eq!(document_id, "1");
         assert_eq!(type_name, "type_b");
+    }
+
+    #[test]
+    fn apply_sum() {
+        let mut db = Database::default();
+        db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("size", Type::NUMBER));
+        for i in 1..=10 {
+            db.execute_query(&Query::tuple(&[i.to_string().as_str(), i.to_string().as_str()]).insert_into("document")).expect("Insert");
+        }
+
+        let result = db.execute_query(&Query::scan("document").apply("sum", &["document.size"])).unwrap();
+        let sum = result.results().get(0)
+            .and_then(|t| t.cell_at(0))
+            .and_then(|c| c.as_number())
+            .unwrap();
+        assert_eq!(sum, 55);
     }
 
     #[test]
