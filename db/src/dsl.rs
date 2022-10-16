@@ -49,6 +49,11 @@ impl<'a> Query<'a> {
         self
     }
 
+    pub fn apply(mut self, function: &'a str, args: &[&'a str]) -> Self {
+        self.finisher = Finisher::Apply(function, args.to_vec());
+        self
+    }
+
     pub fn insert_into(mut self, name: &'a str) -> Self {
         self.finisher = Finisher::Insert(name);
         self
@@ -164,6 +169,7 @@ pub enum Finisher<'a> {
     #[default]
     AllColumns,
     Columns(Vec<&'a str>),
+    Apply(&'a str, Vec<&'a str>),
     Insert(&'a str),
     Count,
     Delete,
@@ -174,6 +180,7 @@ impl<'a> Finisher<'a> {
         match self {
             Finisher::AllColumns => "select_all".to_string(),
             Finisher::Columns(rows) => "select ".to_string() + &print_tokens(rows),
+            Finisher::Apply(f, a) => format!("apply {} {}", f, &print_tokens(a)),
             Finisher::Insert(name) => "insert_into ".to_string() + name,
             Finisher::Count => "count".to_string(),
             Finisher::Delete => "delete".to_string(),
@@ -316,6 +323,12 @@ mod tests {
     }
 
     #[test]
+    fn apply() {
+        let query = Query::scan("example").apply("sum", &["example.n"]);
+        assert_eq!(query.to_string(), "scan example | apply sum example.n");
+    }
+
+    #[test]
     fn index_scan() {
         let query = Query::scan_index("example.id", Operator::EQ, "1");
         assert_eq!(query.to_string(), "scan_index example.id = 1 | select_all");
@@ -329,7 +342,6 @@ mod tests {
         let delete_one = Query::scan("example").filter("example.id", EQ, "1").delete();
         assert_eq!(delete_one.to_string(), "scan example | filter example.id = 1 | delete");
     }
-
 
     #[test]
     fn create_table() {
