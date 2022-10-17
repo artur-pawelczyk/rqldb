@@ -246,15 +246,32 @@ impl<'a> Source<'a> {
     }
 }
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Default, PartialEq, Debug)]
 pub enum Finisher<'a> {
     Return,
     Insert(&'a Relation),
     Count,
-    Apply,
+    Apply(ApplyFn),
     Delete(&'a Relation),
     #[default]
     Nil,
+}
+
+#[derive(Default, PartialEq, Debug)]
+pub enum ApplyFn {
+    #[default]
+    NoOp,
+    Sum, Max
+}
+
+impl ApplyFn {
+    fn from(s: &str) -> Self {
+        match s {
+            "sum" => Self::Sum,
+            "max" => Self::Max,
+            _ => Self::NoOp,
+        }
+    }
 }
 
 pub(crate) fn compute_plan<'a>(schema: &'a Schema, query: &dsl::Query) -> Result<Plan<'a>, &'static str> {
@@ -311,7 +328,7 @@ fn compute_finisher<'a>(plan: Plan<'a>, schema: &'a Schema, query: &dsl::Query) 
         dsl::Finisher::Insert(name) => schema.find_relation(*name).map(Finisher::Insert).ok_or("No such target table"),
         dsl::Finisher::AllColumns => Ok(Finisher::Return),
         dsl::Finisher::Count => Ok(Finisher::Count),
-        dsl::Finisher::Apply(_, _) => Ok(Finisher::Apply),
+        dsl::Finisher::Apply(f, _) => Ok(Finisher::Apply(ApplyFn::from(f))),
         dsl::Finisher::Delete => {
             match &query.source {
                 dsl::Source::TableScan(name) => schema.find_relation(*name).map(Finisher::Delete).ok_or("No table to delete"),
@@ -524,7 +541,7 @@ mod tests {
 
         let finisher = compute_plan(&schema, &dsl::Query::scan("example").apply("sum", &["example.n"]))
             .unwrap().finisher;
-        assert_eq!(finisher, Finisher::Apply);
+        assert_eq!(finisher, Finisher::Apply(ApplyFn::Sum));
 
         let failure = compute_plan(&schema, &dsl::Query::tuple(&["a", "b", "c"]).insert_into("not-a-table"));
         assert!(failure.is_err());
