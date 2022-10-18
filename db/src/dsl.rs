@@ -72,16 +72,16 @@ impl<'a> Query<'a> {
 
 impl<'a> fmt::Display for Query<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", &self.source.print())?;
+        write!(f, "{}", &self.source)?;
         for join in &self.join_sources {
-            write!(f, " | {}", &join.print())?;
+            write!(f, " | {}", join)?;
         }
 
         for filter in &self.filters {
-            write!(f, " | {}", &filter.print())?;
+            write!(f, " | {}", filter)?;
         }
 
-        write!(f, " | {}", &self.finisher.print())?;
+        write!(f, " | {}", self.finisher)?;
 
         Ok(())
     }
@@ -92,15 +92,15 @@ pub enum Operator {
     EQ, GT, GE, LT, LE
 }
 
-impl Operator {
-    fn print(&self) -> String {
-        match self {
+impl fmt::Display for Operator {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", match self {
             Operator::EQ => "=",
             Operator::GT => ">",
             Operator::GE => ">=",
             Operator::LT => "<",
             Operator::LE => "<=",
-        }.to_string()
+        })
     }
 }
 
@@ -124,13 +124,13 @@ pub enum Source<'a> {
     Tuple(Vec<&'a str>),
 }
 
-impl<'a> Source<'a> {
-    fn print(&self) -> String {
+impl<'a> fmt::Display for Source<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Source::Nil => "nil".to_string(),
-            Source::TableScan(table) => "scan ".to_string() + table,
-            Source::IndexScan(index, _, val) => format!("scan_index {} = {}", index, val),
-            Source::Tuple(values) => "tuple ".to_string() + &print_tokens(values)
+            Source::Nil => write!(f, "nil"),
+            Source::TableScan(table) => write!(f, "scan {}", table),
+            Source::IndexScan(index, _, val) => write!(f, "scan_index {} = {}", index, val),
+            Source::Tuple(values) => write!(f, "tuple {}", &print_tokens(values)),
         }
     }
 }
@@ -142,12 +142,9 @@ pub struct JoinSource<'a> {
     pub right: &'a str,
 }
 
-impl<'a> JoinSource<'a> {
-    fn print(&self) -> String {
-        "join".to_string()
-            + " " + self.table
-            + " " + self.left
-            + " " + self.right
+impl<'a> fmt::Display for JoinSource<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "join {} {} {}", self.table, self.left, self.right)
     }
 }
 
@@ -156,10 +153,10 @@ pub enum Filter<'a> {
     Condition(&'a str, Operator, &'a str),
 }
 
-impl<'a> Filter<'a> {
-    fn print(&self) -> String {
+impl<'a> fmt::Display for Filter<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Filter::Condition(left, op, right) => "filter ".to_owned() + left + " " + &op.print() + " " + right
+            Filter::Condition(left, op, right) => write!(f, "filter {} {} {}", left, op, right),
         }
     }
 }
@@ -175,15 +172,15 @@ pub enum Finisher<'a> {
     Delete,
 }
 
-impl<'a> Finisher<'a> {
-    fn print(&self) -> String {
+impl<'a> fmt::Display for Finisher<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Finisher::AllColumns => "select_all".to_string(),
-            Finisher::Columns(rows) => "select ".to_string() + &print_tokens(rows),
-            Finisher::Apply(f, a) => format!("apply {} {}", f, &print_tokens(a)),
-            Finisher::Insert(name) => "insert_into ".to_string() + name,
-            Finisher::Count => "count".to_string(),
-            Finisher::Delete => "delete".to_string(),
+            Finisher::AllColumns => write!(f, "select_all"),
+            Finisher::Columns(rows) => write!(f, "select {}", &print_tokens(rows)),
+            Finisher::Apply(fun, a) => write!(f, "apply {} {}", fun, &print_tokens(a)),
+            Finisher::Insert(name) => write!(f, "insert_into {}", name),
+            Finisher::Count => write!(f, "count"),
+            Finisher::Delete => write!(f, "delete"),
         }
     }
 }
