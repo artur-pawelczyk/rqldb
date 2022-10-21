@@ -104,9 +104,9 @@ impl<'obj> Database<'obj> {
     fn create_sink<'a>(&'a self, plan: &Plan) -> Sink<'a, 'obj> {
         match &plan.finisher {
             Finisher::Return => Sink::Return(plan.final_attributes(), vec![]),
-            Finisher::Apply(f) => match f {
-                ApplyFn::Max => Sink::Max(0),
-                ApplyFn::Sum => Sink::Sum(0),
+            Finisher::Apply(f, attr) => match f {
+                ApplyFn::Max => Sink::Max(attr.pos(), 0),
+                ApplyFn::Sum => Sink::Sum(attr.pos(), 0),
                 _ => Sink::NoOp,
             }
             Finisher::Count => Sink::Count(0),
@@ -192,8 +192,8 @@ impl<'a> ObjectView<'a> {
 #[derive(Debug)]
 enum Sink<'a, 'obj> {
     Count(usize),
-    Sum(i32),
-    Max(i32),
+    Sum(usize, i32),
+    Max(usize, i32),
     Return(Vec<Attribute>, Vec<Vec<Cell>>),
     Insert(RefMut<'a, IndexedObject<'obj>>),
     Delete(Vec<usize>),
@@ -204,8 +204,8 @@ impl<'a, 'obj> Sink<'a, 'obj> {
     fn accept_tuple(&mut self, idx: usize, tuple: &Tuple) {
         match self {
             Self::Count(ref mut count) => *count += 1,
-            Self::Sum(ref mut sum) => *sum += tuple.cell(1, Type::NUMBER).unwrap().as_number().unwrap(),
-            Self::Max(ref mut max) => *max = std::cmp::max(*max, tuple.cell(1, Type::NUMBER).unwrap().as_number().unwrap()),
+            Self::Sum(pos, ref mut sum) => *sum += tuple.cell(*pos, Type::NUMBER).unwrap().as_number().unwrap(),
+            Self::Max(pos, ref mut max) => *max = std::cmp::max(*max, tuple.cell(*pos, Type::NUMBER).unwrap().as_number().unwrap()),
             Self::Return(attrs, ref mut results) => results.push(tuple_to_cells(attrs, tuple)),
             Self::Insert(object) => { object.add_tuple(tuple); },
             Self::Delete(ref mut tuples) => tuples.push(idx),
@@ -223,8 +223,8 @@ impl<'a, 'obj> Sink<'a, 'obj> {
         match self {
             Self::Count(count) => QueryResults::count(count as u32),
             // TODO: "count" doesn't belong here
-            Self::Sum(n) => QueryResults::count(n as u32),
-            Self::Max(n) => QueryResults::count(n as u32),
+            Self::Sum(_, n) => QueryResults::count(n as u32),
+            Self::Max(_, n) => QueryResults::count(n as u32),
             Self::Return(attributes, results) => {
                 QueryResults{
                     attributes: attributes.into_iter().map(|attr| attr.into_name()).collect(),
@@ -356,9 +356,13 @@ mod tests {
     #[test]
     fn apply() {
         let mut db = Database::default();
-        db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("size", Type::NUMBER));
+        db.execute_create(&Command::create_table("document")
+                          .column("id", Type::NUMBER)
+                          .column("content", Type::TEXT)
+                          .column("size", Type::NUMBER));
+
         for i in 1..=10 {
-            db.execute_query(&Query::tuple(&[i.to_string().as_str(), i.to_string().as_str()]).insert_into("document")).expect("Insert");
+            db.execute_query(&Query::tuple(&[i.to_string().as_str(), "example", i.to_string().as_str()]).insert_into("document")).expect("Insert");
         }
 
         let sum_result = db.execute_query(&Query::scan("document").apply("sum", &["document.size"])).unwrap();
