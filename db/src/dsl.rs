@@ -130,7 +130,7 @@ impl<'a> fmt::Display for Source<'a> {
             Source::Nil => write!(f, "nil"),
             Source::TableScan(table) => write!(f, "scan {}", table),
             Source::IndexScan(index, _, val) => write!(f, "scan_index {} = {}", index, val),
-            Source::Tuple(values) => write!(f, "tuple {}", &print_tokens(values)),
+            Source::Tuple(values) => { write!(f, "tuple ")?; write_tokens(f, values) },
         }
     }
 }
@@ -176,8 +176,8 @@ impl<'a> fmt::Display for Finisher<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Finisher::AllColumns => write!(f, "select_all"),
-            Finisher::Columns(rows) => write!(f, "select {}", &print_tokens(rows)),
-            Finisher::Apply(fun, a) => write!(f, "apply {} {}", fun, &print_tokens(a)),
+            Finisher::Columns(rows) => { write!(f, "select ")?; write_tokens(f, rows) },
+            Finisher::Apply(fun, a) => { write!(f, "apply {} ", fun)?; write_tokens(f, a) }
             Finisher::Insert(name) => write!(f, "insert_into {}", name),
             Finisher::Count => write!(f, "count"),
             Finisher::Delete => write!(f, "delete"),
@@ -185,28 +185,21 @@ impl<'a> fmt::Display for Finisher<'a> {
     }
 }
 
-fn print_tokens(tokens: &[&str]) -> String {
-    let mut s  = String::new();
-
-    for token in tokens {
-        let quote = token.contains(' ');
-        if quote {
-            s.push('"');
+fn write_tokens(f: &mut fmt::Formatter, tokens: &[&str]) -> fmt::Result {
+    let mut i = tokens.iter().peekable();
+    while let Some(token) = i.next() {
+        if token.contains(' ') {
+            write!(f, "\"{}\"", token)?;
+        } else {
+            write!(f, "{}" , token)?;
         }
 
-        s.push_str(token);
-
-        if quote {
-            s.push('"');
+        if i.peek().is_some() {
+            write!(f, " ")?;
         }
-
-        s.push(' ');
-
     }
 
-    if !s.is_empty() { s.pop(); }
-    
-    s
+    Ok(())
 }
 
 #[derive(Eq, PartialEq, Debug)]
