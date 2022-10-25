@@ -3,6 +3,7 @@ use crate::schema::Type;
 use crate::tokenize::{Token, Tokenizer};
 
 use std::fmt;
+use std::str::FromStr;
 
 #[derive(Debug)]
 pub struct ParseError(pub &'static str);
@@ -162,8 +163,8 @@ pub fn parse_command(source: &str) -> Result<Command, ParseError> {
 
                 for arg in tokenizer.by_ref() {
                     match arg {
-                        Token::SymbolWithType(name, kind) => { command = command.column(name, str_to_type(kind)); },
-                        Token::SymbolWithKeyType(name, kind) => { command = command.indexed_column(name, str_to_type(kind)); },
+                        Token::SymbolWithType(name, kind) => { command = command.column(name, str_to_type(kind)?); },
+                        Token::SymbolWithKeyType(name, kind) => { command = command.indexed_column(name, str_to_type(kind)?); },
                         _ => return Err(ParseError("Expected a symbol with a type"))
                     }
                 }
@@ -175,12 +176,8 @@ pub fn parse_command(source: &str) -> Result<Command, ParseError> {
     Ok(command)
 }
 
-fn str_to_type(name: &str) -> Type {
-    match name {
-        "NUMBER" => Type::NUMBER,
-        "TEXT" => Type::TEXT,
-        _ => panic!("Unknown type {}", name)
-    }
+fn str_to_type(name: &str) -> Result<Type, ParseError> {
+    Type::from_str(name).map_err(|_| ParseError("Unrecognized type"))
 }
 
 #[cfg(test)]
