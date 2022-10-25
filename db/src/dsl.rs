@@ -229,26 +229,20 @@ impl Command {
         self.columns.push(Column{ name: name.to_string(), kind, indexed: true });
         self
     }
-
-    pub fn print(&self) -> String {
-        let mut s = String::new();
-        s.push_str("create_table ");
-        s.push_str(&self.name);
-        s.push(' ');
-
-        for col in &self.columns {
-            s.push_str(&col.print());
-            s.push(' ');
-        }
-        s.pop();
-
-        s
-    }
 }
 
 impl fmt::Display for Command {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.print())
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "create_table {} ", self.name)?;
+        let mut i = self.columns.iter().peekable();
+        while let Some(col) = i.next() {
+            write!(f, "{}", col)?;
+            if i.peek().is_some() {
+                write!(f, " ")?;
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -259,23 +253,23 @@ pub struct Column {
     pub indexed: bool,
 }
 
-impl Column {
-    fn print(&self) -> String {
+impl fmt::Display for Column {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.indexed {
-            self.name.clone() + "::" + self.kind.print() + "::KEY"
+            write!(f, "{}::{}::KEY", self.name, self.kind)
         } else {
-            self.name.clone() + "::" + self.kind.print()
+            write!(f, "{}::{}", self.name, self.kind)
         }
     }
 }
 
-impl Type {
-    fn print(&self) -> &'static str {
+impl fmt::Display for Type {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Type::NUMBER => "NUMBER",
-            Type::TEXT => "TEXT",
-            Type::BYTE(n) => if n == &1 { "UINT8" } else if n == &2 { "UINT16" } else if n == &4 { "UINT36" } else { panic!() },
-            Type::NONE => panic!(),
+            Type::NUMBER => write!(f, "NUMBER"),
+            Type::TEXT => write!(f, "TEXT"),
+            Type::BYTE(n) => if *n > 0 && *n < 4 { write!(f, "UINT{}", n*8) } else { Err(fmt::Error) },
+            Type::NONE => Err(fmt::Error)
         }
     }
 }

@@ -106,19 +106,6 @@ impl Default for Type {
     }
 }
 
-impl fmt::Display for Type {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
-            Type::NUMBER => "NUMBER",
-            Type::TEXT => "TEXT",
-            Type::BYTE(n) => if n == &1 { "UINT8" } else if n == &2 { "UINT16" } else if n == &4 { "UINT32" } else { panic!() },
-            Type::NONE => panic!(),
-        };
-
-        write!(f, "{}", s)
-    }
-}
-
 impl FromStr for Type {
     type Err = ();
 
