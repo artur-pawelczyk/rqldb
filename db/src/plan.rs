@@ -102,7 +102,7 @@ pub(crate) enum Attribute {
 
 #[derive(Default)]
 pub(crate) struct Source<'a> {
-    pub attributes: Vec<Attribute>,
+    attributes: Vec<Attribute>,
     pub contents: Contents<'a>,
 }
 
@@ -227,18 +227,24 @@ impl<'a> Source<'a> {
     fn validate_with_finisher(self, finisher: &Finisher) -> Result<Source<'a>, &'static str> {
         match finisher {
             Finisher::Insert(rel) => {
-                let target_types = rel.types();
-                if target_types.len() != self.attributes.len() {
-                    return Err("Number of attributes in the tuple doesn't match the target table");
-                }
+                if let Contents::Tuple(values) = &self.contents {
+                    let target_types = rel.types();
+                    if target_types.len() != self.attributes.len() {
+                        return Err("Number of attributes in the tuple doesn't match the target table");
+                    }
 
-                if zip(&self.attributes, target_types).any(|(attr, expected)| attr.kind() != expected) {
+                    if zip(values.iter(), target_types.iter()).any(|(val, expected)| !validate_type(val, *expected)) {
                         return Err("Type incompatible with the target table");
+                    }
+
+                    Ok(Source{
+                        attributes: target_types.iter().enumerate().map(|(i, kind)| Attribute::numbered(i).with_type(*kind)).collect(),
+                        contents: self.contents
+                    })
+                } else {
+                    Err("Expected a tuple source for insert")
                 }
-
-                Ok(Source{ attributes: self.attributes, contents: self.contents })
-            }
-
+            },
             _ => {
                 Ok(Source{ attributes: self.attributes, contents: self.contents })
             },
@@ -407,6 +413,14 @@ fn table_attributes(table: &Relation) -> Vec<Attribute> {
     table.columns().peekable()
         .map(|col| Attribute::Named(col.pos(), col.as_full_name(), col.kind()))
         .collect()
+}
+
+fn validate_type(value: &str, kind: Type) -> bool {
+    match kind {
+        Type::NUMBER => value.parse::<i32>().is_ok(),
+        Type::TEXT => true,
+        _ => false,
+    }
 }
 
 #[cfg(test)]
