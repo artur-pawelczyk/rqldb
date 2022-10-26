@@ -261,6 +261,7 @@ impl fmt::Display for Type {
         match self {
             Type::NUMBER => write!(f, "NUMBER"),
             Type::TEXT => write!(f, "TEXT"),
+            Type::BOOLEAN => write!(f, "BOOLEAN"),
             Type::BYTE(n) => if *n > 0 && *n < 4 { write!(f, "UINT{}", n*8) } else { Err(fmt::Error) },
             Type::NONE => Err(fmt::Error)
         }

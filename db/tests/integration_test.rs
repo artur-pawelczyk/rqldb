@@ -4,7 +4,12 @@ use rqldb::db::Database;
 fn prepare_db<'a>() -> Database<'a> {
     let mut db = Database::default();
 
-    db.execute_create(&parse_command("create_table document id::NUMBER::KEY title::TEXT content::TEXT type::NUMBER").unwrap());
+    db.execute_create(&parse_command("create_table document
+id::NUMBER::KEY
+title::TEXT
+content::TEXT
+type::NUMBER
+published::BOOLEAN").unwrap());
     db.execute_create(&parse_command("create_table type id::NUMBER name::TEXT").unwrap());
 
     let insert = parse_query("tuple 1 artictle | insert_into type").unwrap();
@@ -13,9 +18,9 @@ fn prepare_db<'a>() -> Database<'a> {
     db.execute_query(&insert).unwrap();
     let insert = parse_query("tuple 3 book | insert_into type").unwrap();
     db.execute_query(&insert).unwrap();
-    let insert = parse_query("tuple 1 title content 2 | insert_into document").unwrap();
+    let insert = parse_query("tuple 1 title content 2 true | insert_into document").unwrap();
     db.execute_query(&insert).unwrap();
-    let insert = parse_query("tuple 2 title2 content2 3 | insert_into document").unwrap();
+    let insert = parse_query("tuple 2 title2 content2 3 false | insert_into document").unwrap();
     db.execute_query(&insert).unwrap();
 
     db
@@ -37,6 +42,10 @@ fn test_basic_queries() {
     let query = parse_query("scan document | filter document.id > 0 | filter document.id < 10").unwrap();
     let result = db.execute_query(&query).unwrap();
     assert_eq!(result.results().len(), 2);
+
+    let query = parse_query("scan document | filter document.published = true").unwrap();
+    let result = db.execute_query(&query).unwrap();
+    assert_eq!(result.results().len(), 1);
 }
 
 #[test]
@@ -70,7 +79,7 @@ fn test_single_join() {
 fn test_update() {
     let db = prepare_db();
 
-    let insert = parse_query("tuple 1 updated_title content 2 | insert_into document").unwrap();
+    let insert = parse_query("tuple 1 updated_title content 2 true | insert_into document").unwrap();
     db.execute_query(&insert).unwrap();
 
     let query = parse_query("scan document | filter document.id = 1").unwrap();

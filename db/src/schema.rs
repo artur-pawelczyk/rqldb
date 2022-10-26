@@ -96,7 +96,7 @@ struct InnerColumn {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Type {
     BYTE(u8),
-    NUMBER, TEXT,
+    NUMBER, TEXT, BOOLEAN,
     NONE
 }
 
@@ -113,6 +113,7 @@ impl FromStr for Type {
         match s {
             "NUMBER" => Ok(Type::NUMBER),
             "TEXT" => Ok(Type::TEXT),
+            "BOOLEAN" => Ok(Type::BOOLEAN),
             "UINT8" => Ok(Type::BYTE(8)),
             "UINT16" => Ok(Type::BYTE(16)),
             "UINT32" => Ok(Type::BYTE(32)),

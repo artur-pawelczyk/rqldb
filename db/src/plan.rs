@@ -419,6 +419,7 @@ fn validate_type(value: &str, kind: Type) -> bool {
     match kind {
         Type::NUMBER => value.parse::<i32>().is_ok(),
         Type::TEXT => true,
+        Type::BOOLEAN => value.parse::<bool>().is_ok(),
         _ => false,
     }
 }
