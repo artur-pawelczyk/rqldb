@@ -119,6 +119,17 @@ impl<'a> Default for Contents<'a> {
     }
 }
 
+impl<'a> Contents<'a> {
+    fn len(&self) -> usize {
+        match self {
+            Self::TableScan(rel) => rel.attributes().len(),
+            Self::Tuple(vals) => vals.len(),
+            Self::IndexScan(_, _) => 1,
+            Self::Nil => 0,
+        }
+    }
+}
+
 impl Attribute {
     pub fn numbered(num: usize) -> Attribute {
         Attribute::Numbered(num, Type::default())
@@ -133,16 +144,6 @@ impl Attribute {
             Self::Numbered(pos, _) => Self::Numbered(pos, kind),
             Self::Named(pos, name, _) => Self::Named(pos, name, kind),
         }
-    }
-
-    fn guess_type(self, value: &str) -> Attribute {
-        let kind = if value.parse::<i32>().is_ok() {
-            Type::NUMBER
-        } else {
-            Type::TEXT
-        };
-
-        self.with_type(kind)
     }
 
     pub fn pos(&self) -> usize {
@@ -184,7 +185,7 @@ impl PartialEq<str> for Attribute {
 }
 
 impl<'a> Source<'a> {
-    fn new(schema: &'a Schema, dsl_source: &dsl::Source) -> Result<Source<'a>, &'static str> {
+    fn new(_: &Plan, schema: &'a Schema, dsl_source: &dsl::Source) -> Result<Source<'a>, &'static str> {
         match dsl_source {
             dsl::Source::TableScan(name) => {
                 Ok(Self::scan_table(schema.find_relation(*name).ok_or("No such table")?))
@@ -211,7 +212,7 @@ impl<'a> Source<'a> {
     }
 
     fn from_tuple(values: Vec<String>) -> Self {
-        let attributes = values.iter().enumerate().map(|(i, val)| Attribute::numbered(i).guess_type(val)).collect();
+        let attributes = values.iter().enumerate().map(|(i, _)| Attribute::numbered(i)).collect();
         Self{ attributes, contents: Contents::Tuple(values.to_vec()) }
     }
 
@@ -229,7 +230,7 @@ impl<'a> Source<'a> {
             Finisher::Insert(rel) => {
                 if let Contents::Tuple(values) = &self.contents {
                     let target_types = rel.types();
-                    if target_types.len() != self.attributes.len() {
+                    if target_types.len() != self.attributes.len() || target_types.len() != self.contents.len() {
                         return Err("Number of attributes in the tuple doesn't match the target table");
                     }
 
@@ -237,10 +238,7 @@ impl<'a> Source<'a> {
                         return Err("Type incompatible with the target table");
                     }
 
-                    Ok(Source{
-                        attributes: target_types.iter().enumerate().map(|(i, kind)| Attribute::numbered(i).with_type(*kind)).collect(),
-                        contents: self.contents
-                    })
+                    Ok(self)
                 } else {
                     Err("Expected a tuple source for insert")
                 }
@@ -287,8 +285,9 @@ impl ApplyFn {
 }
 
 pub(crate) fn compute_plan<'a>(schema: &'a Schema, query: &dsl::Query) -> Result<Plan<'a>, &'static str> {
-    let plan: Plan = compute_source(schema, &query.source)?;
+    let plan = Plan::default();
 
+    let plan = compute_source(plan, schema, &query.source)?;
     let plan = compute_finisher(plan, schema, query)?;
     let plan = plan.validate_with_finisher()?;
 
@@ -299,10 +298,10 @@ pub(crate) fn compute_plan<'a>(schema: &'a Schema, query: &dsl::Query) -> Result
     Ok(plan)
 }
 
-fn compute_source<'a>(schema: &'a Schema, dsl_source: &dsl::Source) -> Result<Plan<'a>, &'static str> {
+fn compute_source<'a>(plan: Plan<'a>, schema: &'a Schema, dsl_source: &dsl::Source) -> Result<Plan<'a>, &'static str> {
     Ok(Plan{
-        source: Source::new(schema, dsl_source)?,
-        ..Plan::default()
+        source: Source::new(&plan, schema, dsl_source)?,
+        ..plan
     })
 }
 
@@ -337,18 +336,28 @@ fn compute_filters<'a>(plan: Plan<'a>, query: &dsl::Query) -> Result<Plan<'a>, &
 
 fn compute_finisher<'a>(plan: Plan<'a>, schema: &'a Schema, query: &dsl::Query) -> Result<Plan<'a>, &'static str> {
     match &query.finisher {
-        dsl::Finisher::Insert(name) => schema.find_relation(*name).map(Finisher::Insert).ok_or("No such target table"),
-        dsl::Finisher::AllColumns => Ok(Finisher::Return),
-        dsl::Finisher::Count => Ok(Finisher::Count),
-        dsl::Finisher::Apply(f, args) => args.get(0).and_then(|n| schema.find_column(n)).map(|attr| Ok(Finisher::apply(f, attr))).unwrap_or(Err("apply: No such attribute")),
+        dsl::Finisher::Insert(name) => {
+            let relation = schema.find_relation(*name).ok_or("No such target table")?;
+            let finisher = Finisher::Insert(relation);
+            let attributes = relation.attributes().iter().enumerate().map(|(pos, (n, t))| Attribute::named(pos, n).with_type(*t)).collect();
+            let source = Source{ attributes, contents: plan.source.contents };
+            Ok(Plan{ source, finisher, ..plan })
+        },
+        dsl::Finisher::AllColumns => Ok(Plan{ finisher: Finisher::Return, ..plan }),
+        dsl::Finisher::Count => Ok(Plan{ finisher: Finisher::Count, ..plan }),
+        dsl::Finisher::Apply(f, args) => {
+            let finisher = args.get(0).and_then(|n| schema.find_column(n)).map(|attr| Ok(Finisher::apply(f, attr))).unwrap_or(Err("apply: No such attribute"))?;
+            Ok(Plan{ finisher, ..plan })
+        },
         dsl::Finisher::Delete => {
-            match &query.source {
+            let finisher = match &query.source {
                 dsl::Source::TableScan(name) => schema.find_relation(*name).map(Finisher::Delete).ok_or("No table to delete"),
                 _ => Err("Illegal delete operation"),
-            }
+            }?;
+            Ok(Plan{ finisher, ..plan })
         }
         _ => todo!(),
-    }.map(|finisher| Plan{ finisher, ..plan })
+    }
 }
 
 fn right_as_cell(dsl_filter: &dsl::Filter) -> Vec<u8> {
@@ -534,7 +543,7 @@ mod tests {
 
         let result = compute_plan(&schema, &dsl::Query::tuple(&["1", "the-content", "title"]).insert_into("example")).unwrap();
         assert_eq!(source_attributes(&result.source), vec![Type::NUMBER, Type::TEXT, Type::TEXT]);
-        assert_eq!(attribute_names(&result.final_attributes()), vec!["0", "1", "2"]);
+        assert_eq!(attribute_names(&result.final_attributes()), vec!["example.id", "example.content", "example.title"]);
 
         let wrong_tuple_len = compute_plan(&schema, &dsl::Query::tuple(&["1", "the-content"]).insert_into("example"));
         assert!(wrong_tuple_len.is_err());
@@ -566,6 +575,17 @@ mod tests {
 
         let failure = compute_plan(&schema, &dsl::Query::tuple(&["a", "b", "c"]).insert_into("not-a-table"));
         assert!(failure.is_err());
+    }
+
+    #[test]
+    fn test_match_types_for_insert() {
+        let mut schema = Schema::default();
+        schema.create_table("example").column("id", Type::NUMBER).column("content", Type::TEXT).add();
+
+        let plan = compute_plan(&schema, &dsl::Query::tuple(&["1", "aaa"]).insert_into("example")).unwrap();
+
+        assert_eq!(plan.source.attributes[0], Attribute::named(0, "example.id").with_type(Type::NUMBER));
+        assert_eq!(plan.source.attributes[1], Attribute::named(1, "example.content").with_type(Type::TEXT));
     }
 
     #[test]
