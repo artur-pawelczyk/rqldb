@@ -106,6 +106,18 @@ impl Default for Type {
     }
 }
 
+impl fmt::Display for Type {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Type::NUMBER => write!(f, "NUMBER"),
+            Type::TEXT => write!(f, "TEXT"),
+            Type::BOOLEAN => write!(f, "BOOLEAN"),
+            Type::BYTE(n) => if *n > 0 && *n < 4 { write!(f, "UINT{}", n*8) } else { Err(fmt::Error) },
+            Type::NONE => write!(f, "NONE"),
+        }
+    }
+}
+
 impl FromStr for Type {
     type Err = ();
 

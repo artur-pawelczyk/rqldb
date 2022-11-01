@@ -43,11 +43,13 @@ impl<'obj> Database<'obj> {
     }
 
     fn execute_plan(&self, plan: Plan) -> Result<QueryResults, &'static str> {
-        fn cell(s: &str) -> Vec<u8> {
-            if let Ok(num) = s.parse::<i32>() {
-                Vec::from(num.to_be_bytes())
-            } else {
-                Vec::from(s.as_bytes())
+        fn cell(kind: &Type, s: &str) -> Vec<u8> {
+            match kind {
+                Type::NUMBER => s.parse::<i32>().map(|n| n.to_be_bytes().to_vec()).unwrap(),
+                Type::TEXT => s.as_bytes().to_vec(),
+                Type::BOOLEAN => if s == "true" { vec![1] } else if s == "false" { vec![0] } else { panic!() },
+                Type::NONE => vec![],
+                _ => panic!("unknown type: {}", kind),
             }
         }
 
@@ -56,7 +58,7 @@ impl<'obj> Database<'obj> {
                 ObjectView::Ref(self.objects.get(rel.id).expect("Already checked by the planner").borrow())
             },
             Contents::Tuple(ref values) => {
-                let cells = values.iter().map(|val| cell(val)).collect();
+                let cells = values.iter().enumerate().map(|(pos, val)| cell(&plan.source.attributes[pos].kind(), val)).collect();
                 ObjectView::Val(IndexedObject::temporary(cells))
             },
             Contents::IndexScan(ref col, ref val) => {

@@ -18,8 +18,11 @@ pub(crate) struct Plan<'a> {
 impl<'a> Plan<'a> {
     #[cfg(test)]
     pub fn insert(rel: &'a Relation, values: &[String]) -> Self {
+        let attributes = rel.attributes().iter().enumerate().map(|(pos, (n, t))| Attribute::named(pos, n).with_type(*t)).collect();
+        let contents = Contents::Tuple(values.to_vec());
+
         Self{
-            source: Source::from_tuple(values.to_vec()),
+            source: Source{ attributes, contents },
             finisher: Finisher::Insert(rel),
             ..Plan::default()
         }
@@ -102,7 +105,7 @@ pub(crate) enum Attribute {
 
 #[derive(Default)]
 pub(crate) struct Source<'a> {
-    attributes: Vec<Attribute>,
+    pub attributes: Vec<Attribute>,
     pub contents: Contents<'a>,
 }
 
@@ -132,7 +135,7 @@ impl<'a> Contents<'a> {
 
 impl Attribute {
     pub fn numbered(num: usize) -> Attribute {
-        Attribute::Numbered(num, Type::default())
+        Attribute::Numbered(num, Type::TEXT)
     }
 
     pub fn named(pos: usize, name: &str) -> Attribute {
@@ -317,7 +320,7 @@ fn compute_filters<'a>(plan: Plan<'a>, query: &dsl::Query) -> Result<Plan<'a>, &
             let op = filter_operator(dsl_filter);
             filters.push(Filter{
                 attribute: attr.clone(),
-                right: right_as_cell(dsl_filter),
+                right: right_as_cell(attr.kind(), dsl_filter),
                 comp: match op {
                     dsl::Operator::EQ => &|a, b| a == b,
                     dsl::Operator::GT => &|a, b| a > b,
@@ -360,13 +363,18 @@ fn compute_finisher<'a>(plan: Plan<'a>, schema: &'a Schema, query: &dsl::Query) 
     }
 }
 
-fn right_as_cell(dsl_filter: &dsl::Filter) -> Vec<u8> {
+fn right_as_cell(kind: Type, dsl_filter: &dsl::Filter) -> Vec<u8> {
     let right = match dsl_filter {
         dsl::Filter::Condition(_, _, right) => right
     };
-    
-    Cell::from_string(right).into_bytes()
 
+    match kind {
+        Type::NUMBER => right.parse::<i32>().map(|n| n.to_be_bytes().to_vec()).unwrap(),
+        Type::TEXT => right.as_bytes().to_vec(),
+        Type::BOOLEAN => if right == &"true" { vec![1] } else if right == &"false" { vec![0] } else { panic!() },
+        Type::NONE => vec![],
+        _ => panic!("unknown type: {}", kind),
+    }
 }
 
 fn filter_operator(filter: &dsl::Filter) -> dsl::Operator {
@@ -514,7 +522,7 @@ mod tests {
     fn test_filter_after_join() {
         let mut schema = Schema::default();
         schema.create_table("document").column("name", Type::TEXT).column("type_id", Type::NUMBER).add();
-        schema.create_table("type",).column("id", Type::TEXT).column("name", Type::NUMBER).add();
+        schema.create_table("type").column("id", Type::NUMBER).column("name", Type::TEXT).add();
 
         let filter = expect_filter(compute_plan(&schema, &dsl::Query::scan("document").join("type", "document.type_id", "type.id").filter("type.name", EQ, "b")));
         assert_eq!(filter.attribute.pos(), 3);
