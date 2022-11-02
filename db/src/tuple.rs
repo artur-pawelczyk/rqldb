@@ -5,7 +5,7 @@ type ByteTuple = Vec<Vec<u8>>;
 
 pub struct Tuple<'a> {
     raw: &'a ByteTuple,
-    rest: Option<&'a ByteTuple>,
+    rest: Option<Box<Tuple<'a>>>,
 }
 
 impl<'a> Tuple<'a> {
@@ -24,17 +24,16 @@ impl<'a> Tuple<'a> {
     pub(crate) fn cell(&self, pos: usize, kind: Type) -> Option<Cell> {
         if pos < self.raw.len() {
             Some(Cell{ raw: &self.raw[pos], kind })
-        } else if self.rest.is_some() {
-            let other = self.rest.unwrap();
-            let other_pos = pos - self.raw.len();
-            Some(Cell{ raw: &other[other_pos], kind })
+        } else if let Some(rest) = &self.rest {
+            let rest_pos = pos - self.raw.len();
+            rest.cell(rest_pos, kind)
         } else {
             None
         }
     }
 
-    pub(crate) fn add_cells(mut self, other: &'a ByteTuple) -> Self {
-        self.rest = Some(other);
+    pub(crate) fn add_cells(mut self, other: Tuple<'a>) -> Self {
+        self.rest = Some(Box::new(other));
         self
     }
 }
@@ -139,7 +138,7 @@ mod tests {
 
         let result: Vec<Tuple> = object_1.iter().map(Tuple::from_bytes)
             .filter_map(|tuple| {
-                object_2.get(0).map(|joiner_tuple| tuple.add_cells(joiner_tuple))
+                object_2.get(0).map(|joiner_tuple| tuple.add_cells(Tuple::from_bytes(joiner_tuple)))
             }).collect();
         let first = result.get(0).unwrap();
         assert_eq!(i32::try_from(first.cell(0, Type::NUMBER).unwrap()), Ok(1));

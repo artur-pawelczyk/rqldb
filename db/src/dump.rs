@@ -1,7 +1,4 @@
-use crate::{schema::Relation, Command, Query, Cell, Type, RawObjectView};
-
-type ByteCell = Vec<u8>;
-type ByteTuple = Vec<ByteCell>;
+use crate::{schema::Relation, Command, Query, Cell, Type, RawObjectView, tuple::Tuple};
 
 pub(crate) fn dump_create(rel: &Relation) -> Command {
     rel.columns().fold(Command::create_table(rel.name()), |acc, col| {
@@ -23,7 +20,7 @@ pub(crate) fn dump_values<'a>(obj: &'a RawObjectView<'a>) -> QueryIter<'a> {
 pub(crate) struct QueryIter<'a> {
     name: String,
     types: Vec<Type>,
-    inner: Box<dyn Iterator<Item = &'a ByteTuple> + 'a>,
+    inner: Box<dyn Iterator<Item = Tuple<'a>> + 'a>,
 }
 
 impl<'a> Iterator for QueryIter<'a> {
@@ -31,7 +28,7 @@ impl<'a> Iterator for QueryIter<'a> {
 
     fn next(&mut self) -> Option<String> {
         self.inner.next().map(|tuple| {
-            let vals: Vec<String> = std::iter::zip(tuple.iter(), self.types.iter()).map(|(cell, kind)| Cell::from_bytes(*kind, cell).as_string()).collect();
+            let vals: Vec<String> = std::iter::zip(tuple.as_bytes(), self.types.iter()).map(|(cell, kind)| Cell::from_bytes(*kind, cell).as_string()).collect();
             Query::tuple(&vals.iter().map(|x| x.as_str()).collect::<Vec<&str>>())
                 .insert_into(&self.name)
                 .to_string()

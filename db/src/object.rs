@@ -69,12 +69,12 @@ impl<'a> IndexedObject<'a> {
         }
     }
 
-    pub(crate) fn get(&self, id: usize) -> Option<&ByteTuple> {
-        self.tuples.get(id)
+    pub(crate) fn get(&self, id: usize) -> Option<Tuple> {
+        self.tuples.get(id).map(Tuple::from_bytes)
     }
 
-    pub(crate) fn iter<'b>(&'b self) -> Box<dyn Iterator<Item = &'b ByteTuple> + 'b> {
-        Box::new(self.tuples.iter())
+    pub(crate) fn iter<'b>(&'b self) -> Box<dyn Iterator<Item = Tuple<'b>> + 'b> {
+        Box::new(self.tuples.iter().map(Tuple::from_bytes))
     }
 
     pub(crate) fn remove_tuples(&mut self, ids: &[usize]) {
@@ -135,8 +135,8 @@ impl<'a> RawObjectView<'a> {
         self.object.tuples.len()
     }
 
-    pub fn raw_tuples(&'a self) -> Box<dyn Iterator<Item = &'a ByteTuple> + 'a> {
-        Box::new(self.object.tuples.iter())
+    pub fn raw_tuples(&'a self) -> Box<dyn Iterator<Item = Tuple<'a>> + 'a> {
+        Box::new(self.object.tuples.iter().map(|t| Tuple::from_bytes(t)))
     }
 
     pub fn name(&self) -> &str {

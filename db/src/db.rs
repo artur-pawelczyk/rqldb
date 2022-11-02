@@ -77,11 +77,11 @@ impl<'obj> Database<'obj> {
 
         for (idx, byte_tuple) in source.iter().enumerate() {
             let tuple = match &plan.joins[..] {
-                [] => Tuple::from_bytes(byte_tuple),
+                [] => byte_tuple,
                 [join] => {
-                    let joinee = Tuple::from_bytes(byte_tuple);
+                    let joinee = byte_tuple;
                     let key = joinee.cell_by_attr(join.joinee_key());
-                    if let Some(found) = join_sources.get(0).unwrap().iter().find(|bytes| Tuple::from_bytes(bytes).cell_by_attr(join.joiner_key()) == key) {
+                    if let Some(found) = join_sources.get(0).unwrap().iter().find(|bytes| bytes.cell_by_attr(join.joiner_key()) == key) {
                         joinee.add_cells(found)
                     } else {
                         joinee
@@ -174,7 +174,7 @@ enum ObjectView<'a> {
 }
 
 impl<'a> ObjectView<'a> {
-    fn iter(&'a self) -> Box<dyn Iterator<Item = &'a ByteTuple> + 'a> {
+    fn iter(&'a self) -> Box<dyn Iterator<Item = Tuple<'a>> + 'a> {
         match self {
             Self::Ref(o) => o.iter(),
             Self::TupleRef(o, id) => Box::new(std::iter::once_with(|| o.get(*id).unwrap())),
@@ -452,7 +452,7 @@ mod tests {
         let table = db.schema.find_relation("document").unwrap().clone();
 
         db.execute_plan(Plan::insert(&table, &["1".to_string(), "one".to_string()])).unwrap();
-        let snapshot = db.raw_object("document").unwrap().raw_tuples().cloned().collect();
+        let snapshot = db.raw_object("document").unwrap().raw_tuples().map(|t| t.as_bytes().clone()).collect();
 
         db.execute_plan(Plan::insert(&table, &["2".to_string(), "two".to_string()])).unwrap();
         let all = db.execute_plan(Plan::scan(&table)).unwrap();
