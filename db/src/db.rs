@@ -447,19 +447,19 @@ mod tests {
 
     #[test]
     fn recover_object() {
-        let mut db = Database::default();
-        db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT));
-        let table = db.schema.find_relation("document").unwrap().clone();
+        let mut source_db = Database::default();
+        source_db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT));
+        let source_table = source_db.schema.find_relation("document").unwrap().clone();
 
-        db.execute_plan(Plan::insert(&table, &["1".to_string(), "one".to_string()])).unwrap();
-        let snapshot = db.raw_object("document").unwrap().raw_tuples().map(|t| t.as_bytes().clone()).collect();
+        let mut target_db = Database::default();
+        target_db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT));
+        let target_table = target_db.schema.find_relation("document").unwrap().clone();
 
-        db.execute_plan(Plan::insert(&table, &["2".to_string(), "two".to_string()])).unwrap();
-        let all = db.execute_plan(Plan::scan(&table)).unwrap();
-        assert_eq!(all.size(), 2);
+        source_db.execute_plan(Plan::insert(&source_table, &["1".to_string(), "one".to_string()])).unwrap();
+        let snapshot = source_db.raw_object("document").unwrap().raw_tuples().map(|t| t.as_bytes().clone()).collect();
 
-        db.recover_object(0, snapshot);
-        let all = db.execute_plan(Plan::scan(&table)).unwrap();
+        target_db.recover_object(0, snapshot);
+        let all = target_db.execute_plan(Plan::scan(&target_table)).unwrap();
         assert_eq!(all.size(), 1);
     }
 
