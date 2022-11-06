@@ -85,24 +85,26 @@ impl<'a> IndexedObject<'a> {
         self.removed_ids.contains(&id)
     }
 
-    pub(crate) fn recover(snapshot: Vec<ByteTuple>, table: &Relation) -> Self {
+    pub(crate) fn recover<'b, S: Iterator<Item = Tuple<'b>>>(snapshot: S, table: &Relation) -> Self {
         if let Some(key_col) = table.indexed_column() {
             let key = key_col.pos();
             let index = Index::Attr(key);
-            let mut hash = HashMap::with_capacity(snapshot.len());
-            for (id, tuple) in snapshot.iter().enumerate() {
-                hash.insert(tuple[key].clone(), id);
+            let mut hash = HashMap::with_capacity(snapshot.size_hint().0);
+            let mut tuples = Vec::with_capacity(snapshot.size_hint().0);
+            for (id, tuple) in snapshot.enumerate() {
+                hash.insert(Vec::from(tuple.cell(key, Type::NONE).expect("").bytes()), id);
+                tuples.push(tuple.as_bytes().clone());
             }
 
             Self{
-                tuples: snapshot,
+                tuples,
                 index, hash,
                 removed_ids: HashSet::new(),
                 marker: PhantomData,
             }
         } else {
             Self{
-                tuples: snapshot,
+                tuples: snapshot.map(|t| t.as_bytes().clone()).collect(),
                 index: Default::default(),
                 hash: Default::default(),
                 removed_ids: HashSet::new(),
