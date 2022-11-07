@@ -123,7 +123,7 @@ impl TempFilePersist {
             }
         }
 
-        panic!()
+        panic!("Creating tempary file: no more filenames available");
     }
 }
 

@@ -732,6 +732,7 @@ name = "rqldb-persist"
 version = "0.1.0"
 dependencies = [
  "bson",
+ "criterion",
  "rqldb",
 ]
 
