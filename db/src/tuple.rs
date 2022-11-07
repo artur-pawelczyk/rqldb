@@ -13,7 +13,7 @@ impl<'a> Tuple<'a> {
         Self{ raw, rest: None }
     }
 
-    pub(crate) fn as_bytes(&self) -> &ByteTuple {
+    pub fn as_bytes(&self) -> &ByteTuple {
         self.raw
     }
 
@@ -30,6 +30,10 @@ impl<'a> Tuple<'a> {
         } else {
             None
         }
+    }
+
+    pub fn len(&self) -> usize {
+        self.raw.len() + if let Some(rest) = &self.rest { rest.len() } else { 0 }
     }
 
     pub(crate) fn add_cells(mut self, other: Tuple<'a>) -> Self {

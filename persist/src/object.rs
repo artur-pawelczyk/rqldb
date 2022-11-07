@@ -9,7 +9,7 @@ pub(crate) fn write_object<W: Write>(writer: &mut W, tuples: &RawObjectView) -> 
     for tuple in tuples.raw_tuples() {
         writer.write(&size(tuple.len()))?;
 
-        for cell in tuple {
+        for cell in tuple.as_bytes() {
             writer.write(&size(cell.len()))?;
             writer.write(&cell)?;
         }
@@ -59,7 +59,7 @@ mod tests {
         let mut out = Vec::new();
         write_object(&mut out, &raw_object).unwrap();
         let saved_object = read_object(&mut ByteReader::new(Cursor::new(out))).unwrap();
-        assert_eq!(raw_object.raw_tuples().cloned().collect::<Vec<ByteTuple>>(), saved_object);
+        assert!(saved_object.is_empty());
     }
 
     #[test]
@@ -74,6 +74,11 @@ mod tests {
         let mut out = Vec::new();
         write_object(&mut out, &raw_object).unwrap();
         let saved_object = read_object(&mut ByteReader::new(Cursor::new(out))).unwrap();
-        assert_eq!(raw_object.raw_tuples().cloned().collect::<Vec<ByteTuple>>(), saved_object);
+
+        let mut recovered_db = Database::default();
+        recovered_db.execute_create(&Command::create_table("example").indexed_column("id", Type::NUMBER).column("content", Type::TEXT));
+        recovered_db.recover_object(0, saved_object);
+        let result = recovered_db.execute_query(&Query::scan("example")).unwrap();
+        assert_eq!(result.size(), 2);
     }
 }
