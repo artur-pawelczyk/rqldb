@@ -4,16 +4,13 @@ use rqldb::RawObjectView;
 
 use crate::{ByteTuple, ByteReader, Error};
 
-pub(crate) fn write_object<W: Write>(writer: &mut W, tuples: &RawObjectView) -> Result<(), Error> {
-    writer.write(&size(tuples.count()))?;
-    for tuple in tuples.raw_tuples() {
-        writer.write(&size(tuple.len()))?;
-
-        for cell in tuple.as_bytes() {
-            writer.write(&size(cell.len()))?;
-            writer.write(&cell)?;
-        }
-    }
+pub(crate) fn write_object<W: Write>(writer: &mut W, object: &RawObjectView) -> Result<(), Error> {
+    writer.write(&size(object.count()))?;
+    for tuple in object.raw_tuples() {
+        // TODO: Unnecessary allocation
+        let v: Vec<u8> = tuple.serialize().collect();
+        writer.write(&v)?;
+   }
 
     Ok(())
 }

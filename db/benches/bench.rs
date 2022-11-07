@@ -77,7 +77,6 @@ fn benchmark_query_to_string(c: &mut Criterion) {
 
     c.bench_function("dump scan query", |b| b.iter(|| scan_query.to_string()));
     c.bench_function("dump insert query", |b| b.iter(|| insert_query.to_string()));
-
 }
 
 criterion_group!(benches, benchmark_insert, benchmark_count, benchmark_parse, benchmark_filter, benchmark_index_search, benchmark_query_to_string);

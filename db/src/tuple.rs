@@ -13,8 +13,8 @@ impl<'a> Tuple<'a> {
         Self{ raw, rest: None }
     }
 
-    pub fn as_bytes(&self) -> &ByteTuple {
-        self.raw
+    pub(crate) fn as_bytes(&self) -> &ByteTuple { 
+       self.raw
     }
 
     pub(crate) fn cell_by_attr(&self, attr: &Attribute) -> Cell {
@@ -34,6 +34,21 @@ impl<'a> Tuple<'a> {
 
     pub fn len(&self) -> usize {
         self.raw.len() + if let Some(rest) = &self.rest { rest.len() } else { 0 }
+    }
+
+    pub fn serialize(&self) -> TupleIter {
+        fn size(val: usize) -> [u8; 4] {
+            (val as u32).to_le_bytes()
+        }
+
+        let mut v: Vec<u8> = Vec::new();
+        size(self.raw.len()).iter().for_each(|b| v.push(*b));
+        for cell in self.raw {
+            size(cell.len()).iter().for_each(|b| v.push(*b));
+            cell.iter().for_each(|b| v.push(*b));
+        }
+
+        TupleIter{ contents: v, pos: 0 }
     }
 
     pub(crate) fn add_cells(mut self, other: Tuple<'a>) -> Self {
@@ -102,6 +117,20 @@ impl<'a> PartialEq for Cell<'a> {
         self.raw == other.raw
     }
 
+}
+
+pub struct TupleIter {
+    contents: Vec<u8>,
+    pos: usize,
+}
+
+impl Iterator for TupleIter {
+    type Item = u8;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.pos += 1;
+        self.contents.get(self.pos - 1).cloned()
+    }
 }
 
 #[cfg(test)]
