@@ -1,7 +1,7 @@
 use std::cell::{RefCell, Ref, RefMut};
 
 use crate::dump::{dump_values, dump_create};
-use crate::object::IndexedObject;
+use crate::object::{IndexedObject, TempObject};
 use crate::plan::{Contents, Attribute, Filter, Plan, Finisher, ApplyFn};
 use crate::tuple::Tuple;
 use crate::{schema::Schema, QueryResults, plan::compute_plan};
@@ -12,9 +12,6 @@ pub struct Database<'a> {
     schema: Schema,
     objects: Vec<RefCell<IndexedObject<'a>>>,
 }
-
-type ByteCell = Vec<u8>;
-type ByteTuple = Vec<ByteCell>;
 
 impl<'obj> Database<'obj> {
     pub fn with_schema(schema: Schema) -> Self {
@@ -43,23 +40,17 @@ impl<'obj> Database<'obj> {
     }
 
     fn execute_plan(&self, plan: Plan) -> Result<QueryResults, &'static str> {
-        fn cell(kind: &Type, s: &str) -> Vec<u8> {
-            match kind {
-                Type::NUMBER => s.parse::<i32>().map(|n| n.to_be_bytes().to_vec()).unwrap(),
-                Type::TEXT => s.as_bytes().to_vec(),
-                Type::BOOLEAN => if s == "true" { vec![1] } else if s == "false" { vec![0] } else { panic!() },
-                Type::NONE => vec![],
-                _ => panic!("unknown type: {}", kind),
-            }
-        }
-
         let source: ObjectView = match plan.source.contents {
             Contents::TableScan(rel) => {
                 ObjectView::Ref(self.objects.get(rel.id).expect("Already checked by the planner").borrow())
             },
             Contents::Tuple(ref values) => {
-                let cells = values.iter().enumerate().map(|(pos, val)| cell(&plan.source.attributes[pos].kind(), val)).collect();
-                ObjectView::Val(IndexedObject::temporary(cells))
+                let mut temp_object = TempObject::new();
+                for (pos, val) in values.iter().enumerate() {
+                    temp_object.push(val, plan.source.attributes[pos].kind());
+                }
+
+                ObjectView::Val(temp_object)
             },
             Contents::IndexScan(ref col, ref val) => {
                 let object = self.objects.get(col.table().id).expect("Already checked by the planner").borrow();
@@ -132,9 +123,9 @@ impl<'obj> Database<'obj> {
         &self.schema
     }
 
-    pub fn recover_object(&mut self, id: usize, snapshot: Vec<ByteTuple>) {
+    pub fn recover_object<'b, S: Iterator<Item = Tuple<'b>>>(&mut self, id: usize, snapshot: S) {
         let table = self.schema.find_relation(id).unwrap();
-        let new_obj = IndexedObject::recover(snapshot.iter().map(Tuple::from_bytes), table);
+        let new_obj = IndexedObject::recover(snapshot, table);
         let _ = std::mem::replace(&mut self.objects[id], RefCell::new(new_obj));
     }
 
@@ -169,7 +160,7 @@ fn test_filters(filters: &[Filter], tuple: &Tuple) -> bool {
 enum ObjectView<'a> {
     Ref(Ref<'a, IndexedObject<'a>>),
     TupleRef(Ref<'a, IndexedObject<'a>>, usize),
-    Val(IndexedObject<'a>),
+    Val(TempObject),
     Empty,
 }
 
@@ -456,7 +447,8 @@ mod tests {
         let target_table = target_db.schema.find_relation("document").unwrap().clone();
 
         source_db.execute_plan(Plan::insert(&source_table, &["1".to_string(), "one".to_string()])).unwrap();
-        let snapshot = source_db.raw_object("document").unwrap().raw_tuples().map(|t| t.as_bytes().clone()).collect();
+        let raw_object = source_db.raw_object("document").unwrap();
+        let snapshot = raw_object.raw_tuples();
 
         target_db.recover_object(0, snapshot);
         let all = target_db.execute_plan(Plan::scan(&target_table)).unwrap();

@@ -4,6 +4,7 @@ mod schema;
 use object::{write_object, read_object};
 use rqldb::Database;
 use rqldb::schema::Schema;
+use rqldb::tuple::Tuple;
 use schema::{write_schema, read_schema};
 
 use std::fs::{File, OpenOptions};
@@ -171,7 +172,7 @@ pub fn read_db<'a, R: Read>(reader: R) -> Result<Database<'a>, Error> {
 
     let mut object_id = 0usize;
     while reader.has_some().unwrap() {
-        db.recover_object(object_id, read_object(&mut reader).unwrap());
+        db.recover_object(object_id, read_object(&mut reader).unwrap().iter().map(Tuple::from_bytes));
         object_id += 1;
     }
 

@@ -6,7 +6,6 @@ use crate::{tuple::Tuple, schema::Relation, Type};
 type ByteCell = Vec<u8>;
 type ByteTuple = Vec<ByteCell>;
 
-#[allow(dead_code)]
 #[derive(Default)]
 pub(crate) struct IndexedObject<'a> {
     tuples: Vec<ByteTuple>,
@@ -17,12 +16,6 @@ pub(crate) struct IndexedObject<'a> {
 }
 
 impl<'a> IndexedObject<'a> {
-    pub(crate) fn temporary(byte_tuple: ByteTuple) -> Self {
-        let mut obj = Self::default();
-        obj.add_tuple(&Tuple::from_bytes(&byte_tuple));
-        obj
-    }
-
     pub(crate) fn from_table(table: &Relation) -> Self {
         let key = table.indexed_column().map(|col| col.pos());
 
@@ -125,6 +118,31 @@ enum Index {
     #[default]
     Uniq,
     Attr(usize),
+}
+
+#[derive(Debug)]
+pub(crate) struct TempObject(Vec<Vec<u8>>);
+
+impl TempObject {
+    pub(crate) fn new() -> Self {
+        Self(Vec::new())
+    }
+
+    pub(crate) fn push(&mut self, val: &str, kind: Type) {
+        let cell = match kind {
+            Type::NUMBER => val.parse::<i32>().map(|n| n.to_be_bytes().to_vec()).unwrap(),
+            Type::TEXT => val.as_bytes().to_vec(),
+            Type::BOOLEAN => if val == "true" { vec![1] } else if val == "false" { vec![0] } else { panic!() },
+            Type::NONE => vec![],
+            _ => panic!("unknown type: {}", kind),
+        };
+
+        self.0.push(cell);
+    }
+
+    pub(crate) fn iter<'a>(&'a self) -> Box<dyn Iterator<Item = Tuple<'a>> + 'a> {
+        Box::new(std::iter::once(Tuple::from_bytes(&self.0)))
+    }
 }
 
 pub struct RawObjectView<'a> {

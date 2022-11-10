@@ -9,7 +9,7 @@ pub struct Tuple<'a> {
 }
 
 impl<'a> Tuple<'a> {
-    pub(crate) fn from_bytes(raw: &'a ByteTuple) -> Self {
+    pub fn from_bytes(raw: &'a ByteTuple) -> Self {
         Self{ raw, rest: None }
     }
 
