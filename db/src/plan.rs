@@ -467,20 +467,21 @@ mod tests {
     fn test_apply_filter() {
         let mut schema = Schema::default();
         schema.create_table("example").column("id", Type::NUMBER).column("content", Type::TEXT).column("type", Type::NUMBER).add();
+        let types = schema.find_relation("example").unwrap().types();
         let tuple_1 = tuple(&["1", "content1", "11"]);
         let tuple_2 = tuple(&["2", "content2", "12"]);
 
         let id_filter = expect_filter(compute_plan(&schema, &dsl::Query::scan("example").filter("example.id", EQ, "1")));
-        assert!(id_filter.matches_tuple(&Tuple::from_bytes(&tuple_1)));
-        assert!(!id_filter.matches_tuple(&Tuple::from_bytes(&tuple_2)));
+        assert!(id_filter.matches_tuple(&Tuple::from_bytes(&tuple_1, &types)));
+        assert!(!id_filter.matches_tuple(&Tuple::from_bytes(&tuple_2, &types)));
 
         let content_filter = expect_filter(compute_plan(&schema, &dsl::Query::scan("example").filter("example.content", EQ, "content1")));
-        assert!(content_filter.matches_tuple(&Tuple::from_bytes(&tuple_1)));
-        assert!(!content_filter.matches_tuple(&Tuple::from_bytes(&tuple_2)));
+        assert!(content_filter.matches_tuple(&Tuple::from_bytes(&tuple_1, &types)));
+        assert!(!content_filter.matches_tuple(&Tuple::from_bytes(&tuple_2, &types)));
 
         let comp_filter = expect_filter(compute_plan(&schema, &dsl::Query::scan("example").filter("example.id", GT, "1")));
-        assert!(!comp_filter.matches_tuple(&Tuple::from_bytes(&tuple_1)));
-        assert!(comp_filter.matches_tuple(&Tuple::from_bytes(&tuple_2)));
+        assert!(!comp_filter.matches_tuple(&Tuple::from_bytes(&tuple_1, &types)));
+        assert!(comp_filter.matches_tuple(&Tuple::from_bytes(&tuple_2, &types)));
     }
 
     fn expect_filters(result: Result<Plan, &'static str>, n: usize) -> Vec<Filter> {

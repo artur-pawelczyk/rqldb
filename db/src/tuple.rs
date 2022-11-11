@@ -3,14 +3,16 @@ use crate::schema::Type;
 
 type ByteTuple = Vec<Vec<u8>>;
 
+#[derive(Debug)]
 pub struct Tuple<'a> {
     raw: &'a ByteTuple,
+    attrs: &'a [Type],
     rest: Option<Box<Tuple<'a>>>,
 }
 
 impl<'a> Tuple<'a> {
-    pub fn from_bytes(raw: &'a ByteTuple) -> Self {
-        Self{ raw, rest: None }
+    pub fn from_bytes(raw: &'a ByteTuple, attrs: &'a [Type]) -> Self {
+        Self{ raw, attrs, rest: None }
     }
 
     pub(crate) fn as_bytes(&self) -> &ByteTuple { 
@@ -18,17 +20,24 @@ impl<'a> Tuple<'a> {
     }
 
     pub(crate) fn cell_by_attr(&self, attr: &Attribute) -> Cell {
-        self.cell(attr.pos(), attr.kind()).unwrap()
+        if attr.pos() >= self.raw.len() {
+            println!("looking for rest: {:?}", self.rest);
+        }
+
+        self.cell(attr.pos()).unwrap()
     }
 
-    pub(crate) fn cell(&self, pos: usize, kind: Type) -> Option<Cell> {
+    pub(crate) fn cell(&self, pos: usize) -> Option<Cell> {
         if pos < self.raw.len() {
+            let kind = self.attrs.get(pos).map(|x| *x)?;
             Some(Cell{ raw: &self.raw[pos], kind })
         } else if let Some(rest) = &self.rest {
             let rest_pos = pos - self.raw.len();
-            rest.cell(rest_pos, kind)
+            rest.cell(rest_pos)
         } else {
-            None
+            let rest_pos = pos - self.raw.len();
+            let rest = self.rest.as_ref().unwrap();
+            Some(rest.cell(rest_pos).unwrap())
         }
     }
 
@@ -137,12 +146,15 @@ impl Iterator for TupleIter {
 mod tests {
     use super::*;
 
+    const TYPES_1: &'static [Type] = &[Type::NUMBER, Type::TEXT];
+    const TYPES_2: &'static [Type] = &[Type::TEXT];
+
     #[test]
     fn test_tuple() {
         let object = vec![tuple(&["1", "example"])];
-        let tuple = Tuple::from_bytes(object.get(0).unwrap());
-        assert_eq!(tuple.cell(0, Type::NUMBER).unwrap().to_string(), "1");
-        assert_eq!(tuple.cell(1, Type::TEXT).unwrap().to_string(), "example");
+        let tuple = Tuple::from_bytes(object.get(0).unwrap(), TYPES_1);
+        assert_eq!(tuple.cell(0).unwrap().to_string(), "1");
+        assert_eq!(tuple.cell(1).unwrap().to_string(), "example");
     }
 
     #[test]
@@ -152,11 +164,11 @@ mod tests {
             tuple(&["2", "bar"]),
         ];
 
-        let result: Vec<Tuple> = object.iter().map(Tuple::from_bytes)
-            .filter(|tuple| tuple.cell(0, Type::NUMBER).map(|cell| i32::try_from(cell).unwrap() == 1).unwrap_or(false))
+        let result: Vec<Tuple> = object.iter().map(|bytes| Tuple::from_bytes(bytes, TYPES_1))
+            .filter(|tuple| tuple.cell(0).map(|cell| i32::try_from(cell).unwrap() == 1).unwrap_or(false))
             .collect();
 
-        assert_eq!(result.get(0).unwrap().cell(1, Type::TEXT).unwrap().to_string(), "foo");
+        assert_eq!(result.get(0).unwrap().cell(1).unwrap().to_string(), "foo");
     }
 
     #[test]
@@ -169,13 +181,13 @@ mod tests {
             tuple(&["fizz"]),
         ];
 
-        let result: Vec<Tuple> = object_1.iter().map(Tuple::from_bytes)
+        let result: Vec<Tuple> = object_1.iter().map(|bytes| Tuple::from_bytes(bytes, TYPES_1))
             .filter_map(|tuple| {
-                object_2.get(0).map(|joiner_tuple| tuple.add_cells(Tuple::from_bytes(joiner_tuple)))
+                object_2.get(0).map(|joiner_tuple| tuple.add_cells(Tuple::from_bytes(joiner_tuple, TYPES_2)))
             }).collect();
         let first = result.get(0).unwrap();
-        assert_eq!(i32::try_from(first.cell(0, Type::NUMBER).unwrap()), Ok(1));
-        assert_eq!(first.cell(2, Type::TEXT).unwrap().to_string(), "fizz");
+        assert_eq!(i32::try_from(first.cell(0).unwrap()), Ok(1));
+        assert_eq!(first.cell(2).unwrap().to_string(), "fizz");
     }
 
     fn tuple(cells: &[&str]) -> ByteTuple {

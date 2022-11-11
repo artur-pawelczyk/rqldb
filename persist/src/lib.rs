@@ -172,7 +172,8 @@ pub fn read_db<'a, R: Read>(reader: R) -> Result<Database<'a>, Error> {
 
     let mut object_id = 0usize;
     while reader.has_some().unwrap() {
-        db.recover_object(object_id, read_object(&mut reader).unwrap().iter().map(Tuple::from_bytes));
+        let types = db.schema().relations[object_id].types();
+        db.recover_object(object_id, read_object(&mut reader).unwrap().iter().map(|bytes| Tuple::from_bytes(bytes, &types)));
         object_id += 1;
     }
 

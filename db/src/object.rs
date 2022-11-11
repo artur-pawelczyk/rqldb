@@ -9,6 +9,7 @@ type ByteTuple = Vec<ByteCell>;
 #[derive(Default)]
 pub(crate) struct IndexedObject<'a> {
     tuples: Vec<ByteTuple>,
+    attrs: Vec<Type>,
     index: Index,
     hash: HashMap<ByteCell, usize>,
     removed_ids: HashSet<usize>,
@@ -21,6 +22,7 @@ impl<'a> IndexedObject<'a> {
 
         Self{
             tuples: Vec::new(),
+            attrs: table.attributes().iter().map(|(_, kind)| *kind).collect(),
             index: key.map(Index::Attr).unwrap_or(Index::Uniq),
             hash: Default::default(),
             removed_ids: Default::default(),
@@ -63,11 +65,11 @@ impl<'a> IndexedObject<'a> {
     }
 
     pub(crate) fn get(&self, id: usize) -> Option<Tuple> {
-        self.tuples.get(id).map(Tuple::from_bytes)
+        self.tuples.get(id).map(|bytes| Tuple::from_bytes(bytes, &self.attrs))
     }
 
     pub(crate) fn iter<'b>(&'b self) -> Box<dyn Iterator<Item = Tuple<'b>> + 'b> {
-        Box::new(self.tuples.iter().map(Tuple::from_bytes))
+        Box::new(self.tuples.iter().map(|bytes| Tuple::from_bytes(bytes, &self.attrs)))
     }
 
     pub(crate) fn remove_tuples(&mut self, ids: &[usize]) {
@@ -85,12 +87,13 @@ impl<'a> IndexedObject<'a> {
             let mut hash = HashMap::with_capacity(snapshot.size_hint().0);
             let mut tuples = Vec::with_capacity(snapshot.size_hint().0);
             for (id, tuple) in snapshot.enumerate() {
-                hash.insert(Vec::from(tuple.cell(key, Type::NONE).expect("").bytes()), id);
+                hash.insert(Vec::from(tuple.cell(key).expect("").bytes()), id);
                 tuples.push(tuple.as_bytes().clone());
             }
 
             Self{
                 tuples,
+                attrs: table.attributes().iter().map(|(_, kind)| *kind).collect(),
                 index, hash,
                 removed_ids: HashSet::new(),
                 marker: PhantomData,
@@ -98,6 +101,7 @@ impl<'a> IndexedObject<'a> {
         } else {
             Self{
                 tuples: snapshot.map(|t| t.as_bytes().clone()).collect(),
+                attrs: table.attributes().iter().map(|(_, kind)| *kind).collect(),
                 index: Default::default(),
                 hash: Default::default(),
                 removed_ids: HashSet::new(),
@@ -121,11 +125,14 @@ enum Index {
 }
 
 #[derive(Debug)]
-pub(crate) struct TempObject(Vec<Vec<u8>>);
+pub(crate) struct TempObject {
+    values: Vec<Vec<u8>>,
+    attrs: Vec<Type>,
+}
 
 impl TempObject {
     pub(crate) fn new() -> Self {
-        Self(Vec::new())
+        Self{ values: vec![], attrs: vec![] }
     }
 
     pub(crate) fn push(&mut self, val: &str, kind: Type) {
@@ -137,11 +144,12 @@ impl TempObject {
             _ => panic!("unknown type: {}", kind),
         };
 
-        self.0.push(cell);
+        self.values.push(cell);
+        self.attrs.push(kind);
     }
 
     pub(crate) fn iter<'a>(&'a self) -> Box<dyn Iterator<Item = Tuple<'a>> + 'a> {
-        Box::new(std::iter::once(Tuple::from_bytes(&self.0)))
+        Box::new(std::iter::once(Tuple::from_bytes(&self.values, &self.attrs)))
     }
 }
 
@@ -156,7 +164,7 @@ impl<'a> RawObjectView<'a> {
     }
 
     pub fn raw_tuples(&'a self) -> Box<dyn Iterator<Item = Tuple<'a>> + 'a> {
-        Box::new(self.object.tuples.iter().map(|t| Tuple::from_bytes(t)))
+        Box::new(self.object.tuples.iter().map(|t| Tuple::from_bytes(t, &self.object.attrs)))
     }
 
     pub fn name(&self) -> &str {

@@ -5,7 +5,7 @@ use crate::object::{IndexedObject, TempObject};
 use crate::plan::{Contents, Attribute, Filter, Plan, Finisher, ApplyFn};
 use crate::tuple::Tuple;
 use crate::{schema::Schema, QueryResults, plan::compute_plan};
-use crate::{dsl, Cell, RawObjectView, Type};
+use crate::{dsl, Cell, RawObjectView};
 
 #[derive(Default)]
 pub struct Database<'a> {
@@ -197,8 +197,8 @@ impl<'a, 'obj> Sink<'a, 'obj> {
     fn accept_tuple(&mut self, idx: usize, tuple: &Tuple) {
         match self {
             Self::Count(ref mut count) => *count += 1,
-            Self::Sum(pos, ref mut sum) => *sum += tuple.cell(*pos, Type::NUMBER).unwrap().as_number().unwrap(),
-            Self::Max(pos, ref mut max) => *max = std::cmp::max(*max, tuple.cell(*pos, Type::NUMBER).unwrap().as_number().unwrap()),
+            Self::Sum(pos, ref mut sum) => *sum += tuple.cell(*pos).unwrap().as_number().unwrap(),
+            Self::Max(pos, ref mut max) => *max = std::cmp::max(*max, tuple.cell(*pos).unwrap().as_number().unwrap()),
             Self::Return(attrs, ref mut results) => results.push(tuple_to_cells(attrs, tuple)),
             Self::Insert(object) => { object.add_tuple(tuple); },
             Self::Delete(ref mut tuples) => tuples.push(idx),
