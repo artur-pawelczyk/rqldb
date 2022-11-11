@@ -84,20 +84,22 @@ impl<'a> IndexedObject<'a> {
         if let Some(key_col) = table.indexed_column() {
             let key = key_col.pos();
             let index = Index::Attr(key);
-            let mut hash = HashMap::with_capacity(snapshot.size_hint().0);
             let mut tuples = Vec::with_capacity(snapshot.size_hint().0);
-            for (id, tuple) in snapshot.enumerate() {
-                hash.insert(Vec::from(tuple.cell(key).expect("").bytes()), id);
+            for tuple in snapshot {
                 tuples.push(tuple.as_bytes().clone());
             }
 
-            Self{
+            let mut obj = Self{
                 tuples,
                 attrs: table.attributes().iter().map(|(_, kind)| *kind).collect(),
-                index, hash,
+                index,
+                hash: Default::default(),
                 removed_ids: HashSet::new(),
                 marker: PhantomData,
-            }
+            };
+
+            obj.reindex();
+            obj
         } else {
             Self{
                 tuples: snapshot.map(|t| t.as_bytes().clone()).collect(),
@@ -106,6 +108,15 @@ impl<'a> IndexedObject<'a> {
                 hash: Default::default(),
                 removed_ids: HashSet::new(),
                 marker: PhantomData,
+            }
+        }
+    }
+
+    fn reindex(&mut self) {
+        if let Index::Attr(key_pos) = self.index {
+            self.hash.clear();
+            for (id, tuple) in self.tuples.iter().enumerate() {
+                self.hash.insert(tuple[key_pos].to_vec(), id);
             }
         }
     }
