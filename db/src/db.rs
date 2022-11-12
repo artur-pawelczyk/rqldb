@@ -45,11 +45,9 @@ impl<'obj> Database<'obj> {
                 ObjectView::Ref(self.objects.get(rel.id).expect("Already checked by the planner").borrow())
             },
             Contents::Tuple(ref values) => {
-                let mut temp_object = TempObject::new();
-                for (pos, val) in values.iter().enumerate() {
-                    temp_object.push(val, plan.source.attributes[pos].kind());
-                }
-
+                let attrs = plan.source.attributes.iter().map(Attribute::kind).collect();
+                let mut temp_object = TempObject::with_attrs(attrs);
+                temp_object.push_str(&values);
                 ObjectView::Val(temp_object)
             },
             Contents::IndexScan(ref col, ref val) => {
@@ -123,7 +121,7 @@ impl<'obj> Database<'obj> {
         &self.schema
     }
 
-    pub fn recover_object<'b, S: Iterator<Item = Tuple<'b>>>(&mut self, id: usize, snapshot: S) {
+    pub fn recover_object(&mut self, id: usize, snapshot: TempObject) {
         let table = self.schema.find_relation(id).unwrap();
         let new_obj = IndexedObject::recover(snapshot, table);
         let _ = std::mem::replace(&mut self.objects[id], RefCell::new(new_obj));
@@ -448,9 +446,12 @@ mod tests {
 
         source_db.execute_plan(Plan::insert(&source_table, &["1".to_string(), "one".to_string()])).unwrap();
         let raw_object = source_db.raw_object("document").unwrap();
-        let snapshot = raw_object.raw_tuples();
+        let mut temp_object = TempObject::with_attrs(target_table.types());
+        for tuple in raw_object.raw_tuples() {
+            temp_object.push(tuple.as_bytes().to_vec());
+        }
 
-        target_db.recover_object(0, snapshot);
+        target_db.recover_object(0, temp_object);
         let all = target_db.execute_plan(Plan::scan(&target_table)).unwrap();
         assert_eq!(all.size(), 1);
     }

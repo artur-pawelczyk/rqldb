@@ -1,4 +1,5 @@
 use std::fmt;
+use std::iter::zip;
 use std::{collections::{HashSet, HashMap}, marker::PhantomData, cell::Ref};
 
 use crate::{tuple::Tuple, schema::Relation, Type};
@@ -80,17 +81,13 @@ impl<'a> IndexedObject<'a> {
         self.removed_ids.contains(&id)
     }
 
-    pub(crate) fn recover<'b, S: Iterator<Item = Tuple<'b>>>(snapshot: S, table: &Relation) -> Self {
+    pub(crate) fn recover<'b>(snapshot: TempObject, table: &Relation) -> Self {
         if let Some(key_col) = table.indexed_column() {
             let key = key_col.pos();
             let index = Index::Attr(key);
-            let mut tuples = Vec::with_capacity(snapshot.size_hint().0);
-            for tuple in snapshot {
-                tuples.push(tuple.as_bytes().clone());
-            }
 
             let mut obj = Self{
-                tuples,
+                tuples: snapshot.values,
                 attrs: table.attributes().iter().map(|(_, kind)| *kind).collect(),
                 index,
                 hash: Default::default(),
@@ -102,7 +99,7 @@ impl<'a> IndexedObject<'a> {
             obj
         } else {
             Self{
-                tuples: snapshot.map(|t| t.as_bytes().clone()).collect(),
+                tuples: snapshot.values,
                 attrs: table.attributes().iter().map(|(_, kind)| *kind).collect(),
                 index: Default::default(),
                 hash: Default::default(),
@@ -136,31 +133,45 @@ enum Index {
 }
 
 #[derive(Debug)]
-pub(crate) struct TempObject {
-    values: Vec<Vec<u8>>,
+pub struct TempObject {
+    values: Vec<Vec<Vec<u8>>>,
     attrs: Vec<Type>,
 }
 
 impl TempObject {
-    pub(crate) fn new() -> Self {
-        Self{ values: vec![], attrs: vec![] }
+    pub fn with_attrs(attrs: Vec<Type>) -> Self {
+        Self{ values: vec![], attrs }
     }
 
-    pub(crate) fn push(&mut self, val: &str, kind: Type) {
-        let cell = match kind {
-            Type::NUMBER => val.parse::<i32>().map(|n| n.to_be_bytes().to_vec()).unwrap(),
-            Type::TEXT => val.as_bytes().to_vec(),
-            Type::BOOLEAN => if val == "true" { vec![1] } else if val == "false" { vec![0] } else { panic!() },
-            Type::NONE => vec![],
-            _ => panic!("unknown type: {}", kind),
-        };
+    pub fn push(&mut self, tuple: Vec<Vec<u8>>) {
+        self.values.push(tuple);
+    }
 
-        self.values.push(cell);
-        self.attrs.push(kind);
+    pub(crate) fn push_str(&mut self, vals: &[String]) {
+        fn cell(val: &str, kind: Type) -> Vec<u8> {
+            match kind {
+                Type::NUMBER => val.parse::<i32>().map(|n| n.to_be_bytes().to_vec()).unwrap(),
+                Type::TEXT => val.as_bytes().to_vec(),
+                Type::BOOLEAN => if val == "true" { vec![1] } else if val == "false" { vec![0] } else { panic!() },
+                Type::NONE => vec![],
+                _ => panic!("unknown type: {}", kind),
+            }
+        }
+
+        let tuple = zip(vals.iter(), self.attrs.iter()).map(|(val, kind)| cell(val, *kind)).collect();
+        self.push(tuple);
     }
 
     pub(crate) fn iter<'a>(&'a self) -> Box<dyn Iterator<Item = Tuple<'a>> + 'a> {
-        Box::new(std::iter::once(Tuple::from_bytes(&self.values, &self.attrs)))
+        Box::new(self.values.iter().map(|bytes| Tuple::from_bytes(bytes, &self.attrs)))
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.values.len()
     }
 }
 

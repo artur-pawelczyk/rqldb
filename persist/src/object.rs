@@ -1,8 +1,8 @@
 use std::io::{Read, Write};
 
-use rqldb::RawObjectView;
+use rqldb::{RawObjectView, object::TempObject};
 
-use crate::{ByteTuple, ByteReader, Error};
+use crate::{ByteReader, Error};
 
 pub(crate) fn write_object<W: Write>(writer: &mut W, object: &RawObjectView) -> Result<(), Error> {
     writer.write(&size(object.count()))?;
@@ -19,13 +19,10 @@ fn size(val: usize) -> [u8; 4] {
     (val as u32).to_le_bytes()
 }
 
-pub(crate) fn read_object<R: Read>(reader: &mut ByteReader<R>) -> Result<Vec<ByteTuple>, Error> {
+pub(crate) fn read_object<R: Read>(reader: &mut ByteReader<R>, obj: &mut TempObject) -> Result<(), Error> {
     let n_tuples = reader.read_u32()? as usize;
-
-    let mut tuples = Vec::with_capacity(n_tuples);
     for _ in 0..n_tuples {
         let n_cells = reader.read_u32()? as usize;
-
         let mut tuple = Vec::with_capacity(n_cells);
         for _ in 0..n_cells {
             let n_bytes = reader.read_u32()? as usize;
@@ -33,10 +30,10 @@ pub(crate) fn read_object<R: Read>(reader: &mut ByteReader<R>) -> Result<Vec<Byt
             tuple.push(cell);
         }
 
-        tuples.push(tuple);
+        obj.push(tuple);
     }
 
-    Ok(tuples)
+    Ok(())
 }
 
 #[cfg(test)]
@@ -45,7 +42,7 @@ mod tests {
 
     use super::*;
 
-    use rqldb::{Type, Database, Query, Command, tuple::Tuple};
+    use rqldb::{Type, Database, Query, Command};
 
     #[test]
     fn test_serialize_empty_object() {
@@ -55,7 +52,8 @@ mod tests {
         let raw_object = db.raw_object("example").unwrap();
         let mut out = Vec::new();
         write_object(&mut out, &raw_object).unwrap();
-        let saved_object = read_object(&mut ByteReader::new(Cursor::new(out))).unwrap();
+        let mut saved_object = TempObject::with_attrs(raw_object.types());
+        read_object(&mut ByteReader::new(Cursor::new(out)), &mut saved_object).unwrap();
         assert!(saved_object.is_empty());
     }
 
@@ -70,11 +68,13 @@ mod tests {
         let raw_object = db.raw_object("example").unwrap();
         let mut out = Vec::new();
         write_object(&mut out, &raw_object).unwrap();
-        let saved_object = read_object(&mut ByteReader::new(Cursor::new(out))).unwrap();
+        let mut saved_object = TempObject::with_attrs(raw_object.types());
+        read_object(&mut ByteReader::new(Cursor::new(out)), &mut saved_object).unwrap();
+        
 
         let mut recovered_db = Database::default();
         recovered_db.execute_create(&Command::create_table("example").indexed_column("id", Type::NUMBER).column("content", Type::TEXT));
-        recovered_db.recover_object(0, saved_object.iter().map(|bytes| Tuple::from_bytes(bytes, &[])));
+        recovered_db.recover_object(0, saved_object);
         let result = recovered_db.execute_query(&Query::scan("example")).unwrap();
         assert_eq!(result.size(), 2);
     }

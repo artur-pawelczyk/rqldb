@@ -3,8 +3,8 @@ mod schema;
 
 use object::{write_object, read_object};
 use rqldb::Database;
+use rqldb::object::TempObject;
 use rqldb::schema::Schema;
-use rqldb::tuple::Tuple;
 use schema::{write_schema, read_schema};
 
 use std::fs::{File, OpenOptions};
@@ -173,7 +173,9 @@ pub fn read_db<'a, R: Read>(reader: R) -> Result<Database<'a>, Error> {
     let mut object_id = 0usize;
     while reader.has_some().unwrap() {
         let types = db.schema().relations[object_id].types();
-        db.recover_object(object_id, read_object(&mut reader).unwrap().iter().map(|bytes| Tuple::from_bytes(bytes, &types)));
+        let mut object = TempObject::with_attrs(types);
+        read_object(&mut reader, &mut object).unwrap();
+        db.recover_object(object_id, object);
         object_id += 1;
     }
 
@@ -214,8 +216,6 @@ impl<R: Read> ByteReader<R> {
         Ok(!self.reader.fill_buf().unwrap().is_empty())
     }
 }
-
-pub(crate) type ByteTuple = Vec<Vec<u8>>;
 
 #[cfg(test)]
 mod tests {
