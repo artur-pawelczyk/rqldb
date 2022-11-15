@@ -448,8 +448,6 @@ mod tests {
     use crate::schema::Type;
     
 
-    type ByteTuple = Vec<Vec<u8>>;
-
     #[test]
     fn test_compute_filter() {
         let mut schema = Schema::default();
@@ -468,8 +466,8 @@ mod tests {
         let mut schema = Schema::default();
         schema.create_table("example").column("id", Type::NUMBER).column("content", Type::TEXT).column("type", Type::NUMBER).add();
         let types = schema.find_relation("example").unwrap().types();
-        let tuple_1 = tuple(&["1", "content1", "11"]);
-        let tuple_2 = tuple(&["2", "content2", "12"]);
+        let tuple_1 = tuple(&[(Type::NUMBER, "1"), (Type::TEXT, "content1"), (Type::NUMBER, "11")]);
+        let tuple_2 = tuple(&[(Type::NUMBER, "2"), (Type::TEXT, "content2"), (Type::NUMBER, "12")]);
 
         let id_filter = expect_filter(compute_plan(&schema, &dsl::Query::scan("example").filter("example.id", EQ, "1")));
         assert!(id_filter.matches_tuple(&Tuple::from_bytes(&tuple_1, &types)));
@@ -620,15 +618,26 @@ mod tests {
         attrs.iter().map(|attr| attr.name()).collect()
     }
 
-    fn tuple(cells: &[&str]) -> ByteTuple {
-        cells.iter().map(|s| cell(s)).collect()
+    fn tuple(cells: &[(Type, &str)]) -> Vec<u8> {
+        let mut tuple = Vec::new();
+        for (kind, value) in cells.iter() {
+            let cell = crate::tuple::Cell{ raw: &bytes(*kind, value), kind: *kind };
+            let mut serialized = cell.serialize();
+            tuple.append(&mut serialized);
+        }
+
+        tuple
     }
 
-    fn cell(s: &str) -> Vec<u8> {
-        if let Result::Ok(num) = s.parse::<i32>() {
-            Vec::from(num.to_be_bytes())
-        } else {
-            Vec::from(s.as_bytes())
+    fn bytes(t: Type, s: &str) -> Vec<u8> {
+        match t {
+            Type::NUMBER => Vec::from(s.parse::<i32>().unwrap().to_be_bytes()),
+            Type::TEXT => {
+                let mut v = vec![s.len() as u8];
+                s.as_bytes().iter().for_each(|c| v.push(*c));
+                v
+            },
+            _ => panic!(),
         }
     }
 }

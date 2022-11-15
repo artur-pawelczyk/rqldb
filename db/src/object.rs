@@ -2,14 +2,15 @@ use std::fmt;
 use std::iter::zip;
 use std::{collections::{HashSet, HashMap}, marker::PhantomData, cell::Ref};
 
+use crate::tuple::Cell;
 use crate::{tuple::Tuple, schema::Relation, Type};
 
 type ByteCell = Vec<u8>;
-type ByteTuple = Vec<ByteCell>;
+type ByteTuple = Vec<u8>;
 
 #[derive(Default)]
 pub(crate) struct IndexedObject<'a> {
-    tuples: Vec<ByteTuple>,
+    pub(crate) tuples: Vec<ByteTuple>,
     attrs: Vec<Type>,
     index: Index,
     hash: HashMap<ByteCell, usize>,
@@ -34,21 +35,21 @@ impl<'a> IndexedObject<'a> {
     pub(crate) fn add_tuple(&mut self, tuple: &Tuple) -> bool {
         match self.index {
             Index::Attr(key_pos) => {
-                let key = tuple.as_bytes().get(key_pos);
-                if let Some(id) = self.hash.get(key.unwrap()) {
-                    let _ = std::mem::replace(&mut self.tuples[*id], tuple.as_bytes().to_vec());
+                let key = tuple.cell(key_pos);
+                if let Some(id) = self.hash.get(key.unwrap().bytes()) {
+                    let _ = std::mem::replace(&mut self.tuples[*id], tuple.raw_bytes().to_vec());
                     false
                 } else {
-                    self.hash.insert(tuple.as_bytes()[key_pos].clone(), self.tuples.len());
-                    self.tuples.push(tuple.as_bytes().to_vec());
+                    self.hash.insert(tuple.cell(key_pos).expect("Already validated").bytes().to_vec(), self.tuples.len());
+                    self.tuples.push(tuple.raw_bytes().to_vec());
                     true
                 }
             },
             Index::Uniq => {
-                if self.tuples.iter().any(|x| x == tuple.as_bytes()) {
+                if self.tuples.iter().any(|x| x == tuple.raw_bytes()) {
                     false
                 } else {
-                    self.tuples.push(tuple.as_bytes().to_vec());
+                    self.tuples.push(tuple.raw_bytes().to_vec());
                     true
                 }
                 
@@ -112,8 +113,9 @@ impl<'a> IndexedObject<'a> {
     fn reindex(&mut self) {
         if let Index::Attr(key_pos) = self.index {
             self.hash.clear();
-            for (id, tuple) in self.tuples.iter().enumerate() {
-                self.hash.insert(tuple[key_pos].to_vec(), id);
+            for (id, raw_tuple) in self.tuples.iter().enumerate() {
+                let tuple = Tuple::from_bytes(raw_tuple, &self.attrs);
+                self.hash.insert(tuple.cell(key_pos).unwrap().bytes().to_vec(), id);
             }
         }
     }
@@ -134,7 +136,7 @@ enum Index {
 
 #[derive(Debug)]
 pub struct TempObject {
-    values: Vec<Vec<Vec<u8>>>,
+    values: Vec<Vec<u8>>,
     attrs: Vec<Type>,
 }
 
@@ -143,8 +145,17 @@ impl TempObject {
         Self{ values: vec![], attrs }
     }
 
-    pub fn push(&mut self, tuple: Vec<Vec<u8>>) {
-        self.values.push(tuple);
+    pub fn push(&mut self, input_tuple: Vec<Vec<u8>>) {
+        let mut raw_tuple = Vec::new();
+        for (val, kind) in zip(input_tuple.iter(), self.attrs.iter()) {
+            if *kind == Type::TEXT {
+                raw_tuple.push(val.len() as u8);
+            }
+
+            val.iter().for_each(|b| raw_tuple.push(*b));
+        }
+
+        self.values.push(raw_tuple);
     }
 
     pub(crate) fn push_str(&mut self, vals: &[String]) {

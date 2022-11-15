@@ -1,4 +1,4 @@
-use crate::{schema::Relation, Command, Query, Cell, Type, RawObjectView, tuple::Tuple};
+use crate::{schema::Relation, Command, Query, Type, RawObjectView, tuple::Tuple};
 
 pub(crate) fn dump_create(rel: &Relation) -> Command {
     rel.columns().fold(Command::create_table(rel.name()), |acc, col| {
@@ -28,7 +28,7 @@ impl<'a> Iterator for QueryIter<'a> {
 
     fn next(&mut self) -> Option<String> {
         self.inner.next().map(|tuple| {
-            let vals: Vec<String> = std::iter::zip(tuple.as_bytes(), self.types.iter()).map(|(cell, kind)| Cell::from_bytes(*kind, cell).as_string()).collect();
+            let vals: Vec<String> = tuple.iter().map(|cell| cell.to_string()).collect();
             Query::tuple(&vals.iter().map(|x| x.as_str()).collect::<Vec<&str>>())
                 .insert_into(&self.name)
                 .to_string()
