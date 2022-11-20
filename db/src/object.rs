@@ -2,7 +2,6 @@ use std::fmt;
 use std::iter::zip;
 use std::{collections::{HashSet, HashMap}, marker::PhantomData, cell::Ref};
 
-use crate::tuple::Cell;
 use crate::{tuple::Tuple, schema::Relation, Type};
 
 type ByteCell = Vec<u8>;

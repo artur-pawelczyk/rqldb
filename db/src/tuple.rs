@@ -122,6 +122,7 @@ impl<'a> Cell<'a> {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn serialize(&self) -> Vec<u8> {
         self.raw.to_vec()
     }

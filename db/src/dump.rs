@@ -1,4 +1,4 @@
-use crate::{schema::Relation, Command, Query, Type, RawObjectView, tuple::Tuple};
+use crate::{schema::Relation, Command, Query, RawObjectView, tuple::Tuple};
 
 pub(crate) fn dump_create(rel: &Relation) -> Command {
     rel.columns().fold(Command::create_table(rel.name()), |acc, col| {
@@ -12,14 +12,12 @@ pub(crate) fn dump_create(rel: &Relation) -> Command {
 
 pub(crate) fn dump_values<'a>(obj: &'a RawObjectView<'a>) -> QueryIter<'a> {
     QueryIter{ name: obj.name().to_string(),
-               types: obj.types().to_vec(),
                inner: obj.raw_tuples(),
     }
 }
 
 pub(crate) struct QueryIter<'a> {
     name: String,
-    types: Vec<Type>,
     inner: Box<dyn Iterator<Item = Tuple<'a>> + 'a>,
 }
 
