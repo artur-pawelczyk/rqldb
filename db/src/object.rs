@@ -158,18 +158,22 @@ impl TempObject {
     }
 
     pub(crate) fn push_str(&mut self, vals: &[String]) {
-        fn cell(val: &str, kind: Type) -> Vec<u8> {
+        fn add_cell(val: &str, kind: Type, tuple: &mut Vec<u8>)  {
             match kind {
-                Type::NUMBER => val.parse::<i32>().map(|n| n.to_be_bytes().to_vec()).unwrap(),
-                Type::TEXT => val.as_bytes().to_vec(),
-                Type::BOOLEAN => if val == "true" { vec![1] } else if val == "false" { vec![0] } else { panic!() },
-                Type::NONE => vec![],
+                Type::NUMBER => val.parse::<i32>().map(|n| n.to_be_bytes()).unwrap().iter().for_each(|b| tuple.push(*b)),
+                Type::TEXT => { tuple.push(val.len() as u8); val.as_bytes().iter().for_each(|b| tuple.push(*b)); },
+                Type::BOOLEAN => if val == "true" { tuple.push(1) } else if val == "false" { tuple.push(0) } else { panic!() },
+                Type::NONE => {},
                 _ => panic!("unknown type: {}", kind),
-            }
+            };
         }
 
-        let tuple = zip(vals.iter(), self.attrs.iter()).map(|(val, kind)| cell(val, *kind)).collect();
-        self.push(tuple);
+        let tuple = zip(vals.iter(), self.attrs.iter()).fold(Vec::new(), |mut acc, (val, kind)| {
+            add_cell(val, *kind, &mut acc);
+            acc
+        });
+
+        self.values.push(tuple);
     }
 
     pub(crate) fn iter<'a>(&'a self) -> Box<dyn Iterator<Item = Tuple<'a>> + 'a> {
