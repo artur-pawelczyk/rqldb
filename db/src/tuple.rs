@@ -52,11 +52,6 @@ impl<'a> Tuple<'a> {
         offset
     }
 
-    pub fn len(&self) -> usize {
-        // TODO: This returns the number of bytes; should return number of cells
-        self.raw.len() + if let Some(rest) = &self.rest { rest.len() } else { 0 }
-    }
-
     pub(crate) fn iter(&self) -> CellIter {
         CellIter{ inner: Tuple{ raw: self.raw, attrs: self.attrs, rest: None } }
     }

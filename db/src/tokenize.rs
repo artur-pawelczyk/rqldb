@@ -14,10 +14,6 @@ impl<'a> Tokenizer<'a> {
     pub fn from_str(source: &'a str) -> Self {
         Self{ source }
     }
-
-    pub fn next_2(&mut self) -> Option<Token> {
-        todo!()
-    }
 }
 
 impl<'a> Iterator for Tokenizer<'a> {
