@@ -55,9 +55,9 @@ fn benchmark_index_search(c: &mut Criterion) {
 fn benchmark_count(c: &mut Criterion) {
     let db = create_database();
 
-    // TODO: These are duplicated tuples
-    let query = Query::tuple(&["1", "2", "example_doc", "the_content"]).insert_into("document");
-    for _ in 0..1_000_000 {
+    for i in 0..1_000_000 {
+        let id = i.to_string();
+        let query = Query::tuple(&[&id, "2", "example_doc", "the_content"]).insert_into("document");
         db.execute_query(&query).unwrap();
     }
 
