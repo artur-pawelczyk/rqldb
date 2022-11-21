@@ -7,10 +7,31 @@ use crate::{ByteReader, Error};
 pub(crate) fn write_object<W: Write>(writer: &mut W, object: &RawObjectView) -> Result<(), Error> {
     writer.write(&size(object.count()))?;
     for tuple in object.raw_tuples() {
-        // TODO: Unnecessary allocation
-        let v: Vec<u8> = tuple.serialize().collect();
-        writer.write(&v)?;
+        consume_chunks(tuple.serialize(), &mut |bytes| {
+            writer.write(bytes).unwrap();
+            Ok(())
+        })?;
    }
+
+    Ok(())
+}
+
+fn consume_chunks(iter: impl Iterator<Item = u8>, consumer: &mut impl FnMut(&[u8]) -> Result<(), Error>) -> Result<(), Error> {
+    let mut buf = [0u8; 1000];
+    let mut i = 0usize;
+    for byte in iter {
+        if i >= buf.len() {
+            consumer(&buf)?;
+            i = 0;
+        }
+
+        buf[i] = byte;
+        i += 1;
+    }
+
+    if i > 0 {
+        consumer(&buf[..i])?;
+    }
 
     Ok(())
 }
