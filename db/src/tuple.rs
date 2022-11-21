@@ -28,7 +28,7 @@ impl<'a> Tuple<'a> {
 
     pub(crate) fn cell(&self, pos: usize) -> Option<Cell> {
         if pos < self.attrs.len() {
-            let kind = self.attrs.get(pos).map(|x| *x)?;
+            let kind = self.attrs.get(pos).copied()?;
             let start = self.offset(pos);
             let end = start + cell_len(kind, &self.raw[start..]);
             Some(Cell{ raw: &self.raw[start..end], kind })
@@ -95,7 +95,7 @@ impl<'a> Cell<'a> {
     pub fn as_number(&self) -> Option<i32> {
         match self.kind {
             Type::NUMBER => {
-                let bytes: Result<[u8; 4], _> = self.raw.clone().try_into();
+                let bytes: Result<[u8; 4], _> = self.raw.try_into();
                 match bytes {
                     Ok(x) => Some(i32::from_be_bytes(x)),
                     _ => None

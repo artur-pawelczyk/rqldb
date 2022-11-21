@@ -1,3 +1,5 @@
+use std::fmt;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Token<'a> {
     Symbol(&'a str),
@@ -105,14 +107,16 @@ impl<'a> Token<'a> {
             Token::Pipe => "|".len(),
         }
     }
+}
 
-    pub fn to_string(&self) -> String {
+impl<'a> fmt::Display for Token<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Token::Symbol(x) => x.to_string(),
-            Token::SymbolWithType(x, y) => x.to_string() + "::" + y,
-            Token::SymbolWithKeyType(x, y) => x.to_string() + "::" + y + "::KEY",
-            Token::Pipe => String::from("|"),
-        }
+            Token::Symbol(x) => write!(f, "{}", x),
+            Token::SymbolWithType(x, y) => write!(f, "{}::{}", x, y),
+            Token::SymbolWithKeyType(x, y) => write!(f, "{}::{}::KEY", x, y),
+            Token::Pipe => write!(f, "|"),
+        }        
     }
 }
 

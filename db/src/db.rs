@@ -47,7 +47,7 @@ impl<'obj> Database<'obj> {
             Contents::Tuple(ref values) => {
                 let attrs = plan.source.attributes.iter().map(Attribute::kind).collect();
                 let mut temp_object = TempObject::with_attrs(attrs);
-                temp_object.push_str(&values);
+                temp_object.push_str(values);
                 ObjectView::Val(temp_object)
             },
             Contents::IndexScan(ref col, ref val) => {

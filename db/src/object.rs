@@ -81,7 +81,7 @@ impl<'a> IndexedObject<'a> {
         self.removed_ids.contains(&id)
     }
 
-    pub(crate) fn recover<'b>(snapshot: TempObject, table: &Relation) -> Self {
+    pub(crate) fn recover(snapshot: TempObject, table: &Relation) -> Self {
         if let Some(key_col) = table.indexed_column() {
             let key = key_col.pos();
             let index = Index::Attr(key);

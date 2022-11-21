@@ -270,7 +270,7 @@ impl<'a> Finisher<'a> {
     }
 }
 
-#[derive(Default, PartialEq, Debug)]
+#[derive(Default, PartialEq, Eq, Debug)]
 pub enum ApplyFn {
     #[default]
     NoOp,
@@ -349,7 +349,7 @@ fn compute_finisher<'a>(plan: Plan<'a>, schema: &'a Schema, query: &dsl::Query) 
         dsl::Finisher::AllColumns => Ok(Plan{ finisher: Finisher::Return, ..plan }),
         dsl::Finisher::Count => Ok(Plan{ finisher: Finisher::Count, ..plan }),
         dsl::Finisher::Apply(f, args) => {
-            let finisher = args.get(0).and_then(|n| schema.find_column(n)).map(|attr| Ok(Finisher::apply(f, attr))).unwrap_or(Err("apply: No such attribute"))?;
+            let finisher = args.first().and_then(|n| schema.find_column(n)).map(|attr| Ok(Finisher::apply(f, attr))).unwrap_or(Err("apply: No such attribute"))?;
             Ok(Plan{ finisher, ..plan })
         },
         dsl::Finisher::Delete => {
