@@ -32,7 +32,7 @@ fn test_basic_queries() {
 
     let query = parse_query("scan document").unwrap();
     let result = db.execute_query(&query).unwrap();
-    assert_eq!(result.results().len(), 2);
+    assert_eq!(result.tuples().count(), 2);
 
     let query = parse_query("scan document | filter document.id = 2").unwrap();
     let result = db.execute_query(&query).unwrap();

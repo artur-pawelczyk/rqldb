@@ -14,7 +14,7 @@ fn create_database<'a>() -> Database<'a> {
 
 fn query_single_number(db: &Database, query: &Query) -> Option<i32> {
     let result = db.execute_query(query).unwrap();
-    result.results().get(0)
+    result.tuples().next()
         .and_then(|t| t.cell_at(0))
         .and_then(|c| c.as_number())
 }
@@ -77,7 +77,7 @@ fn benchmark_read_results(c: &mut Criterion) {
     c.bench_function("read_results", |b| b.iter(|| {
         let query = Query::scan("document").select_all();
         let result = db.execute_query(&query).unwrap();
-        for tuple in result.results() {
+        for tuple in result.tuples() {
             black_box(tuple);
         }
     }));

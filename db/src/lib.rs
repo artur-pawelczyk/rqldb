@@ -34,7 +34,7 @@ impl<'a> Tuple<'a> {
         self.contents.len()
     }
 
-    pub fn cell_at(&self, i: u32) -> Option<&Cell> {
+    pub fn cell_at(&self, i: u32) -> Option<&'a Cell> {
         self.contents.get(i as usize)
     }
 
@@ -159,7 +159,14 @@ impl QueryResults {
     }
 
     pub fn results(&self) -> Vec<Tuple> {
-        self.results.iter().map(|x| Tuple{ attributes: &self.attributes, contents: x}).collect()
+        self.tuples().collect()
+    }
+
+    pub fn tuples(&self) -> Tuples {
+        Tuples{
+            attributes: &self.attributes,
+            contents: &self.results,
+        }
     }
 
     pub fn first(&self) -> Option<Tuple> {
@@ -180,5 +187,23 @@ impl<'a> Iterator for Column<'a> {
         let next = self.results.get(self.pos).and_then(|tuple| tuple.get(self.col_pos));
         self.pos += 1;
         next
+    }
+}
+
+pub struct Tuples<'a> {
+    attributes: &'a [String],
+    contents: &'a [Vec<Cell>],
+}
+
+impl<'a> Iterator for Tuples<'a> {
+    type Item = Tuple<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(next) = self.contents.first() {
+            self.contents = &self.contents[1..];
+            Some(Tuple{ attributes: &self.attributes, contents: next })
+        } else {
+            None
+        }
     }
 }
