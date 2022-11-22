@@ -337,7 +337,7 @@ mod tests {
 
         let result = db.execute_query(&Query::scan("document").join("type", "document.type_id", "type.id")).unwrap();
         assert_eq!(*result.attributes, ["document.id", "document.content", "document.type_id", "type.id", "type.name"]);
-        let tuple = result.tuple_at(0).unwrap();
+        let tuple = result.first().unwrap();
         let document_id = tuple.cell_by_name("document.id").unwrap().as_string();
         let type_name = tuple.cell_by_name("type.name").unwrap().as_string();
         assert_eq!(document_id, "1");

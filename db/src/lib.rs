@@ -162,20 +162,8 @@ impl QueryResults {
         self.results.iter().map(|x| Tuple{ attributes: &self.attributes, contents: x}).collect()
     }
 
-    pub fn tuple_at(&self, i: i32) -> Option<Tuple> {
-        self.results.get(i as usize).map(|cells| Tuple{ attributes: &self.attributes, contents: cells })
-    }
-
-    pub fn columns(&self) -> Vec<Column> {
-        (0..self.attributes.len()).map(|col_pos| Column{ results: &self.results, col_pos, pos: 0}).collect()
-    }
-
-    pub fn column(&self, name: &str) -> Option<Column> {
-        if let Some(col_pos) = self.attributes().iter().enumerate().find(|(_, attr)| attr == &name).map(|(i, _)| i) {
-            Some(Column{ results: &self.results, col_pos, pos: 0 })
-        } else {
-            None
-        }
+    pub fn first(&self) -> Option<Tuple> {
+        self.results.first().map(|cells| Tuple{ attributes: &self.attributes, contents: cells})
     }
 }
 
