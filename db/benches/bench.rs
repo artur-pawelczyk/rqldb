@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion, black_box};
 use rqldb::*;
 
 fn create_database<'a>() -> Database<'a> {
@@ -65,6 +65,24 @@ fn benchmark_count(c: &mut Criterion) {
     c.bench_function("count", |b| b.iter(|| query_single_number(&db, &count_query)));
 }
 
+fn benchmark_read_results(c: &mut Criterion) {
+    let db = create_database();
+
+    for i in 0..1_000_000 {
+        let id = i.to_string();
+        let query = Query::tuple(&[&id, "2", "example_doc", "the_content"]).insert_into("document");
+        db.execute_query(&query).unwrap();
+    }
+
+    c.bench_function("read_results", |b| b.iter(|| {
+        let query = Query::scan("document").select_all();
+        let result = db.execute_query(&query).unwrap();
+        for tuple in result.results() {
+            black_box(tuple);
+        }
+    }));
+}
+
 fn benchmark_parse(c: &mut Criterion) {
     let query = "scan example | join other example.id other.id | filter example.value > 5 | insert_into foo";
 
@@ -79,5 +97,5 @@ fn benchmark_query_to_string(c: &mut Criterion) {
     c.bench_function("dump insert query", |b| b.iter(|| insert_query.to_string()));
 }
 
-criterion_group!(benches, benchmark_insert, benchmark_count, benchmark_parse, benchmark_filter, benchmark_index_search, benchmark_query_to_string);
+criterion_group!(benches, benchmark_insert, benchmark_count, benchmark_read_results, benchmark_parse, benchmark_filter, benchmark_index_search, benchmark_query_to_string);
 criterion_main!(benches);
