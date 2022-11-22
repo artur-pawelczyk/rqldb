@@ -212,10 +212,9 @@ impl<'a, 'obj> Sink<'a, 'obj> {
 
     fn into_results(self) -> QueryResults {
         match self {
-            Self::Count(count) => QueryResults::count(count as u32),
-            // TODO: "count" doesn't belong here
-            Self::Sum(_, n) => QueryResults::count(n as u32),
-            Self::Max(_, n) => QueryResults::count(n as u32),
+            Self::Count(count) => QueryResults::single_number("count", count as i32),
+            Self::Sum(_, n) => QueryResults::single_number("sum", n),
+            Self::Max(_, n) => QueryResults::single_number("max", n),
             Self::Return(attributes, results) => {
                 QueryResults{
                     attributes: attributes.into_iter().map(|attr| attr.into_name()).collect(),
@@ -467,7 +466,7 @@ mod tests {
         }
 
         let tuple_found = db.execute_query(&Query::scan_index("document.id", Operator::EQ, "5")).unwrap();
-        assert_eq!(tuple_found.results()[0].cell_at(0), Some(&Cell::from_number(5)));
+        assert_eq!(tuple_found.results()[0].cell_at(0), Some(&Cell::from_i32(5)));
         assert_eq!(tuple_found.results()[0].cell_at(1), Some(&Cell::from_string("example5")));
 
         let tuple_not_found = db.execute_query(&Query::scan_index("document.id", Operator::EQ, "500")).unwrap();

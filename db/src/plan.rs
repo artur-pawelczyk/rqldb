@@ -604,7 +604,7 @@ mod tests {
         assert_eq!(source.attributes[0], Attribute::Named(0, "example.id".to_string(), Type::NUMBER));
         assert_eq!(source.attributes[1], Attribute::Named(1, "example.content".to_string(), Type::TEXT));
         if let Contents::IndexScan(_, val) = source.contents {
-            assert_eq!(val, Cell::from_number(1));
+            assert_eq!(val, Cell::from_i32(1));
         } else {
             panic!()
         }

@@ -78,7 +78,7 @@ impl Cell {
     }
 
     
-    fn from_number(n: u32) -> Self {
+    fn from_i32(n: i32) -> Self {
         Self{ contents: Vec::from(n.to_be_bytes()), kind: Type::NUMBER }
     }
 
@@ -118,6 +118,12 @@ impl Cell {
     }
 }
 
+impl<T: Into<i32>> From<T> for Cell {
+    fn from(num: T) -> Self {
+        Self::from_i32(num.into())
+    }
+}
+
 impl PartialOrd for Cell {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         if self.kind == other.kind {
@@ -141,9 +147,9 @@ impl fmt::Debug for Cell {
 }
 
 impl QueryResults {
-    pub(crate) fn count(n: u32) -> Self {
-        let tuple = vec![Cell::from_number(n)];
-        Self{ attributes: vec!["count".to_string()], results: vec![tuple]}
+    pub(crate) fn single_number<T: Into<i32>>(name: &str, val: T) -> Self {
+        let tuple = vec![Cell::from(val)];
+        Self{ attributes: vec![name.to_string()], results: vec![tuple] }
     }
 
     pub(crate) fn empty() -> Self {
