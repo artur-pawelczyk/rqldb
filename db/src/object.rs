@@ -70,6 +70,7 @@ impl<'a> IndexedObject<'a> {
     }
 
     pub(crate) fn iter<'b>(&'b self) -> Box<dyn Iterator<Item = Tuple<'b>> + 'b> {
+        // TODO: This should skip deleted tuples
         Box::new(self.tuples.iter().map(|bytes| Tuple::from_bytes(bytes, &self.attrs)))
     }
 
