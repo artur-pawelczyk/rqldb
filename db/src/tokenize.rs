@@ -2,10 +2,10 @@ use std::fmt;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Token<'a> {
-    Symbol(&'a str),
-    SymbolWithType(&'a str, &'a str),
-    SymbolWithKeyType(&'a str, &'a str),
-    Pipe,
+    Symbol(&'a str, usize),
+    SymbolWithType(&'a str, &'a str, usize),
+    SymbolWithKeyType(&'a str, &'a str, usize),
+    Pipe(usize),
 }
 
 pub struct Tokenizer<'a> {
@@ -25,7 +25,7 @@ impl<'a> Iterator for Tokenizer<'a> {
         for ch in self.source.chars() {
             if ch == '|' {
                 self.source = &self.source[1..];
-                return Some(Token::Pipe)
+                return Some(Token::Pipe(0))
             } else if ch == '"' {
                 if let Some(s) = read_string(self.source) {
                     self.source = &self.source[s.len()+2..];
@@ -57,12 +57,12 @@ fn read_symbol(source: &str) -> Option<Token<'_>> {
                     if ch == ':' {
                         let type_end = pos;
                         if chars.next().map(|(_, ch)| ch) == Some(':') {
-                            return Some(Token::SymbolWithKeyType(&part[0..name_end], &part[name_end+2..type_end]));
+                            return Some(Token::SymbolWithKeyType(&part[0..name_end], &part[name_end+2..type_end], 0));
                         }
                     }
                 }
 
-                return Some(Token::SymbolWithType(&part[0..name_end], &part[name_end+2..]))
+                return Some(Token::SymbolWithType(&part[0..name_end], &part[name_end+2..], 0))
             }
         }
     }
@@ -70,7 +70,7 @@ fn read_symbol(source: &str) -> Option<Token<'_>> {
     if part.is_empty() {
         None
     } else {
-        Some(Token::Symbol(part))
+        Some(Token::Symbol(part, 0))
     }
 }
 
@@ -81,7 +81,7 @@ fn read_string(source: &str) -> Option<Token<'_>> {
     
     for (pos, ch) in source.char_indices().skip(1) {
         if ch == '"' {
-            return Some(Token::Symbol(&source[1..pos]))
+            return Some(Token::Symbol(&source[1..pos], 0))
         }
     }
 
@@ -101,10 +101,10 @@ fn read_util_whitespace(source: &str) -> &str {
 impl<'a> Token<'a> {
     fn len(&self) -> usize {
         match self {
-            Token::Symbol(x) => x.len(),
-            Token::SymbolWithType(x, y) => x.len() + "::".len() + y.len(),
-            Token::SymbolWithKeyType(x, y) => x.len() + "::".len() + y.len() + "::KEY".len(),
-            Token::Pipe => "|".len(),
+            Token::Symbol(x, _) => x.len(),
+            Token::SymbolWithType(x, y, _) => x.len() + "::".len() + y.len(),
+            Token::SymbolWithKeyType(x, y, _) => x.len() + "::".len() + y.len() + "::KEY".len(),
+            Token::Pipe(_) => "|".len(),
         }
     }
 }
@@ -112,10 +112,10 @@ impl<'a> Token<'a> {
 impl<'a> fmt::Display for Token<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Token::Symbol(x) => write!(f, "{}", x),
-            Token::SymbolWithType(x, y) => write!(f, "{}::{}", x, y),
-            Token::SymbolWithKeyType(x, y) => write!(f, "{}::{}::KEY", x, y),
-            Token::Pipe => write!(f, "|"),
+            Token::Symbol(x, _) => write!(f, "{}", x),
+            Token::SymbolWithType(x, y, _) => write!(f, "{}::{}", x, y),
+            Token::SymbolWithKeyType(x, y, _) => write!(f, "{}::{}::KEY", x, y),
+            Token::Pipe(_) => write!(f, "|"),
         }        
     }
 }
@@ -147,18 +147,18 @@ mod tests {
     }
 
     fn symbol(s: &str) -> Token<'_> {
-        Token::Symbol(s)
+        Token::Symbol(s, 0)
     }
 
     fn symbol_with_type<'a>(s: &'a str, t: &'a str) -> Token<'a> {
-        Token::SymbolWithType(s, t)
+        Token::SymbolWithType(s, t, 0)
     }
 
     fn symbol_with_key_type<'a>(s: &'a str, t: &'a str) -> Token<'a> {
-        Token::SymbolWithKeyType(s, t)
+        Token::SymbolWithKeyType(s, t, 0)
     }
 
     fn pipe<'a>() -> Token<'a> {
-        Token::Pipe
+        Token::Pipe(0)
     }
 }
