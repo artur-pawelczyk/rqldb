@@ -110,7 +110,7 @@ impl FromStr for Operator {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "=" => Ok(Self::EQ),
-            _ => Err(ParseError("Operator not recognized")),
+            _ => Err(ParseError::msg("Operator not recognized")),
         }
     }
 }

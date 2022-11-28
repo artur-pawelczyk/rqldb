@@ -6,11 +6,19 @@ use std::fmt;
 use std::str::FromStr;
 
 #[derive(Debug)]
-pub struct ParseError(pub &'static str);
+pub struct ParseError {
+    msg: &'static str,
+}
+
+impl ParseError {
+    pub fn msg(msg: &'static str) -> Self {
+        Self{ msg }
+    }
+}
 
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.0)
+        f.write_str(self.msg)
     }
 }
 
@@ -28,7 +36,7 @@ pub fn parse_query(query_str: &str) -> Result<Query<'_>, ParseError> {
                     let op = read_operator(tokenizer.next())?;
                     let right = read_symbol(tokenizer.next())?;
                     if let Some(token) = tokenizer.next() {
-                        if token != Token::Pipe { return Err(ParseError("Expected end of statement")); }
+                        if token != Token::Pipe { return Err(ParseError::msg("Expected end of statement")); }
                     }
                     query = query.filter(left, op, right);
                 },
@@ -37,7 +45,7 @@ pub fn parse_query(query_str: &str) -> Result<Query<'_>, ParseError> {
                     let left = read_symbol(tokenizer.next())?;
                     let right = read_symbol(tokenizer.next())?;
                     if let Some(token) = tokenizer.next() {
-                        if token != Token::Pipe { return Err(ParseError("Expected end of statement")); }
+                        if token != Token::Pipe { return Err(ParseError::msg("Expected end of statement")); }
                     }
                     query = query.join(table, left, right);
                 },
@@ -48,14 +56,14 @@ pub fn parse_query(query_str: &str) -> Result<Query<'_>, ParseError> {
                 }
                 "count" => {
                     if let Some(token) = tokenizer.next() {
-                        if token != Token::Pipe { return Err(ParseError("Expected end of statement")); }
+                        if token != Token::Pipe { return Err(ParseError::msg("Expected end of statement")); }
                     }
                     query = query.count();
                 },
                 "delete" => query = query.delete(),
-                _ => return Err(ParseError("Function not recognized"))
+                _ => return Err(ParseError::msg("Function not recognized"))
             },
-            _ => return Err(ParseError("Expected a symbol"))
+            _ => return Err(ParseError::msg("Expected a symbol"))
         }
     }
 
@@ -65,7 +73,7 @@ pub fn parse_query(query_str: &str) -> Result<Query<'_>, ParseError> {
 fn read_source<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query<'a>, ParseError> {
     let function = match tokenizer.next() {
         Some(x) => x,
-        None => return Err(ParseError("Expected source function"))
+        None => return Err(ParseError::msg("Expected source function"))
     };
 
     match function {
@@ -73,9 +81,9 @@ fn read_source<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query<'a>, ParseErro
             "scan" => read_table_scan(tokenizer),
             "tuple" => read_tuple(tokenizer).map(|values| Query::tuple(&values)),
             "scan_index" => read_index_scan(tokenizer),
-            _ => Result::Err(ParseError("Unnokwn source function")),
+            _ => Result::Err(ParseError::msg("Unnokwn source function")),
         },
-        _ => Err(ParseError("Expected a symbol"))
+        _ => Err(ParseError::msg("Expected a symbol"))
     }
 }
 
@@ -88,12 +96,12 @@ fn read_operator(t: Option<Token>) -> Result<Operator, ParseError> {
                 ">=" => Ok(Operator::GE),
                 "<" => Ok(Operator::LT),
                 "<=" => Ok(Operator::LE),
-                _ => Err(ParseError("Unknown operator")),
+                _ => Err(ParseError::msg("Unknown operator")),
             }
-            _ => Err(ParseError("Unexpected token")),
+            _ => Err(ParseError::msg("Unexpected token")),
         }
     } else {
-        Err(ParseError("Unknown operator"))
+        Err(ParseError::msg("Unknown operator"))
     }
 }
 
@@ -101,10 +109,10 @@ fn read_symbol(t: Option<Token<'_>>) -> Result<&str, ParseError> {
     if let Some(token) = t {
         match token {
             Token::Symbol(name) => Ok(name),
-            _ => Err(ParseError("Expected a symbol"))
+            _ => Err(ParseError::msg("Expected a symbol"))
         }
     } else {
-        Err(ParseError("Expected a symbol"))
+        Err(ParseError::msg("Expected a symbol"))
     }
 }
 
@@ -113,7 +121,7 @@ fn read_table_scan<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query<'a>, Parse
         expect_pipe_or_end(tokenizer)?;
         Ok(Query::scan(table))
     } else { // TODO: Make sure "scan" has only one argument
-        Err(ParseError("'scan' expects a table name"))
+        Err(ParseError::msg("'scan' expects a table name"))
     }
 }
 
@@ -124,7 +132,7 @@ fn read_tuple<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Vec<&'a str>, ParseEr
         match token {
             Token::Symbol(name) => values.push(name),
             Token::Pipe => break,
-            _ => return Err(ParseError("Expected a symbol"))
+            _ => return Err(ParseError::msg("Expected a symbol"))
         }
     }
 
@@ -144,7 +152,7 @@ fn expect_pipe_or_end(tokenizer: &mut Tokenizer) -> Result<(), ParseError> {
     match tokenizer.next() {
         Some(Token::Pipe) => Ok(()),
         None => Ok(()),
-        _ => Err(ParseError("Expected a pipe symbol")),
+        _ => Err(ParseError::msg("Expected a pipe symbol")),
     }
 }
 
@@ -157,7 +165,7 @@ pub fn parse_command(source: &str) -> Result<Command, ParseError> {
             Token::Symbol(name) => if name == "create_table" {
                 let name = match tokenizer.next() {
                     Some(Token::Symbol(name)) => name,
-                    _ => return Err(ParseError("Expected table name"))
+                    _ => return Err(ParseError::msg("Expected table name"))
                 };
                 command = Command::create_table(name);
 
@@ -165,11 +173,11 @@ pub fn parse_command(source: &str) -> Result<Command, ParseError> {
                     match arg {
                         Token::SymbolWithType(name, kind) => { command = command.column(name, str_to_type(kind)?); },
                         Token::SymbolWithKeyType(name, kind) => { command = command.indexed_column(name, str_to_type(kind)?); },
-                        _ => return Err(ParseError("Expected a symbol with a type"))
+                        _ => return Err(ParseError::msg("Expected a symbol with a type"))
                     }
                 }
-            } else { return Err(ParseError("Only create_table is allowed")) },
-            _ => return Err(ParseError("Expected a symbol"))
+            } else { return Err(ParseError::msg("Only create_table is allowed")) },
+            _ => return Err(ParseError::msg("Expected a symbol"))
         }
     }
 
@@ -177,7 +185,7 @@ pub fn parse_command(source: &str) -> Result<Command, ParseError> {
 }
 
 fn str_to_type(name: &str) -> Result<Type, ParseError> {
-    Type::from_str(name).map_err(|_| ParseError("Unrecognized type"))
+    Type::from_str(name).map_err(|_| ParseError::msg("Unrecognized type"))
 }
 
 #[cfg(test)]
