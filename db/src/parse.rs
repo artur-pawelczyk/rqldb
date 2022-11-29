@@ -159,15 +159,16 @@ fn read_index_scan<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query<'a>, Parse
 }
 
 fn expect_pipe_or_end(tokenizer: &mut Tokenizer) -> Result<(), ParseError> {
-    match tokenizer.next() {
-        Some(Token::Pipe(_)) => Ok(()),
-        None => Ok(()),
-        _ => Err(ParseError::msg("Expected a pipe symbol")),
+    let token = tokenizer.next();
+    if !matches!(token, Some(Token::Pipe(_))) && !matches!(token, None) {
+        Err(ParseError{ msg: "Expected a pipe symbol", pos: 0 })
+    } else {
+        Ok(())
     }
 }
 
 pub fn parse_command(source: &str) -> Result<Command, ParseError> {
-    let mut tokenizer = Tokenizer::from_str(source);
+    let mut tokenizer = Tokenizer::from_str(source).inspect(|token| { dbg!(&token); });
     let mut command = Command::create_table("");
 
     while let Some(token) = tokenizer.next() {
@@ -202,38 +203,55 @@ fn str_to_type(name: &str) -> Result<Type, ParseError> {
 mod tests {
     use super::*;
 
+    macro_rules! assert_parse {
+        ($query:literal) => {
+            {
+                let parsed = parse_query($query);
+                assert!(dbg!(parsed).is_ok());
+            }
+        };
+    }
+
+    macro_rules! assert_parse_query_fails {
+        ($query:literal) => {
+            {
+                let parsed = parse_query($query);
+                dbg!(&parsed);
+                assert!(parsed.is_err());
+            }
+        };
+
+        ($query:literal, $pos:literal) => {
+            {
+                let parsed = parse_query($query);
+                dbg!(&parsed);
+                assert!(matches!(parsed, Err(ParseError{ msg: _, pos: $pos })));
+            }
+        }
+    }
+
     #[test]
     fn test_parse_query() {
-        assert_parse("scan example | select_all");
-        assert_parse("tuple 1 2 | select_all");
-        assert_parse("tuple 1 2 | insert_into example");
-        assert_parse("scan example | filter id = 1 | select_all");
-        assert_parse("scan example | filter id > 1 | select_all");
-        assert_parse("scan example | join other example.other_id example.id | select_all");
-        assert_parse("scan example | count");
-        assert_parse("scan example | filter example.id = 1 | delete");
-        assert_parse("scan_index example.id = 1 | select_all");
-        assert_parse("scan example | apply sum example.n");
+        assert_parse!("scan example | select_all");
+        assert_parse!("tuple 1 2 | select_all");
+        assert_parse!("tuple 1 2 | insert_into example");
+        assert_parse!("scan example | filter id = 1 | select_all");
+        assert_parse!("scan example | filter id > 1 | select_all");
+        assert_parse!("scan example | join other example.other_id example.id | select_all");
+        assert_parse!("scan example | count");
+        assert_parse!("scan example | filter example.id = 1 | delete");
+        assert_parse!("scan_index example.id = 1 | select_all");
+        assert_parse!("scan example | apply sum example.n");
     }
 
     #[test]
     fn test_fail_parse_query() {
-        assert_parse_query_fails("");
-        assert_parse_query_fails("scann example");
-        assert_parse_query_fails("scan example1 example2");
-        assert_parse_query_fails("| select_all");
-        assert_parse_query_fails("scan example | i_dont_know");
-        assert_parse_query_fails("scan example | id::NUMBER");
-    }
-
-    fn assert_parse(query: &str) {
-        let parsed = parse_query(query);
-        assert_eq!(parsed.unwrap().to_string(), query);
-    }
-
-    fn assert_parse_query_fails(query: &str) {
-        let parsed = parse_query(query);
-        assert!(parsed.is_err());
+        assert_parse_query_fails!("");
+        assert_parse_query_fails!("scann example");
+        assert_parse_query_fails!("scan example1 example2");
+        assert_parse_query_fails!("| select_all");
+        assert_parse_query_fails!("scan example | i_dont_know");
+        assert_parse_query_fails!("scan example | id::NUMBER");
     }
 
     #[test]
