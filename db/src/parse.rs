@@ -37,11 +37,7 @@ pub fn parse_query(query_str: &str) -> Result<Query<'_>, ParseError> {
                     let op = read_operator(tokenizer.next())?;
                     let right = read_symbol(tokenizer.next())?;
                     if let Some(token) = tokenizer.next() {
-                        //if token != Token::Pipe { return Err(ParseError::msg("Expected end of statement")); }
-                        match token {
-                            Token::Pipe(pos) => { return Err(ParseError{ msg: "Expected end of statement", pos })}
-                            _ => {}
-                        }
+                        check_if_end(token)?;
                     }
                     query = query.filter(left, op, right);
                 },
