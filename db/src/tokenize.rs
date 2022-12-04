@@ -109,7 +109,6 @@ impl<'a> Token<'a> {
         }
     }
 
-    #[allow(dead_code)]
     pub(crate) fn pos(&self) -> usize {
         match self {
             Token::Symbol(_, pos) => *pos,

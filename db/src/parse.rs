@@ -62,9 +62,9 @@ pub fn parse_query(query_str: &str) -> Result<Query<'_>, ParseError> {
                     query = query.count();
                 },
                 "delete" => query = query.delete(),
-                _ => return Err(ParseError::msg("Function not recognized"))
+                _ => return Err(ParseError{ msg: "Function not recognized", pos: token.pos() })
             },
-            _ => return Err(ParseError::msg("Expected a symbol"))
+            _ => return Err(ParseError{ msg: "Expected a symbol", pos: token.pos() })
         }
     }
 
@@ -105,9 +105,9 @@ fn read_operator(t: Option<Token>) -> Result<Operator, ParseError> {
                 ">=" => Ok(Operator::GE),
                 "<" => Ok(Operator::LT),
                 "<=" => Ok(Operator::LE),
-                _ => Err(ParseError::msg("Unknown operator")),
+                _ => Err(ParseError{ msg: "Unknown operator", pos: token.pos() }),
             }
-            _ => Err(ParseError::msg("Unexpected token")),
+            _ => Err(ParseError{ msg: "Unexpected token", pos: token.pos() }),
         }
     } else {
         Err(ParseError::msg("Unknown operator"))
@@ -126,11 +126,24 @@ fn read_symbol(t: Option<Token<'_>>) -> Result<&str, ParseError> {
 }
 
 fn read_table_scan<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query<'a>, ParseError> {
-    if let Some(Token::Symbol(table, _)) = tokenizer.next() {
-        expect_pipe_or_end(tokenizer)?;
-        Ok(Query::scan(table))
-    } else { // TODO: Make sure "scan" has only one argument
-        Err(ParseError::msg("'scan' expects a table name"))
+    // let token = tokenizer.next();
+    // if let Some(Token::Symbol(table, _)) = token {
+    //     expect_pipe_or_end(tokenizer)?;
+    //     Ok(Query::scan(table))
+    // } else { // TODO: Make sure "scan" has only one argument
+    //     Err(ParseError{msg: "'scan' expects a table name", pos: token.pos() })
+    // }
+
+    match tokenizer.next() {
+        Some(token) => {
+            if let Token::Symbol(table, _) = token {
+                expect_pipe_or_end(tokenizer)?;
+                Ok(Query::scan(table))
+            } else { 
+                Err(ParseError{ msg: "Expected a symbol", pos: token.pos() })
+            }
+        },
+        None => Err(ParseError::msg("Expected a symbol"))
     }
 }
 
@@ -161,7 +174,10 @@ fn read_index_scan<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query<'a>, Parse
 fn expect_pipe_or_end(tokenizer: &mut Tokenizer) -> Result<(), ParseError> {
     let token = tokenizer.next();
     if !matches!(token, Some(Token::Pipe(_))) && !matches!(token, None) {
-        Err(ParseError{ msg: "Expected a pipe symbol", pos: 0 })
+        Err(ParseError{
+            msg: "No more arguments were expected",
+            pos: token.map(|t| t.pos()).unwrap_or(0),
+        })
     } else {
         Ok(())
     }
@@ -247,11 +263,13 @@ mod tests {
     #[test]
     fn test_fail_parse_query() {
         assert_parse_query_fails!("");
+        assert_parse_query_fails!("scan | select_all", 5);
         assert_parse_query_fails!("scann example");
-        assert_parse_query_fails!("scan example1 example2");
+        assert_parse_query_fails!("scan example1 example2", 14);
         assert_parse_query_fails!("| select_all");
-        assert_parse_query_fails!("scan example | i_dont_know");
-        assert_parse_query_fails!("scan example | id::NUMBER");
+        assert_parse_query_fails!("scan example | i_dont_know", 15);
+        assert_parse_query_fails!("scan example | id::NUMBER", 15);
+        assert_parse_query_fails!("scan example | filter id ! 1", 25);
     }
 
     #[test]
