@@ -24,9 +24,6 @@ impl fmt::Display for ParseError {
 }
 
 pub fn parse_query(query_str: &str) -> Result<Query<'_>, ParseError> {
-    dbg!(query_str);
-    dbg!(Tokenizer::from_str(query_str).collect::<Vec<Token<'_>>>());
-
     let mut tokenizer = Tokenizer::from_str(query_str);
     let mut query = read_source(&mut tokenizer)?;
 

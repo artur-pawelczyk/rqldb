@@ -26,7 +26,7 @@ impl<'a> Iterator for Tokenizer<'a> {
         for (pos, ch) in self.source.char_indices().skip(self.pos) {
             if ch == '|' {
                 self.pos += 1;
-                return Some(Token::Pipe(0))
+                return Some(Token::Pipe(pos))
             } else if ch == '"' {
                 if let Some(s) = read_string(&self.source[pos..], pos) {
                     self.pos += s.len() + 2;
@@ -183,14 +183,14 @@ mod tests {
 
     #[test]
     fn test_tokenize() {
-        assert_tokenize!("abc def ghi", symbol!("abc"), symbol!("def"), symbol!("ghi"));
+        assert_tokenize!("abc def ghi", symbol!("abc", 0), symbol!("def", 4), symbol!("ghi", 8));
         assert_tokenize!("abc::NUMBER", symbol_with_type!("abc", "NUMBER"));
         assert_tokenize!("abc:NUMBER", symbol!("abc:NUMBER"));
         assert_tokenize!("abc::NUMBER::KEY", symbol_with_key_type!("abc", "NUMBER"));
-        assert_tokenize!("abc | def", symbol!("abc"), pipe!(), symbol!("def"));
-        assert_tokenize!("create_table abc::TEXT", symbol!("create_table"), symbol_with_type!("abc", "TEXT"));
-        assert_tokenize!("document.id document.name", symbol!("document.id"), symbol!("document.name"));
-        assert_tokenize!(r#"a "b cd" e"#, symbol!("a"), symbol!("b cd"), symbol!("e"));
+        assert_tokenize!("abc | def", symbol!("abc", 0), pipe!(4), symbol!("def", 6));
+        assert_tokenize!("create_table abc::TEXT", symbol!("create_table", 0), symbol_with_type!("abc", "TEXT", 13));
+        assert_tokenize!("document.id document.name", symbol!("document.id", 0), symbol!("document.name", 12));
+        assert_tokenize!(r#"a "b cd" e"#, symbol!("a", 0), symbol!("b cd", 2), symbol!("e", 9));
     }
 
     fn tokenize<'a>(source: &'a str) -> Option<Vec<Token<'a>>> {
