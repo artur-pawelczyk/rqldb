@@ -24,6 +24,9 @@ impl fmt::Display for ParseError {
 }
 
 pub fn parse_query(query_str: &str) -> Result<Query<'_>, ParseError> {
+    dbg!(query_str);
+    dbg!(Tokenizer::from_str(query_str).collect::<Vec<Token<'_>>>());
+
     let mut tokenizer = Tokenizer::from_str(query_str);
     let mut query = read_source(&mut tokenizer)?;
 
@@ -168,7 +171,7 @@ fn expect_pipe_or_end(tokenizer: &mut Tokenizer) -> Result<(), ParseError> {
 }
 
 pub fn parse_command(source: &str) -> Result<Command, ParseError> {
-    let mut tokenizer = Tokenizer::from_str(source).inspect(|token| { dbg!(&token); });
+    let mut tokenizer = Tokenizer::from_str(source);
     let mut command = Command::create_table("");
 
     while let Some(token) = tokenizer.next() {

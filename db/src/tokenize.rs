@@ -10,11 +10,12 @@ pub enum Token<'a> {
 
 pub struct Tokenizer<'a> {
     source: &'a str,
+    pos: usize,
 }
 
 impl<'a> Tokenizer<'a> {
     pub fn from_str(source: &'a str) -> Self {
-        Self{ source }
+        Self{ source, pos: 0 }
     }
 }
 
@@ -22,20 +23,20 @@ impl<'a> Iterator for Tokenizer<'a> {
     type Item = Token<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        for ch in self.source.chars() {
+        for (pos, ch) in self.source.char_indices().skip(self.pos) {
             if ch == '|' {
-                self.source = &self.source[1..];
+                self.pos += 1;
                 return Some(Token::Pipe(0))
             } else if ch == '"' {
-                if let Some(s) = read_string(self.source) {
-                    self.source = &self.source[s.len()+2..];
+                if let Some(s) = read_string(&self.source[pos..], pos) {
+                    self.pos += s.len() + 2;
                     return Some(s)
                 }
             } else if ch.is_whitespace() {
-                self.source = &self.source[1..];
+                self.pos += 1;
             } else {
-                if let Some(sym) = read_symbol(self.source) {
-                    self.source = &self.source[sym.len()..];
+                if let Some(sym) = read_symbol(&self.source[pos..], pos) {
+                    self.pos += sym.len();
                     return Some(sym)
                 }
             }
@@ -45,7 +46,7 @@ impl<'a> Iterator for Tokenizer<'a> {
     }
 }
 
-fn read_symbol(source: &str) -> Option<Token<'_>> {
+fn read_symbol(source: &str, offset: usize) -> Option<Token<'_>> {
     let part = read_util_whitespace(source);
     let mut chars = part.char_indices();
 
@@ -57,12 +58,12 @@ fn read_symbol(source: &str) -> Option<Token<'_>> {
                     if ch == ':' {
                         let type_end = pos;
                         if chars.next().map(|(_, ch)| ch) == Some(':') {
-                            return Some(Token::SymbolWithKeyType(&part[0..name_end], &part[name_end+2..type_end], 0));
+                            return Some(Token::SymbolWithKeyType(&part[0..name_end], &part[name_end+2..type_end], offset));
                         }
                     }
                 }
 
-                return Some(Token::SymbolWithType(&part[0..name_end], &part[name_end+2..], 0))
+                return Some(Token::SymbolWithType(&part[0..name_end], &part[name_end+2..], offset))
             }
         }
     }
@@ -70,18 +71,18 @@ fn read_symbol(source: &str) -> Option<Token<'_>> {
     if part.is_empty() {
         None
     } else {
-        Some(Token::Symbol(part, 0))
+        Some(Token::Symbol(part, offset))
     }
 }
 
-fn read_string(source: &str) -> Option<Token<'_>> {
+fn read_string(source: &str, offset: usize) -> Option<Token<'_>> {
     if !source.starts_with('"') {
         return None
     }
     
     for (pos, ch) in source.char_indices().skip(1) {
         if ch == '"' {
-            return Some(Token::Symbol(&source[1..pos], 0))
+            return Some(Token::Symbol(&source[1..pos], offset))
         }
     }
 
@@ -107,6 +108,16 @@ impl<'a> Token<'a> {
             Token::Pipe(_) => "|".len(),
         }
     }
+
+    #[allow(dead_code)]
+    pub(crate) fn pos(&self) -> usize {
+        match self {
+            Token::Symbol(_, pos) => *pos,
+            Token::SymbolWithType(_, _, pos) => *pos,
+            Token::SymbolWithKeyType(_, _, pos) => *pos,
+            Token::Pipe(pos) => *pos,
+        }
+    }
 }
 
 impl<'a> fmt::Display for Token<'a> {
@@ -124,16 +135,62 @@ impl<'a> fmt::Display for Token<'a> {
 mod tests {
     use super::*;
 
+    macro_rules! symbol {
+        ($name:literal) => {
+            Token::Symbol($name, _)
+        };
+        ($name:literal, $pos:literal) => {
+            Token::Symbol($name, $pos)
+        };
+    }
+
+    macro_rules! symbol_with_type {
+        ($name:literal, $type:literal) => {
+            Token::SymbolWithType($name, $type, _)
+        };
+        ($name:literal, $type:literal, $pos:literal) => {
+            Token::SymbolWithType($name, $type, $pos)
+        };
+    }
+
+    macro_rules! symbol_with_key_type {
+        ($name:literal, $type:literal) => {
+            Token::SymbolWithKeyType($name, $type, _)
+        };
+        ($name:literal, $type:literal, $pos:literal) => {
+            Token::SymbolWithKeyType($name, $type, $pos)
+        };
+    }
+
+    macro_rules! pipe {
+        () => {
+            Token::Pipe(_)
+        };
+        ($pos:literal) => {
+            Token::Pipe($pos)
+        };
+    }
+
+    macro_rules! assert_tokenize {
+        ($source:literal, $($token:pat),*) => {
+            let result = tokenize($source).unwrap();
+            if !matches!(result[..], [$($token, )*]) {
+                dbg!(&result);
+                assert!(matches!(result[..], [$($token, )*]));
+            }
+        }
+    }
+
     #[test]
     fn test_tokenize() {
-        assert_eq!(tokenize("abc def ghi").unwrap(), vec![symbol("abc"), symbol("def"), symbol("ghi")]);
-        assert_eq!(tokenize("abc::NUMBER").unwrap(), vec![symbol_with_type("abc", "NUMBER")]);
-        assert_eq!(tokenize("abc:NUMBER").unwrap(), vec![symbol("abc:NUMBER")]);
-        assert_eq!(tokenize("abc::NUMBER::KEY").unwrap(), vec![symbol_with_key_type("abc", "NUMBER")]);
-        assert_eq!(tokenize("abc | def").unwrap(), vec![symbol("abc"), pipe(), symbol("def")]);
-        assert_eq!(tokenize("create_table abc::TEXT").unwrap(), vec![symbol("create_table"), symbol_with_type("abc", "TEXT")]);
-        assert_eq!(tokenize("document.id document.name").unwrap(), vec![symbol("document.id"), symbol("document.name")]);
-        assert_eq!(tokenize(r#"a "b cd" e"#).unwrap(), vec![symbol("a"), symbol("b cd"), symbol("e")]);
+        assert_tokenize!("abc def ghi", symbol!("abc"), symbol!("def"), symbol!("ghi"));
+        assert_tokenize!("abc::NUMBER", symbol_with_type!("abc", "NUMBER"));
+        assert_tokenize!("abc:NUMBER", symbol!("abc:NUMBER"));
+        assert_tokenize!("abc::NUMBER::KEY", symbol_with_key_type!("abc", "NUMBER"));
+        assert_tokenize!("abc | def", symbol!("abc"), pipe!(), symbol!("def"));
+        assert_tokenize!("create_table abc::TEXT", symbol!("create_table"), symbol_with_type!("abc", "TEXT"));
+        assert_tokenize!("document.id document.name", symbol!("document.id"), symbol!("document.name"));
+        assert_tokenize!(r#"a "b cd" e"#, symbol!("a"), symbol!("b cd"), symbol!("e"));
     }
 
     fn tokenize<'a>(source: &'a str) -> Option<Vec<Token<'a>>> {
@@ -144,21 +201,5 @@ mod tests {
         }
 
         Some(v)
-    }
-
-    fn symbol(s: &str) -> Token<'_> {
-        Token::Symbol(s, 0)
-    }
-
-    fn symbol_with_type<'a>(s: &'a str, t: &'a str) -> Token<'a> {
-        Token::SymbolWithType(s, t, 0)
-    }
-
-    fn symbol_with_key_type<'a>(s: &'a str, t: &'a str) -> Token<'a> {
-        Token::SymbolWithKeyType(s, t, 0)
-    }
-
-    fn pipe<'a>() -> Token<'a> {
-        Token::Pipe(0)
     }
 }
