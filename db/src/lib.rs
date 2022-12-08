@@ -8,6 +8,7 @@ pub mod tuple;
 pub mod object;
 pub mod dump;
 
+use std::cell::{RefCell, RefMut};
 use std::fmt;
 use std::cmp::Ordering;
 
@@ -17,16 +18,15 @@ pub use crate::dsl::{Query, Operator, Command};
 pub use crate::parse::{parse_command, parse_query};
 pub use crate::object::RawObjectView;
 
-#[derive(Debug)]
 pub struct QueryResults {
     attributes: Vec<String>,
-    results: Vec<Vec<Cell>>
+    results: RefCell<Box<dyn Iterator<Item = Vec<Cell>>>>,
 }
 
 #[derive(Debug)]
 pub struct Tuple<'a> {
     attributes: &'a [String],
-    contents: &'a [Cell],
+    contents: Vec<Cell>,
 }
 
 impl<'a> Tuple<'a> {
@@ -34,7 +34,7 @@ impl<'a> Tuple<'a> {
         self.contents.len()
     }
 
-    pub fn cell_at(&self, i: u32) -> Option<&'a Cell> {
+    pub fn cell_at(&self, i: u32) -> Option<&Cell> {
         self.contents.get(i as usize)
     }
 
@@ -47,7 +47,7 @@ impl<'a> Tuple<'a> {
     }
 
     pub fn contents(&self) -> &[Cell] {
-        self.contents
+        &self.contents
     }
 }
 
@@ -149,34 +149,22 @@ impl fmt::Debug for Cell {
 impl QueryResults {
     pub(crate) fn single_number<T: Into<i32>>(name: &str, val: T) -> Self {
         let tuple = vec![Cell::from(val)];
-        Self{ attributes: vec![name.to_string()], results: vec![tuple] }
+        Self{ attributes: vec![name.to_string()], results: RefCell::new(Box::new(std::iter::once(tuple))) }
     }
 
     pub(crate) fn empty() -> Self {
-        Self{ attributes: vec![], results: vec![] }
-    }
-
-    pub fn size(&self) -> u32 {
-        self.results.len() as u32
+        Self{ attributes: vec![], results: RefCell::new(Box::new(std::iter::empty())) }
     }
 
     pub fn attributes(&self) -> &Vec<String> {
         &self.attributes
     }
 
-    pub fn results(&self) -> Vec<Tuple> {
-        self.tuples().collect()
-    }
-
     pub fn tuples(&self) -> Tuples {
         Tuples{
             attributes: &self.attributes,
-            contents: &self.results,
+            contents: self.results.borrow_mut(),
         }
-    }
-
-    pub fn first(&self) -> Option<Tuple> {
-        self.results.first().map(|cells| Tuple{ attributes: &self.attributes, contents: cells})
     }
 }
 
@@ -198,18 +186,13 @@ impl<'a> Iterator for Column<'a> {
 
 pub struct Tuples<'a> {
     attributes: &'a [String],
-    contents: &'a [Vec<Cell>],
+    contents: RefMut<'a, Box<dyn Iterator<Item = Vec<Cell>>>>,
 }
 
 impl<'a> Iterator for Tuples<'a> {
     type Item = Tuple<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(next) = self.contents.first() {
-            self.contents = &self.contents[1..];
-            Some(Tuple{ attributes: &self.attributes, contents: next })
-        } else {
-            None
-        }
+        self.contents.next().map(|cells| Tuple{ attributes: &self.attributes, contents: cells })
     }
 }

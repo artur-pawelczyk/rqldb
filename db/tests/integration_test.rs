@@ -36,16 +36,17 @@ fn test_basic_queries() {
 
     let query = parse_query("scan document | filter document.id = 2").unwrap();
     let result = db.execute_query(&query).unwrap();
-    assert_eq!(result.results().len(), 1);
-    assert_eq!(result.results().get(0).unwrap().cell_by_name("document.title").unwrap().as_string(), "title2");
+    let mut tuples = result.tuples();
+    assert_eq!(tuples.next().unwrap().cell_by_name("document.title").unwrap().as_string(), "title2");
+    assert!(tuples.next().is_none());
 
     let query = parse_query("scan document | filter document.id > 0 | filter document.id < 10").unwrap();
     let result = db.execute_query(&query).unwrap();
-    assert_eq!(result.results().len(), 2);
+    assert_eq!(result.tuples().count(), 2);
 
     let query = parse_query("scan document | filter document.published = true").unwrap();
     let result = db.execute_query(&query).unwrap();
-    assert_eq!(result.results().len(), 1);
+    assert_eq!(result.tuples().count(), 1);
 }
 
 #[test]
@@ -54,16 +55,16 @@ fn test_tuple_queries() {
 
     let query = parse_query("tuple 1 \"some text\" | filter 0 = 1").unwrap();
     let result = db.execute_query(&query).unwrap();
-    assert_eq!(result.results().len(), 1);
+    assert_eq!(result.tuples().count(), 1);
 
     let query = parse_query("tuple 1 \"some text\" | filter 1 = \"some text\"").unwrap();
     let result = db.execute_query(&query).unwrap();
-    assert_eq!(result.results().len(), 1);
+    assert_eq!(result.tuples().count(), 1);
 
 
     let query = parse_query("tuple 1 \"some text\" | filter 0 = 2").unwrap();
     let result = db.execute_query(&query).unwrap();
-    assert!(result.results().is_empty());
+    assert!(result.tuples().next().is_none());
 }
 
 #[test]
@@ -72,7 +73,7 @@ fn test_single_join() {
 
     let query = parse_query("scan document | join type document.type type.id").unwrap();
     let result = db.execute_query(&query).unwrap();
-    assert_eq!(result.results().len(), 2);
+    assert_eq!(result.tuples().count(), 2);
 }
 
 #[test]
@@ -84,5 +85,5 @@ fn test_update() {
 
     let query = parse_query("scan document | filter document.id = 1").unwrap();
     let result = db.execute_query(&query).unwrap();
-    assert_eq!(result.results().get(0).unwrap().cell_by_name("document.title").unwrap().as_string(), "updated_title");
+    assert_eq!(result.tuples().next().unwrap().cell_by_name("document.title").unwrap().as_string(), "updated_title");
 }

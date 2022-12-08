@@ -14,9 +14,8 @@ fn create_database<'a>() -> Database<'a> {
 
 fn query_single_number(db: &Database, query: &Query) -> Option<i32> {
     let result = db.execute_query(query).unwrap();
-    result.tuples().next()
-        .and_then(|t| t.cell_at(0))
-        .and_then(|c| c.as_number())
+    let first = result.tuples().next().expect("Expecting one result");
+    first.cell_at(0).and_then(|c| c.as_number())
 }
 
 fn benchmark_insert(c: &mut Criterion) {

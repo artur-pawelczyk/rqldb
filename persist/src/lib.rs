@@ -248,7 +248,7 @@ mod tests {
         let saved_db = read_db(Cursor::new(out)).unwrap();
         assert!(saved_db.raw_object("example").is_some());
         let result = saved_db.execute_query(&Query::scan("example")).unwrap();
-        assert_eq!(result.size(), 2);
+        assert_eq!(result.tuples().count(), 2);
     }
 
     #[test]
@@ -262,6 +262,6 @@ mod tests {
 
         let saved_db = persist.read(db).unwrap();
         let result = saved_db.execute_query(&Query::scan("example")).unwrap();
-        assert_eq!(result.size(), 1);
+        assert_eq!(result.tuples().count(), 1);
     }
 }

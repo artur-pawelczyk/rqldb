@@ -97,6 +97,6 @@ mod tests {
         recovered_db.execute_create(&Command::create_table("example").indexed_column("id", Type::NUMBER).column("content", Type::TEXT));
         recovered_db.recover_object(0, saved_object);
         let result = recovered_db.execute_query(&Query::scan("example")).unwrap();
-        assert_eq!(result.size(), 2);
+        assert_eq!(result.tuples().count(), 2);
     }
 }

@@ -218,7 +218,7 @@ impl<'a, 'obj> Sink<'a, 'obj> {
             Self::Return(attributes, results) => {
                 QueryResults{
                     attributes: attributes.into_iter().map(|attr| attr.into_name()).collect(),
-                    results,
+                    results: RefCell::new(Box::new(results.into_iter())),
                 }
             }
             Self::Insert(_) => QueryResults::empty(),
@@ -256,12 +256,10 @@ mod tests {
         db.execute_create(&command);
 
         let query = Query::scan("document").select_all();
-        let result = db.execute_query(&query);
+        let result = db.execute_query(&query).unwrap();
 
-        assert!(result.is_ok());
-        let tuples = result.unwrap();
-        assert_eq!(tuples.size(), 0);
-        let attrs = tuples.attributes();
+        assert_eq!(result.tuples().count(), 0);
+        let attrs = result.attributes();
         assert_eq!(attrs.as_slice(), ["document.id".to_string(), "document.content".to_string()]);
     }
 
@@ -279,12 +277,10 @@ mod tests {
         assert!(insert_result.is_ok());
 
         let query = Query::scan("document").select_all();
-        let result = db.execute_query(&query);
-        assert!(result.is_ok());
-        let tuples = result.unwrap();
-        assert_eq!(tuples.size(), 1);
-        let results = tuples.results();
-        let tuple = results.get(0).expect("fail");
+        let result = db.execute_query(&query).unwrap();
+        let tuples: Vec<_> = result.tuples().collect();
+        assert_eq!(tuples.len(), 1);
+        let tuple = tuples.get(0).expect("fail");
         assert_eq!(tuple.contents[0].as_number(), Some(1i32));
         assert_eq!(&tuple.contents[1].as_string(), "something");
     }
@@ -313,13 +309,13 @@ mod tests {
         }
 
         let mut result = db.execute_query(&Query::scan("document").filter("document.id", Operator::EQ, "5")).unwrap();
-        assert_eq!(result.size(), 1);
+        assert_eq!(result.tuples().count(), 1);
 
         result = db.execute_query(&Query::scan("document").filter("document.id", Operator::GT, "5").filter("document.id", Operator::LT, "10")).unwrap();
-        assert_eq!(result.size(), 4);
+        assert_eq!(result.tuples().count(), 4);
 
         result = db.execute_query(&Query::scan("document").filter("document.content", Operator::EQ, "example1")).unwrap();
-        assert_eq!(result.size(), 1);
+        assert_eq!(result.tuples().count(), 1);
 
         assert!(db.execute_query(&Query::scan("document").filter("not_a_field", Operator::EQ, "1")).is_err());
     }
@@ -336,7 +332,7 @@ mod tests {
 
         let result = db.execute_query(&Query::scan("document").join("type", "document.type_id", "type.id")).unwrap();
         assert_eq!(*result.attributes, ["document.id", "document.content", "document.type_id", "type.id", "type.name"]);
-        let tuple = result.first().unwrap();
+        let tuple = result.tuples().next().unwrap();
         let document_id = tuple.cell_by_name("document.id").unwrap().as_string();
         let type_name = tuple.cell_by_name("type.name").unwrap().as_string();
         assert_eq!(document_id, "1");
@@ -356,15 +352,15 @@ mod tests {
         }
 
         let sum_result = db.execute_query(&Query::scan("document").apply("sum", &["document.size"])).unwrap();
-        let sum = sum_result.results().get(0)
-            .and_then(|t| t.cell_at(0))
+        let first = sum_result.tuples().next().unwrap();
+        let sum = first.cell_at(0)
             .and_then(|c| c.as_number())
             .unwrap();
         assert_eq!(sum, 55);
 
         let max_result = db.execute_query(&Query::scan("document").apply("max", &["document.size"])).unwrap();
-        let max = max_result.results().get(0)
-            .and_then(|t| t.cell_at(0))
+        let first = max_result.tuples().next().unwrap();
+        let max = first.cell_at(0)
             .and_then(|c| c.as_number())
             .unwrap();
         assert_eq!(max, 10);
@@ -380,8 +376,8 @@ mod tests {
         }
 
         let result = db.execute_query(&Query::scan("document").count()).unwrap();
-        let count = result.results().get(0)
-            .and_then(|t| t.cell_at(0))
+        let first = result.tuples().next().unwrap();
+        let count = first.cell_at(0)
             .and_then(|c| c.as_number())
             .unwrap();
         assert_eq!(count, 20);
@@ -402,7 +398,7 @@ mod tests {
         db.execute_query(&Query::scan("document").delete()).unwrap();
 
         let result = db.execute_query(&Query::scan("document")).unwrap();
-        assert!(result.results().is_empty());
+        assert!(result.tuples().next().is_none());
     }
 
     #[test]
@@ -416,7 +412,7 @@ mod tests {
 
         let count_query = Query::scan("document").count();
         let result = db.execute_query(&count_query).unwrap();
-        assert_eq!(result.results().get(0).unwrap().cell_by_name("count").unwrap().as_number(), Some(1));
+        assert_eq!(result.tuples().next().unwrap().cell_by_name("count").unwrap().as_number(), Some(1));
     }
 
     #[test]
@@ -429,8 +425,8 @@ mod tests {
         db.execute_plan(Plan::insert(table, &["1".to_string(), "new content".to_string()])).unwrap();
 
         let result = db.execute_plan(Plan::scan(table)).unwrap();
-        assert_eq!(result.results().get(0).unwrap().cell_by_name("document.content").unwrap().as_string(), "new content");
-        assert_eq!(result.size(), 1);
+        assert_eq!(result.tuples().next().unwrap().cell_by_name("document.content").unwrap().as_string(), "new content");
+        assert!(result.tuples().next().is_none());
     }
 
     #[test]
@@ -452,7 +448,7 @@ mod tests {
 
         target_db.recover_object(0, temp_object);
         let all = target_db.execute_plan(Plan::scan(&target_table)).unwrap();
-        assert_eq!(all.size(), 1);
+        assert_eq!(all.tuples().count(), 1);
     }
 
     #[test]
@@ -465,12 +461,13 @@ mod tests {
             db.execute_query(&Query::tuple(&[i.to_string().as_str(), content.as_str()]).insert_into("document")).expect("Insert");
         }
 
-        let tuple_found = db.execute_query(&Query::scan_index("document.id", Operator::EQ, "5")).unwrap();
-        assert_eq!(tuple_found.results()[0].cell_at(0), Some(&Cell::from_i32(5)));
-        assert_eq!(tuple_found.results()[0].cell_at(1), Some(&Cell::from_string("example5")));
+        let result = db.execute_query(&Query::scan_index("document.id", Operator::EQ, "5")).unwrap();
+        let tuple_found = result.tuples().next().unwrap();
+        assert_eq!(tuple_found.cell_at(0), Some(&Cell::from_i32(5)));
+        assert_eq!(tuple_found.cell_at(1), Some(&Cell::from_string("example5")));
 
         let tuple_not_found = db.execute_query(&Query::scan_index("document.id", Operator::EQ, "500")).unwrap();
-        assert_eq!(tuple_not_found.size(), 0);
+        assert_eq!(tuple_not_found.tuples().count(), 0);
 
         let missing_table = db.execute_query(&Query::scan_index("notable.id", Operator::EQ, "a"));
         assert!(missing_table.is_err());
