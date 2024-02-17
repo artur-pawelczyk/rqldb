@@ -36,7 +36,7 @@ impl Table {
 
 impl Display for Table {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}\n", self.title())?;
+        writeln!(f, "{}", self.title())?;
 
         let mut iter = self.columns.iter().peekable();
         while let Some(col) = iter.next() {
@@ -47,7 +47,7 @@ impl Display for Table {
         }
 
         for row in &self.rows {
-            write!(f, "\n")?;
+            writeln!(f)?;
             for (column, cell) in zip(self.columns.iter(), row.iter()) {
                 let padding = column.width - 1;
                 write!(f, "| {:w$}", cell, w = padding)?;

@@ -131,7 +131,7 @@ impl<'a> Iterator for CellIter<'a> {
     type Item = Cell<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(attr) = self.inner.attrs.get(0) {
+        if let Some(attr) = self.inner.attrs.first() {
             let cell = Cell::new(*attr, self.inner.raw);
             let offset = cell.len();
             self.inner = Tuple{ attrs: &self.inner.attrs[1..], raw: &self.inner.raw[offset..], rest: None };
@@ -212,8 +212,8 @@ mod tests {
 
     use super::*;
 
-    const TYPES_1: &'static [Type] = &[Type::NUMBER, Type::TEXT];
-    const TYPES_2: &'static [Type] = &[Type::TEXT];
+    const TYPES_1: &[Type] = &[Type::NUMBER, Type::TEXT];
+    const TYPES_2: &[Type] = &[Type::TEXT];
 
     #[test]
     fn test_tuple() {

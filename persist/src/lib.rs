@@ -85,7 +85,7 @@ impl FilePersist {
 impl Persist for FilePersist {
     fn write(&mut self, db: &Database) -> Result<(), Error> {
         let mut file = File::options().create(true).append(true).open(self.path.clone())?;
-        write_db(&mut file, &db)?;
+        write_db(&mut file, db)?;
         Ok(())
     }
 
@@ -93,7 +93,7 @@ impl Persist for FilePersist {
         match File::open(self.path.clone()) {
             Ok(f) => Ok(read_db(f).unwrap()),
             Err(e) if e.kind() == ErrorKind::NotFound => Ok(db),
-            Err(e) => return Err(e.into()),
+            Err(e) => Err(e.into()),
 
         }
     }
@@ -118,9 +118,8 @@ impl TempFilePersist {
         }
 
         for i in 0..99 {
-            match try_open(i) {
-                Ok(path) => return Self{ path },
-                _ => {},
+            if let Ok(path) = try_open(i) {
+                return Self{ path };
             }
         }
 
@@ -128,21 +127,27 @@ impl TempFilePersist {
     }
 }
 
+impl Default for TempFilePersist {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Persist for TempFilePersist {
     fn write(&mut self, db: &Database) -> Result<(), Error> {
         let mut file = File::options().append(true).open(self.path.clone())?;
-        write_db(&mut file, &db)?;
+        write_db(&mut file, db)?;
         Ok(())
     }
 
     fn read<'a>(&self, _: Database<'a>) -> Result<Database<'a>, Error> {
         let file = File::open(self.path.clone())?;
-        Ok(read_db(file)?)
+        read_db(file)
     }
 }
 
 pub fn write_db<W: Write>(writer: &mut W, db: &Database) -> Result<(), Error> {
-    write_schema(writer, &db.schema())?;
+    write_schema(writer, db.schema())?;
     for o in db.raw_objects() {
        write_object(writer, &o)?
     }
@@ -258,7 +263,7 @@ mod tests {
         db.execute_query(&Query::tuple(&["1", "test"]).insert_into("example")).unwrap();
 
         let mut persist = TempFilePersist::new();
-        persist.write(&mut db).unwrap();
+        persist.write(&db).unwrap();
 
         let saved_db = persist.read(db).unwrap();
         let result = saved_db.execute_query(&Query::scan("example")).unwrap();

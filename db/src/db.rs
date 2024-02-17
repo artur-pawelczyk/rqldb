@@ -70,8 +70,9 @@ impl<'obj> Database<'obj> {
                 [join] => {
                     let joinee = byte_tuple;
                     let key = joinee.cell_by_attr(join.joinee_key());
-                    if let Some(found) = join_sources.get(0).unwrap().iter().find(|bytes| bytes.cell_by_attr(join.joiner_key()) == key) {
-                        joinee.add_cells(found)
+                    let source_object = join_sources.first().expect("join source is computed from the list of joins");
+                    if let Some(join_source) = source_object.iter().find(|bytes| bytes.cell_by_attr(join.joiner_key()) == key) {
+                        joinee.add_cells(join_source)
                     } else {
                         joinee
                     }
@@ -280,7 +281,7 @@ mod tests {
         let result = db.execute_query(&query).unwrap();
         let tuples: Vec<_> = result.tuples().collect();
         assert_eq!(tuples.len(), 1);
-        let tuple = tuples.get(0).expect("fail");
+        let tuple = tuples.first().expect("fail");
         assert_eq!(tuple.contents[0].as_number(), Some(1i32));
         assert_eq!(&tuple.contents[1].as_string(), "something");
     }

@@ -24,7 +24,7 @@ impl fmt::Display for ParseError {
 }
 
 pub fn parse_query(query_str: &str) -> Result<Query<'_>, ParseError> {
-    let mut tokenizer = Tokenizer::from_str(query_str);
+    let mut tokenizer = Tokenizer::new(query_str);
     let mut query = read_source(&mut tokenizer)?;
 
     while let Some(token) = tokenizer.next() {
@@ -173,7 +173,7 @@ fn read_index_scan<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query<'a>, Parse
 
 fn expect_pipe_or_end(tokenizer: &mut Tokenizer) -> Result<(), ParseError> {
     let token = tokenizer.next();
-    if !matches!(token, Some(Token::Pipe(_))) && !matches!(token, None) {
+    if !matches!(token, Some(Token::Pipe(_))) && token.is_some() {
         Err(ParseError{
             msg: "No more arguments were expected",
             pos: token.map(|t| t.pos()).unwrap_or(0),
@@ -184,7 +184,7 @@ fn expect_pipe_or_end(tokenizer: &mut Tokenizer) -> Result<(), ParseError> {
 }
 
 pub fn parse_command(source: &str) -> Result<Command, ParseError> {
-    let mut tokenizer = Tokenizer::from_str(source);
+    let mut tokenizer = Tokenizer::new(source);
     let mut command = Command::create_table("");
 
     while let Some(token) = tokenizer.next() {

@@ -34,6 +34,10 @@ impl<'a> Tuple<'a> {
         self.contents.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.contents.is_empty()
+    }
+
     pub fn cell_at(&self, i: u32) -> Option<&Cell> {
         self.contents.get(i as usize)
     }
@@ -116,6 +120,10 @@ impl Cell {
     pub fn len(&self) -> usize {
         self.contents.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.contents.is_empty()
+    }
 }
 
 impl<T: Into<i32>> From<T> for Cell {
@@ -193,6 +201,6 @@ impl<'a> Iterator for Tuples<'a> {
     type Item = Tuple<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.contents.next().map(|cells| Tuple{ attributes: &self.attributes, contents: cells })
+        self.contents.next().map(|cells| Tuple{ attributes: self.attributes, contents: cells })
     }
 }

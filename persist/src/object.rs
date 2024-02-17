@@ -5,10 +5,10 @@ use rqldb::{RawObjectView, object::TempObject};
 use crate::{ByteReader, Error};
 
 pub(crate) fn write_object<W: Write>(writer: &mut W, object: &RawObjectView) -> Result<(), Error> {
-    writer.write(&size(object.count()))?;
+    writer.write_all(&size(object.count()))?;
     for tuple in object.raw_tuples() {
         consume_chunks(tuple.serialize(), &mut |bytes| {
-            writer.write(bytes).unwrap();
+            writer.write_all(bytes).unwrap();
             Ok(())
         })?;
    }

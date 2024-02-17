@@ -14,7 +14,7 @@ pub struct Tokenizer<'a> {
 }
 
 impl<'a> Tokenizer<'a> {
-    pub fn from_str(source: &'a str) -> Self {
+    pub fn new(source: &'a str) -> Self {
         Self{ source, pos: 0 }
     }
 }
@@ -34,12 +34,10 @@ impl<'a> Iterator for Tokenizer<'a> {
                 }
             } else if ch.is_whitespace() {
                 self.pos += 1;
-            } else {
-                if let Some(sym) = read_symbol(&self.source[pos..], pos) {
+            } else if let Some(sym) = read_symbol(&self.source[pos..], pos) {
                     self.pos += sym.len();
                     return Some(sym)
                 }
-            }
         }
 
         None
@@ -192,8 +190,8 @@ mod tests {
         assert_tokenize!(r#"a "b cd" e"#, symbol!("a", 0), symbol!("b cd", 2), symbol!("e", 9));
     }
 
-    fn tokenize<'a>(source: &'a str) -> Option<Vec<Token<'a>>> {
-        let tokenizer = Tokenizer::from_str(source);
+    fn tokenize(source: &str) -> Option<Vec<Token<'_>>> {
+        let tokenizer = Tokenizer::new(source);
         let mut v = Vec::new();
         for t in tokenizer {
             v.push(t);
