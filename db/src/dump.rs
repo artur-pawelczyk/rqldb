@@ -1,4 +1,4 @@
-use crate::{schema::Relation, Command, Query, RawObjectView, tuple::Tuple};
+use crate::{schema::Relation, Command, Query, RawObjectView, tuple::Tuple, dsl::AttrKind};
 
 pub(crate) fn dump_create(rel: &Relation) -> Command {
     rel.columns().fold(Command::create_table(rel.name()), |acc, col| {
@@ -27,7 +27,7 @@ impl<'a> Iterator for QueryIter<'a> {
     fn next(&mut self) -> Option<String> {
         self.inner.next().map(|tuple| {
             let vals: Vec<String> = tuple.iter().map(|cell| cell.to_string()).collect();
-            Query::tuple(&vals.iter().map(|x| x.as_str()).collect::<Vec<&str>>())
+            Query::tuple(&vals.iter().map(|x| (AttrKind::Infer, x.as_str())).collect::<Vec<_>>())
                 .insert_into(&self.name)
                 .to_string()
         })
@@ -62,7 +62,7 @@ mod tests {
                           .indexed_column("id", Type::NUMBER)
                           .column("content", Type::TEXT));
 
-        let creation_query = Query::tuple(&["1", "first"]).insert_into("example");
+        let creation_query = Query::tuple_untyped(&["1", "first"]).insert_into("example");
         db.execute_query(&creation_query).unwrap();
 
         let object = db.raw_object("example").unwrap();

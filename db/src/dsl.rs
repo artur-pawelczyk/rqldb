@@ -25,8 +25,23 @@ impl<'a> Query<'a> {
         }
     }
 
-    pub fn tuple(values: &[&'a str]) -> Self {
-        Self{source: Source::Tuple(values.to_vec()), join_sources: vec![], filters: Vec::new(), finisher: Finisher::AllColumns }
+    pub fn tuple(values: &[(AttrKind, &'a str)]) -> Self {
+        Self {
+            source: Source::Tuple(values.to_vec()),
+            join_sources: vec![],
+            filters: Vec::new(),
+            finisher: Finisher::AllColumns,
+        }
+    }
+
+    // TODO: Remove this function
+    pub fn tuple_untyped(values: &[&'a str]) -> Self {
+        Self {
+            source: Source::Tuple(values.iter().map(|value| (AttrKind::Infer, *value)).collect()),
+            join_sources: vec![],
+            filters: Vec::new(),
+            finisher: Finisher::AllColumns,
+        }
     }
 
     pub fn join(mut self, table: &'a str, left: &'a str, right: &'a str) -> Self {
@@ -121,8 +136,39 @@ pub enum Source<'a> {
     Nil,
     TableScan(&'a str),
     IndexScan(&'a str, Operator, &'a str),
-    Tuple(Vec<&'a str>),
+    Tuple(Vec<(AttrKind, &'a str)>),
 }
+
+#[non_exhaustive]
+#[derive(PartialEq, Eq, Debug, Default, Copy, Clone)]
+pub enum AttrKind {
+    #[default] Infer,
+    Number,
+    Text,
+}
+
+impl FromStr for AttrKind {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "NUMBER" => Ok(Self::Number),
+            "TEXT" => Ok(Self::Text),
+            _ => Err(()),
+        }
+    }
+}
+
+impl<'a> fmt::Display for AttrKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Infer => write!(f, "INFER"),
+            Self::Number => write!(f, "NUMBER"),
+            Self::Text => write!(f, "TEXT"),
+        }
+    }
+}
+
 
 impl<'a> fmt::Display for Source<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -130,7 +176,7 @@ impl<'a> fmt::Display for Source<'a> {
             Source::Nil => write!(f, "nil"),
             Source::TableScan(table) => write!(f, "scan {}", table),
             Source::IndexScan(index, _, val) => write!(f, "scan_index {} = {}", index, val),
-            Source::Tuple(values) => { write!(f, "tuple ")?; write_tokens(f, values) },
+            Source::Tuple(values) => { write!(f, "tuple ")?; write_attrs(f, values) },
         }
     }
 }
@@ -192,6 +238,27 @@ fn write_tokens(f: &mut fmt::Formatter, tokens: &[&str]) -> fmt::Result {
             write!(f, "\"{}\"", token)?;
         } else {
             write!(f, "{}" , token)?;
+        }
+
+        if i.peek().is_some() {
+            write!(f, " ")?;
+        }
+    }
+
+    Ok(())
+}
+
+fn write_attrs(f: &mut fmt::Formatter, attrs: &[(AttrKind, &str)]) -> fmt::Result {
+    let mut i = attrs.iter().peekable();
+    while let Some((kind, value)) = i.next() {
+        if value.contains(' ') {
+            write!(f, "\"{}\"", value)?;
+        } else {
+            write!(f, "{}" , value)?;
+        }
+
+        if *kind != AttrKind::Infer {
+            write!(f, "::{}", kind)?;
         }
 
         if i.peek().is_some() {
@@ -279,7 +346,7 @@ mod tests {
 
     #[test]
     fn source_is_tuple() {
-        let query = Query::tuple(&["1", "example_value"]).insert_into("example");
+        let query = Query::tuple_untyped(&["1", "example_value"]).insert_into("example");
         assert_eq!(query.to_string(), "tuple 1 example_value | insert_into example");
     }
 
@@ -327,7 +394,7 @@ mod tests {
 
     #[test]
     fn quotes() {
-        let query = Query::tuple(&["1", "foo bar"]).insert_into("example");
+        let query = Query::tuple_untyped(&["1", "foo bar"]).insert_into("example");
 
         assert_eq!("tuple 1 \"foo bar\" | insert_into example", query.to_string());
     }

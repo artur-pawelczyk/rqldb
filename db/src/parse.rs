@@ -1,4 +1,4 @@
-use crate::dsl::{Command, Query, Operator};
+use crate::dsl::{Command, Query, Operator, AttrKind};
 use crate::schema::Type;
 use crate::tokenize::{Token, Tokenizer};
 
@@ -52,7 +52,7 @@ pub fn parse_query(query_str: &str) -> Result<Query<'_>, ParseError> {
                 },
                 "apply" => {
                     let function = read_symbol(tokenizer.next())?;
-                    let args = read_tuple(&mut tokenizer)?;
+                    let args = read_list(&mut tokenizer)?;
                     query = query.apply(function, &args);
                 }
                 "count" => {
@@ -147,7 +147,22 @@ fn read_table_scan<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query<'a>, Parse
     }
 }
 
-fn read_tuple<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Vec<&'a str>, ParseError> {
+fn read_tuple<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Vec<(AttrKind, &'a str)>, ParseError> {
+    let mut values: Vec<(AttrKind, &str)> = Vec::new();
+
+    for token in tokenizer {
+        match token {
+            Token::Symbol(value, _) => values.push((AttrKind::Infer, value)),
+            Token::Pipe(_) => break,
+            Token::SymbolWithType(value, kind, pos) => values.push((AttrKind::from_str(kind).map_err(|_| ParseError{ msg: "Unknown type", pos })?, value)),
+            Token::SymbolWithKeyType(_, _, pos) => return Err(ParseError{ msg: "Expected a symbol, got typed field", pos }),
+        }
+    }
+
+    Ok(values)
+}
+
+fn read_list<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Vec<&'a str>, ParseError> {
     let mut values: Vec<&str> = Vec::new();
 
     for token in tokenizer {
@@ -222,8 +237,8 @@ mod tests {
     macro_rules! assert_parse {
         ($query:literal) => {
             {
-                let parsed = parse_query($query);
-                assert!(dbg!(parsed).is_ok());
+                let parsed = dbg!(parse_query($query)).unwrap();
+                assert_eq!(parsed.to_string(), $query);
             }
         };
     }
@@ -258,6 +273,11 @@ mod tests {
         assert_parse!("scan example | filter example.id = 1 | delete");
         assert_parse!("scan_index example.id = 1 | select_all");
         assert_parse!("scan example | apply sum example.n");
+    }
+
+    #[test]
+    fn test_parse_typed_tuple() {
+        assert_parse!("tuple 1::NUMBER something::TEXT | select_all");
     }
 
     #[test]

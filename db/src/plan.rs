@@ -1,6 +1,7 @@
 use crate::Cell;
 use crate::Operator;
 use crate::dsl;
+use crate::dsl::AttrKind;
 use crate::schema::Column;
 use crate::schema::{Schema, Relation, Type};
 use crate::tuple::Tuple;
@@ -195,7 +196,7 @@ impl<'a> Source<'a> {
             },
 
             dsl::Source::Tuple(values) => {
-                Ok(Self::from_tuple(values.iter().map(|s| s.to_string()).collect()))
+                Ok(Self::from_tuple(values))
             },
             dsl::Source::IndexScan(index, Operator::EQ, val) => {
                 let index = schema.find_column(index)
@@ -214,9 +215,12 @@ impl<'a> Source<'a> {
         Source{ attributes, contents: Contents::TableScan(rel) }
     }
 
-    fn from_tuple(values: Vec<String>) -> Self {
+    fn from_tuple(values: &[(AttrKind, &str)]) -> Self {
         let attributes = values.iter().enumerate().map(|(i, _)| Attribute::numbered(i)).collect();
-        Self{ attributes, contents: Contents::Tuple(values.to_vec()) }
+        Self {
+            attributes,
+            contents: Contents::Tuple(values.iter().map(|(_, value)| String::from(*value)).collect()),
+        }
     }
 
     fn scan_index(index: Column<'a>, val: Cell) -> Self {
@@ -548,14 +552,14 @@ mod tests {
         let mut schema = Schema::default();
         schema.create_table("example").column("id", Type::NUMBER).column("content", Type::TEXT).column("title", Type::TEXT).add();
 
-        let result = compute_plan(&schema, &dsl::Query::tuple(&["1", "the-content", "title"]).insert_into("example")).unwrap();
+        let result = compute_plan(&schema, &dsl::Query::tuple_untyped(&["1", "the-content", "title"]).insert_into("example")).unwrap();
         assert_eq!(source_attributes(&result.source), vec![Type::NUMBER, Type::TEXT, Type::TEXT]);
         assert_eq!(attribute_names(&result.final_attributes()), vec!["example.id", "example.content", "example.title"]);
 
-        let wrong_tuple_len = compute_plan(&schema, &dsl::Query::tuple(&["1", "the-content"]).insert_into("example"));
+        let wrong_tuple_len = compute_plan(&schema, &dsl::Query::tuple_untyped(&["1", "the-content"]).insert_into("example"));
         assert!(wrong_tuple_len.is_err());
 
-        let wrong_type = compute_plan(&schema, &dsl::Query::tuple(&["not-ID", "the-content", "something"]).insert_into("example"));
+        let wrong_type = compute_plan(&schema, &dsl::Query::tuple_untyped(&["not-ID", "the-content", "something"]).insert_into("example"));
         assert!(wrong_type.is_err());
     }
 
@@ -568,7 +572,7 @@ mod tests {
             .unwrap().finisher;
         assert_eq!(finisher, Finisher::Return);
 
-        let finisher = compute_plan(&schema, &dsl::Query::tuple(&["1", "the content"]).insert_into("example"))
+        let finisher = compute_plan(&schema, &dsl::Query::tuple_untyped(&["1", "the content"]).insert_into("example"))
             .unwrap().finisher;
         assert!(matches!(finisher, Finisher::Insert{..}));
 
@@ -580,7 +584,7 @@ mod tests {
             .unwrap().finisher;
         assert!(matches!(finisher, Finisher::Apply(ApplyFn::Sum, _)));
 
-        let failure = compute_plan(&schema, &dsl::Query::tuple(&["a", "b", "c"]).insert_into("not-a-table"));
+        let failure = compute_plan(&schema, &dsl::Query::tuple_untyped(&["a", "b", "c"]).insert_into("not-a-table"));
         assert!(failure.is_err());
     }
 
@@ -589,7 +593,7 @@ mod tests {
         let mut schema = Schema::default();
         schema.create_table("example").column("id", Type::NUMBER).column("content", Type::TEXT).add();
 
-        let plan = compute_plan(&schema, &dsl::Query::tuple(&["1", "aaa"]).insert_into("example")).unwrap();
+        let plan = compute_plan(&schema, &dsl::Query::tuple_untyped(&["1", "aaa"]).insert_into("example")).unwrap();
 
         assert_eq!(plan.source.attributes[0], Attribute::named(0, "example.id").with_type(Type::NUMBER));
         assert_eq!(plan.source.attributes[1], Attribute::named(1, "example.content").with_type(Type::TEXT));
