@@ -93,15 +93,16 @@ impl<'a> Join<'a> {
         self.joinee_attributes.iter()
             .chain(self.joiner_attributes.iter())
             .enumerate()
-            .map(|(pos, attr)| Attribute::Named(pos, attr.name(), attr.kind()))
+            .map(|(pos, attr)| Attribute { pos, name: Box::from(attr.name()), kind: attr.kind() })
             .collect()
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) enum Attribute {
-    Numbered(usize, Type),
-    Named(usize, String, Type),
+pub(crate) struct Attribute {
+    pos: usize,
+    name: Box<str>,
+    kind: Type,
 }
 
 #[derive(Default)]
@@ -135,56 +136,46 @@ impl<'a> Contents<'a> {
 }
 
 impl Attribute {
-    pub fn numbered(num: usize) -> Attribute {
-        Attribute::Numbered(num, Type::TEXT)
+    pub fn numbered(num: usize) -> Self {
+        Self {
+            pos: num,
+            name: Box::from(num.to_string()),
+            // TODO: Should it be Type::default?
+            kind: Type::TEXT
+        }
     }
 
-    pub fn named(pos: usize, name: &str) -> Attribute {
-        Attribute::Named(pos, name.to_string(), Type::default() )
+    pub fn named(pos: usize, name: &str) -> Self {
+        Self {
+            pos,
+            name: Box::from(name),
+            kind: Type::default(),
+        }
     }
 
-    pub fn with_type(self, kind: Type) -> Attribute {
-        match self {
-            Self::Numbered(pos, _) => Self::Numbered(pos, kind),
-            Self::Named(pos, name, _) => Self::Named(pos, name, kind),
+    pub fn with_type(self, kind: Type) -> Self {
+        Self {
+            kind,
+            ..self
         }
     }
 
     pub fn pos(&self) -> usize {
-        match self {
-            Self::Numbered(i, _) => *i,
-            Self::Named(i, _, _) => *i,
-        }
+        self.pos
     }
 
-    pub fn into_name(self) -> String {
-        match self {
-            Self::Numbered(i, _) => i.to_string(),
-            Self::Named(_, s, _) => s,
-        }
-    }
-
-    fn name(&self) -> String {
-        match self {
-            Self::Numbered(i, _) => i.to_string(),
-            Self::Named(_, s, _) => s.to_string(),
-        }
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     pub fn kind(&self) -> Type {
-        match self {
-            Self::Numbered(_, t) => *t,
-            Self::Named(_, _, t) => *t,
-        }
+        self.kind
     }
 }
 
 impl PartialEq<str> for Attribute {
     fn eq(&self, s: &str) -> bool {
-        match self {
-            Self::Numbered(i, _) => s.parse::<usize>().map_or(false, |n| n == *i),
-            Self::Named(_, name, _) => name == s,
-        }
+        self.name.as_ref() == s
     }
 }
 
@@ -432,7 +423,7 @@ fn compute_joins<'a>(plan: Plan<'a>, schema: &'a Schema, query: &dsl::Query) -> 
 
 fn table_attributes(table: &Relation) -> Vec<Attribute> {
     table.columns().peekable()
-        .map(|col| Attribute::Named(col.pos(), col.as_full_name(), col.kind()))
+        .map(|col| Attribute { pos: col.pos(), name: Box::from(col.as_full_name()), kind: col.kind() })
         .collect()
 }
 
@@ -605,8 +596,8 @@ mod tests {
         schema.create_table("example").indexed_column("id", Type::NUMBER).column("content", Type::TEXT).add();
 
         let source = compute_plan(&schema, &dsl::Query::scan_index("example.id", EQ, "1")).unwrap().source;
-        assert_eq!(source.attributes[0], Attribute::Named(0, "example.id".to_string(), Type::NUMBER));
-        assert_eq!(source.attributes[1], Attribute::Named(1, "example.content".to_string(), Type::TEXT));
+        assert_eq!(source.attributes[0], Attribute::named(0, "example.id").with_type(Type::NUMBER));
+        assert_eq!(source.attributes[1], Attribute::named(1, "example.content").with_type(Type::TEXT));
         if let Contents::IndexScan(_, val) = source.contents {
             assert_eq!(val, Cell::from_i32(1));
         } else {
@@ -619,7 +610,8 @@ mod tests {
     }
 
     fn attribute_names(attrs: &[Attribute]) -> Vec<String> {
-        attrs.iter().map(|attr| attr.name()).collect()
+        // TODO: Is the String allocation necessary?
+        attrs.iter().map(|attr| attr.name().to_string()).collect()
     }
 
     fn tuple(cells: &[(Type, &str)]) -> Vec<u8> {

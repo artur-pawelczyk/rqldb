@@ -218,7 +218,7 @@ impl<'a, 'obj> Sink<'a, 'obj> {
             Self::Max(_, n) => QueryResults::single_number("max", n),
             Self::Return(attributes, results) => {
                 QueryResults{
-                    attributes: attributes.into_iter().map(|attr| attr.into_name()).collect(),
+                    attributes: attributes.into_iter().map(|attr| String::from(attr.name())).collect(),
                     results: RefCell::new(Box::new(results.into_iter())),
                 }
             }
