@@ -40,7 +40,8 @@ impl Display for Table {
 
         let mut iter = self.columns.iter().peekable();
         while let Some(col) = iter.next() {
-            write!(f, "|{}", col.as_line())?;
+            write!(f, "|")?;
+            col.write_line(f)?;
             if iter.peek().is_none() {
                 write!(f, "|")?;
             }
@@ -70,8 +71,12 @@ impl Column {
         Self{ name: name.to_string(), width: name.len() + 2 }
     }
 
-    fn as_line(&self) -> String {
-        String::from_utf8((0..self.width).map(|_| b'-').collect()).unwrap() // TODO: Remove allcation
+    fn write_line(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for _ in 0..self.width {
+            write!(f, "-")?;
+        }
+
+        Ok(())
     }
 }
 
