@@ -160,6 +160,16 @@ impl FromStr for AttrKind {
     }
 }
 
+impl Into<Type> for AttrKind {
+    fn into(self) -> Type {
+        match self {
+            Self::Number => Type::NUMBER,
+            Self::Text => Type::TEXT,
+            _ => Type::NONE,
+        }
+    }
+}
+
 impl<'a> fmt::Display for AttrKind {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {

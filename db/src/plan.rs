@@ -206,7 +206,7 @@ impl<'a> Source<'a> {
     }
 
     fn from_tuple(values: &[(AttrKind, &str)]) -> Self {
-        let attributes = values.iter().enumerate().map(|(i, _)| Attribute::numbered(i)).collect();
+        let attributes = values.iter().enumerate().map(|(i, (t, _))| Attribute::numbered(i).with_type((*t).into())).collect();
         Self {
             attributes,
             contents: Contents::Tuple(values.iter().map(|(_, value)| String::from(*value)).collect()),
@@ -530,7 +530,10 @@ mod tests {
         let schema = Schema::default();
         let result = compute_plan(&schema, &dsl::Query::tuple_untyped(&["1", "some text"]).filter("0", Operator::EQ, "1"));
         assert!(result.is_err());
-        assert_eq!(result.err(), Some("Cannot filter untyped attribute"))
+        assert_eq!(result.err(), Some("Cannot filter untyped attribute"));
+
+        let result = compute_plan(&schema, &dsl::Query::tuple(&[(AttrKind::Number, "1"), (AttrKind::Text, "some text")]).filter("0", Operator::EQ, "1"));
+        assert!(result.is_ok());
     }
 
     fn expect_join<'a>(result: Result<Plan<'a>, &str>) -> Join<'a> {

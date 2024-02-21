@@ -49,24 +49,26 @@ fn test_basic_queries() {
     assert_eq!(result.tuples().count(), 1);
 }
 
-// TODO: Fix or remove this test
 #[ignore]
 #[test]
 fn test_tuple_queries() {
     let db = prepare_db();
 
-    let query = parse_query("tuple 1 \"some text\" | filter 0 = 1").unwrap();
+    let query = parse_query("tuple 1::NUMBER \"some text\"::TEXT | filter 0 = 1").unwrap();
     let result = db.execute_query(&query).unwrap();
     assert_eq!(result.tuples().count(), 1);
 
-    let query = parse_query("tuple 1 \"some text\" | filter 1 = \"some text\"").unwrap();
+    let query = parse_query("tuple 1::NUMBER \"some text\"::TEXT | filter 1 = \"some text\"").unwrap();
     let result = db.execute_query(&query).unwrap();
     assert_eq!(result.tuples().count(), 1);
 
 
-    let query = parse_query("tuple 1 \"some text\" | filter 0 = 2").unwrap();
+    let query = parse_query("tuple 1::NUMBER \"some text\"::TEXT | filter 0 = 2").unwrap();
     let result = db.execute_query(&query).unwrap();
     assert!(result.tuples().next().is_none());
+
+    let result = parse_query("tuple 1 \"some text\" | filter 0 = 1");
+    assert!(result.is_err());
 }
 
 #[test]
