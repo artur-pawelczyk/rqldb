@@ -268,6 +268,8 @@ mod tests {
     }
 
     #[test]
+    // TODO: Remove this syntax after named attributes in tuples are enforced,
+    // i.e. tuple id = 1 text = "some text"
     fn test_parse_typed_tuple() {
         assert_parse!("tuple 1::NUMBER something::TEXT | select_all");
     }
