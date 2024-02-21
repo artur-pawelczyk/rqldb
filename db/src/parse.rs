@@ -126,14 +126,6 @@ fn read_symbol(t: Option<Token<'_>>) -> Result<&str, ParseError> {
 }
 
 fn read_table_scan<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query<'a>, ParseError> {
-    // let token = tokenizer.next();
-    // if let Some(Token::Symbol(table, _)) = token {
-    //     expect_pipe_or_end(tokenizer)?;
-    //     Ok(Query::scan(table))
-    // } else { // TODO: Make sure "scan" has only one argument
-    //     Err(ParseError{msg: "'scan' expects a table name", pos: token.pos() })
-    // }
-
     match tokenizer.next() {
         Some(token) => {
             if let Token::Symbol(table, _) = token {

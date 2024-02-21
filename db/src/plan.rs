@@ -620,9 +620,8 @@ mod tests {
         source.attributes.iter().map(|attr| attr.kind()).collect()
     }
 
-    fn attribute_names(attrs: &[Attribute]) -> Vec<String> {
-        // TODO: Is the String allocation necessary?
-        attrs.iter().map(|attr| attr.name().to_string()).collect()
+    fn attribute_names(attrs: &[Attribute]) -> Vec<&str> {
+        attrs.iter().map(|attr| attr.name()).collect()
     }
 
     fn tuple(cells: &[(Type, &str)]) -> Vec<u8> {
