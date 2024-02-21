@@ -27,7 +27,7 @@ impl<'a> Query<'a> {
 
     pub fn tuple(values: &[(AttrKind, &'a str)]) -> Self {
         Self {
-            source: Source::Tuple(values.to_vec()),
+            source: Source::Tuple(values.iter().map(|a| (*a).into()).collect()),
             join_sources: vec![],
             filters: Vec::new(),
             finisher: Finisher::AllColumns,
@@ -37,7 +37,7 @@ impl<'a> Query<'a> {
     // TODO: Remove this function
     pub fn tuple_untyped(values: &[&'a str]) -> Self {
         Self {
-            source: Source::Tuple(values.iter().map(|value| (AttrKind::Infer, *value)).collect()),
+            source: Source::Tuple(values.iter().map(|v| TupleAttr::infer(*v)).collect()),
             join_sources: vec![],
             filters: Vec::new(),
             finisher: Finisher::AllColumns,
@@ -136,7 +136,7 @@ pub enum Source<'a> {
     Nil,
     TableScan(&'a str),
     IndexScan(&'a str, Operator, &'a str),
-    Tuple(Vec<(AttrKind, &'a str)>),
+    Tuple(Vec<TupleAttr<'a>>),
 }
 
 #[non_exhaustive]
@@ -180,6 +180,23 @@ impl<'a> fmt::Display for AttrKind {
     }
 }
 
+#[derive(PartialEq, Eq, Debug)]
+pub struct TupleAttr<'a> {
+    pub kind: AttrKind,
+    pub value: &'a str,
+}
+
+impl<'a> From<(AttrKind, &'a str)> for TupleAttr<'a> {
+    fn from((kind, value): (AttrKind, &'a str)) -> Self {
+        Self { kind, value }
+    }
+}
+
+impl<'a> TupleAttr<'a> {
+    fn infer(value: &'a str) -> Self {
+        Self { kind: AttrKind::Infer, value }
+    }
+}
 
 impl<'a> fmt::Display for Source<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -259,17 +276,17 @@ fn write_tokens(f: &mut fmt::Formatter, tokens: &[&str]) -> fmt::Result {
     Ok(())
 }
 
-fn write_attrs(f: &mut fmt::Formatter, attrs: &[(AttrKind, &str)]) -> fmt::Result {
+fn write_attrs(f: &mut fmt::Formatter, attrs: &[TupleAttr<'_>]) -> fmt::Result {
     let mut i = attrs.iter().peekable();
-    while let Some((kind, value)) = i.next() {
-        if value.contains(' ') {
-            write!(f, "\"{}\"", value)?;
+    while let Some(attr) = i.next() {
+        if attr.value.contains(' ') {
+            write!(f, "\"{}\"", attr.value)?;
         } else {
-            write!(f, "{}" , value)?;
+            write!(f, "{}" , attr.value)?;
         }
 
-        if *kind != AttrKind::Infer {
-            write!(f, "::{}", kind)?;
+        if attr.kind != AttrKind::Infer {
+            write!(f, "::{}", attr.kind)?;
         }
 
         if i.peek().is_some() {

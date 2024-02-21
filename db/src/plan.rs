@@ -1,7 +1,7 @@
 use crate::Cell;
 use crate::Operator;
 use crate::dsl;
-use crate::dsl::AttrKind;
+use crate::dsl::TupleAttr;
 use crate::schema::Column;
 use crate::schema::{Schema, Relation, Type};
 use crate::tuple::Tuple;
@@ -205,11 +205,11 @@ impl<'a> Source<'a> {
         Source{ attributes, contents: Contents::TableScan(rel) }
     }
 
-    fn from_tuple(values: &[(AttrKind, &str)]) -> Self {
-        let attributes = values.iter().enumerate().map(|(i, (t, _))| Attribute::numbered(i).with_type((*t).into())).collect();
+    fn from_tuple(values: &[TupleAttr<'_>]) -> Self {
+        let attributes = values.iter().enumerate().map(|(i, attr)| Attribute::numbered(i).with_type((attr.kind).into())).collect();
         Self {
             attributes,
-            contents: Contents::Tuple(values.iter().map(|(_, value)| String::from(*value)).collect()),
+            contents: Contents::Tuple(values.iter().map(|attr| String::from(attr.value)).collect()),
         }
     }
 
@@ -442,6 +442,7 @@ fn validate_type(value: &str, kind: Type) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dsl::AttrKind;
     use crate::dsl::Operator::{EQ, GT};
     use crate::schema::Type;
 
