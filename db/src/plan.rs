@@ -27,7 +27,7 @@ impl<'a> Plan<'a> {
             finisher: Finisher::Insert(rel),
             ..Plan::default()
         }
-    }
+   }
 
     #[cfg(test)]
     pub fn scan(rel: &'a Relation) -> Self {
@@ -140,8 +140,7 @@ impl Attribute {
         Self {
             pos: num,
             name: Box::from(num.to_string()),
-            // TODO: Should it be Type::default?
-            kind: Type::TEXT
+            kind: Default::default()
         }
     }
 
@@ -312,6 +311,10 @@ fn compute_filters<'a>(plan: Plan<'a>, query: &dsl::Query) -> Result<Plan<'a>, &
     let mut filters = Vec::with_capacity(query.filters.len());
     for dsl_filter in &query.filters {
         if let Some(attr) = attributes.iter().find(|attr| attr == &filter_left(dsl_filter)) {
+            if attr.kind == Type::NONE {
+                return Err("Cannot filter untyped attribute");
+            }
+
             let op = filter_operator(dsl_filter);
             filters.push(Filter{
                 attribute: attr.clone(),
@@ -394,7 +397,7 @@ fn compute_joins<'a>(plan: Plan<'a>, schema: &'a Schema, query: &dsl::Query) -> 
         dsl::Source::TableScan(name) => Some(name),
         _ => todo!(),
     }.and_then(|name| schema.find_relation(*name)).ok_or("No such table")?;
-    
+
     for join_source in &query.join_sources {
         let joiner_table = match schema.find_relation(join_source.table) {
             Some(table) => table,
@@ -441,7 +444,7 @@ mod tests {
     use super::*;
     use crate::dsl::Operator::{EQ, GT};
     use crate::schema::Type;
-    
+
 
     #[test]
     fn test_compute_filter() {
@@ -520,6 +523,14 @@ mod tests {
 
         let filter = expect_filter(compute_plan(&schema, &dsl::Query::scan("document").join("type", "document.type_id", "type.id").filter("type.name", EQ, "b")));
         assert_eq!(filter.attribute.pos(), 3);
+    }
+
+    #[test]
+    fn test_filter_tuple() {
+        let schema = Schema::default();
+        let result = compute_plan(&schema, &dsl::Query::tuple_untyped(&["1", "some text"]).filter("0", Operator::EQ, "1"));
+        assert!(result.is_err());
+        assert_eq!(result.err(), Some("Cannot filter untyped attribute"))
     }
 
     fn expect_join<'a>(result: Result<Plan<'a>, &str>) -> Join<'a> {
@@ -637,4 +648,3 @@ mod tests {
         }
     }
 }
-

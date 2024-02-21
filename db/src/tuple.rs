@@ -198,6 +198,7 @@ fn cell_len(kind: Type, cell: &[u8]) -> usize {
     if cell.is_empty() {
         panic!()
     }
+
     match kind {
         Type::BOOLEAN => 1,
         Type::NUMBER => 4,

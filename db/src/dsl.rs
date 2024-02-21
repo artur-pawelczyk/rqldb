@@ -141,6 +141,7 @@ pub enum Source<'a> {
 
 #[non_exhaustive]
 #[derive(PartialEq, Eq, Debug, Default, Copy, Clone)]
+// TODO: Should it be replaced with lib::Type?
 pub enum AttrKind {
     #[default] Infer,
     Number,
