@@ -15,7 +15,7 @@ fn main() {
     for i in 0..50_000_000 {
         let title = format!("title {i}");
         let content = format!("content {i}");
-        db.execute_query(&Query::tuple(&[&i.to_string(), &title, &content]).insert_into("document")).unwrap();
+        db.execute_query(&Query::tuple_untyped(&[&i.to_string(), &title, &content]).insert_into("document")).unwrap();
 
         if i % 100_000 == 0 {
             println!("Inserted {} tuples; took {:?}", i, SystemTime::now().duration_since(last_time));

@@ -16,7 +16,7 @@ fn create_database<'a>() -> Database<'a> {
         let id = i.to_string();
         let title = "title".to_string() + &id;
         let content = "content".to_string() + &id;
-        db.execute_query(&Query::tuple(&[&id, "1", &title, &content]).insert_into("document")).unwrap();
+        db.execute_query(&Query::tuple_untyped(&[&id, "1", &title, &content]).insert_into("document")).unwrap();
     }
 
     db
