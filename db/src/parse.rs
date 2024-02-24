@@ -1,6 +1,6 @@
 use crate::dsl::{Command, Query, Operator, AttrKind};
 use crate::schema::Type;
-use crate::tokenize::{Token, Tokenizer};
+use crate::tokenize::{Token, Tokenizer, TokenizerError};
 
 use std::fmt;
 use std::str::FromStr;
@@ -23,47 +23,49 @@ impl fmt::Display for ParseError {
     }
 }
 
+impl From<TokenizerError> for ParseError {
+    fn from(_: TokenizerError) -> Self {
+        Self::msg("tokenizer error")
+    }
+}
+
 pub fn parse_query(query_str: &str) -> Result<Query<'_>, ParseError> {
     let mut tokenizer = Tokenizer::new(query_str);
     let mut query = read_source(&mut tokenizer)?;
 
-    while let Some(token) = tokenizer.next() {
+    loop {
+        let token = tokenizer.next()?;
         match token {
             Token::Symbol(name, _) => match name {
                 "select_all" => query = query.select_all(),
-                "insert_into" => query = query.insert_into(read_symbol(tokenizer.next())?),
+                "insert_into" => query = query.insert_into(read_symbol(tokenizer.next()?)?),
                 "filter" => {
-                    let left = read_symbol(tokenizer.next())?;
-                    let op = read_operator(tokenizer.next())?;
-                    let right = read_symbol(tokenizer.next())?;
-                    if let Some(token) = tokenizer.next() {
-                        check_if_end(token)?;
-                    }
+                    let left = read_symbol(tokenizer.next()?)?;
+                    let op = read_operator(tokenizer.next()?)?;
+                    let right = read_symbol(tokenizer.next()?)?;
+                    check_if_end(tokenizer.next()?)?;
                     query = query.filter(left, op, right);
                 },
                 "join" => {
-                    let table = read_symbol(tokenizer.next())?;
-                    let left = read_symbol(tokenizer.next())?;
-                    let right = read_symbol(tokenizer.next())?;
-                    if let Some(token) = tokenizer.next() {
-                        check_if_end(token)?
-                    }
+                    let table = read_symbol(tokenizer.next()?)?;
+                    let left = read_symbol(tokenizer.next()?)?;
+                    let right = read_symbol(tokenizer.next()?)?;
+                    check_if_end(tokenizer.next()?)?;
                     query = query.join(table, left, right);
                 },
                 "apply" => {
-                    let function = read_symbol(tokenizer.next())?;
+                    let function = read_symbol(tokenizer.next()?)?;
                     let args = read_list(&mut tokenizer)?;
                     query = query.apply(function, &args);
                 }
                 "count" => {
-                    if let Some(token) = tokenizer.next() {
-                        check_if_end(token)?;
-                    }
+                    check_if_end(tokenizer.next()?)?;
                     query = query.count();
                 },
                 "delete" => query = query.delete(),
                 _ => return Err(ParseError{ msg: "Function not recognized", pos: token.pos() })
             },
+            Token::End(_) => break,
             _ => return Err(ParseError{ msg: "Expected a symbol", pos: token.pos() })
         }
     }
@@ -72,17 +74,17 @@ pub fn parse_query(query_str: &str) -> Result<Query<'_>, ParseError> {
 }
 
 fn check_if_end(token: Token) -> Result<(), ParseError> {
-    if !matches!(token, Token::Pipe(_)) {
-        Err(ParseError::msg("Expected end of statement"))
-    } else {
-        Ok(())
+    match token {
+        Token::Pipe(_) => Ok(()),
+        Token::End(_) => Ok(()),
+        _ => Err(ParseError::msg("Expected end of statement")),
     }
 }
 
 fn read_source<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query<'a>, ParseError> {
-    let function = match tokenizer.next() {
-        Some(x) => x,
-        None => return Err(ParseError::msg("Expected source function"))
+    let function = match tokenizer.next()? {
+        Token::End(_) => return Err(ParseError::msg("Expected source function, found end of stream")),
+        x => x,
     };
 
     match function {
@@ -96,56 +98,46 @@ fn read_source<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query<'a>, ParseErro
     }
 }
 
-fn read_operator(t: Option<Token>) -> Result<Operator, ParseError> {
-    if let Some(token) = t {
-        match token {
-            Token::Op(s, _) => match s {
-                "=" => Ok(Operator::EQ),
-                ">" => Ok(Operator::GT),
-                ">=" => Ok(Operator::GE),
-                "<" => Ok(Operator::LT),
-                "<=" => Ok(Operator::LE),
-                _ => Err(ParseError{ msg: "Unknown operator", pos: token.pos() }),
-            }
-            _ => Err(ParseError{ msg: "Unexpected token", pos: token.pos() }),
+fn read_operator(t: Token) -> Result<Operator, ParseError> {
+    match t {
+        Token::Op(s, _) => match s {
+            "=" => Ok(Operator::EQ),
+            ">" => Ok(Operator::GT),
+            ">=" => Ok(Operator::GE),
+            "<" => Ok(Operator::LT),
+            "<=" => Ok(Operator::LE),
+            _ => Err(ParseError { msg: "Unknown operator", pos: t.pos() }),
         }
-    } else {
-        Err(ParseError::msg("Unknown operator"))
+        _ => Err(ParseError { msg: "Unknown operator", pos: t.pos() }),
     }
 }
 
-fn read_symbol(t: Option<Token<'_>>) -> Result<&str, ParseError> {
-    if let Some(token) = t {
-        match token {
-            Token::Symbol(name, _) => Ok(name),
-            _ => Err(ParseError::msg("Expected a symbol"))
-        }
-    } else {
-        Err(ParseError::msg("Expected a symbol"))
+fn read_symbol(t: Token<'_>) -> Result<&str, ParseError> {
+    match t {
+        Token::Symbol(name, _) => Ok(name),
+        _ => Err(ParseError::msg("Expected a symbol"))
     }
 }
 
 fn read_table_scan<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query<'a>, ParseError> {
-    match tokenizer.next() {
-        Some(token) => {
-            if let Token::Symbol(table, _) = token {
-                expect_pipe_or_end(tokenizer)?;
-                Ok(Query::scan(table))
-            } else { 
-                Err(ParseError{ msg: "Expected a symbol", pos: token.pos() })
-            }
+    match tokenizer.next()? {
+        Token::Symbol(table, _) => {
+            expect_pipe_or_end(tokenizer)?;
+            Ok(Query::scan(table))
         },
-        None => Err(ParseError::msg("Expected a symbol"))
+        token => Err(ParseError{ msg: "Expected a symbol", pos: token.pos() })
     }
 }
 
 fn read_tuple<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Vec<(AttrKind, &'a str)>, ParseError> {
     let mut values: Vec<(AttrKind, &str)> = Vec::new();
 
-    for token in tokenizer {
+    loop {
+        let token = tokenizer.next()?;
         match token {
             Token::Symbol(value, _) => values.push((AttrKind::Infer, value)),
             Token::Pipe(_) => break,
+            Token::End(_) => break,
             Token::SymbolWithType(value, kind, pos) => values.push((AttrKind::from_str(kind).map_err(|_| ParseError{ msg: "Unknown type", pos })?, value)),
             Token::SymbolWithKeyType(_, _, pos) => return Err(ParseError{ msg: "Expected a symbol, got typed field", pos }),
             Token::Op(_, _) => todo!(),
@@ -158,10 +150,12 @@ fn read_tuple<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Vec<(AttrKind, &'a st
 fn read_list<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Vec<&'a str>, ParseError> {
     let mut values: Vec<&str> = Vec::new();
 
-    for token in tokenizer {
+    loop {
+        let token = tokenizer.next()?;
         match token {
             Token::Symbol(name, _) => values.push(name),
             Token::Pipe(_) => break,
+            Token::End(_) => break,
             Token::SymbolWithType(_, _, pos) => return Err(ParseError{ msg: "Expected a symbol, got typed field", pos }),
             Token::SymbolWithKeyType(_, _, pos) => return Err(ParseError{ msg: "Expected a symbol, got typed field", pos }),
             Token::Op(_, _) => todo!(),
@@ -172,23 +166,23 @@ fn read_list<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Vec<&'a str>, ParseErr
 }
 
 fn read_index_scan<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query<'a>, ParseError> {
-    let index = read_symbol(tokenizer.next())?;
-    let op = read_operator(tokenizer.next())?;
-    let val = read_symbol(tokenizer.next())?;
+    let index = read_symbol(tokenizer.next()?)?;
+    let op = read_operator(tokenizer.next()?)?;
+    let val = read_symbol(tokenizer.next()?)?;
     expect_pipe_or_end(tokenizer)?;
 
     Ok(Query::scan_index(index, op, val))
 }
 
 fn expect_pipe_or_end(tokenizer: &mut Tokenizer) -> Result<(), ParseError> {
-    let token = tokenizer.next();
-    if !matches!(token, Some(Token::Pipe(_))) && token.is_some() {
-        Err(ParseError{
+    let token = tokenizer.next()?;
+    match token {
+        Token::Pipe(_) => Ok(()),
+        Token::End(_) => Ok(()),
+        t => Err(ParseError{
             msg: "No more arguments were expected",
-            pos: token.map(|t| t.pos()).unwrap_or(0),
-        })
-    } else {
-        Ok(())
+            pos: t.pos(),
+        }),
     }
 }
 
@@ -196,23 +190,31 @@ pub fn parse_command(source: &str) -> Result<Command, ParseError> {
     let mut tokenizer = Tokenizer::new(source);
     let mut command = Command::create_table("");
 
-    while let Some(token) = tokenizer.next() {
+    loop {
+        let token = tokenizer.next()?;
         match token {
-            Token::Symbol(name, _) => if name == "create_table" {
-                let name = match tokenizer.next() {
-                    Some(Token::Symbol(name, _)) => name,
-                    _ => return Err(ParseError::msg("Expected table name"))
-                };
-                command = Command::create_table(name);
+            Token::Symbol(name, _) => {
+                if name == "create_table" {
+                    let name = match tokenizer.next()? {
+                        Token::Symbol(name, _) => name,
+                        _ => return Err(ParseError::msg("Expected table name"))
+                    };
+                    command = Command::create_table(name);
 
-                for arg in tokenizer.by_ref() {
-                    match arg {
-                        Token::SymbolWithType(name, kind, _) => { command = command.column(name, str_to_type(kind)?); },
-                        Token::SymbolWithKeyType(name, kind, _) => { command = command.indexed_column(name, str_to_type(kind)?); },
-                        _ => return Err(ParseError::msg("Expected a symbol with a type"))
+                    loop {
+                        let arg = tokenizer.next()?;
+                        match arg {
+                            Token::SymbolWithType(name, kind, _) => { command = command.column(name, str_to_type(kind)?); },
+                            Token::SymbolWithKeyType(name, kind, _) => { command = command.indexed_column(name, str_to_type(kind)?); },
+                            Token::End(_) => break,
+                            _ => return Err(ParseError::msg("Expected a symbol with a type")),
+                        }
                     }
+                } else {
+                    return Err(ParseError::msg("Only create_table is allowed"))
                 }
-            } else { return Err(ParseError::msg("Only create_table is allowed")) },
+            },
+            Token::End(_) => break,
             _ => return Err(ParseError::msg("Expected a symbol"))
         }
     }
@@ -304,7 +306,7 @@ mod tests {
     }
 
     fn assert_parse_command(command: &str) {
-        let parsed = parse_command(command);
+        let parsed = parse_command(dbg!(command));
         assert_eq!(parsed.unwrap().to_string(), command);
     }
 

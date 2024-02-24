@@ -7,7 +7,11 @@ pub enum Token<'a> {
     SymbolWithKeyType(&'a str, &'a str, usize),
     Pipe(usize),
     Op(&'static str, usize),
+    End(usize),
 }
+
+#[derive(Debug)]
+pub struct TokenizerError;
 
 pub struct Tokenizer<'a> {
     source: &'a str,
@@ -18,34 +22,30 @@ impl<'a> Tokenizer<'a> {
     pub fn new(source: &'a str) -> Self {
         Self{ source, pos: 0 }
     }
-}
 
-impl<'a> Iterator for Tokenizer<'a> {
-    type Item = Token<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
+    pub fn next(&mut self) -> Result<Token<'a>, TokenizerError> {
         for (pos, ch) in self.source.char_indices().skip(self.pos) {
             if ch == '|' {
                 self.pos += 1;
-                return Some(Token::Pipe(pos))
+                return Ok(Token::Pipe(pos))
             } else if is_operator(ch) {
-                let op = read_operator(&self.source[pos..]);
+                let op = read_operator(&self.source[pos..])?;
                 self.pos += op.len();
-                return Some(Token::Op(op, pos));
+                return Ok(Token::Op(op, pos));
             } else if ch == '"' {
                 if let Some(s) = read_string(&self.source[pos..], pos) {
                     self.pos += s.len() + 2;
-                    return Some(s)
+                    return Ok(s)
                 }
             } else if ch.is_whitespace() {
                 self.pos += 1;
             } else if let Some(sym) = read_symbol(&self.source[pos..], pos) {
                     self.pos += sym.len();
-                    return Some(sym)
+                    return Ok(sym)
                 }
         }
 
-        None
+        Ok(Token::End(self.source.len()))
     }
 }
 
@@ -96,29 +96,41 @@ fn is_operator(c: char) -> bool {
     c == '<' || c == '>' || c == '='
 }
 
-fn read_operator(source: &str) -> &'static str {
+fn read_operator(source: &str) -> Result<&'static str, TokenizerError> {
     let mut chars = source.chars();
-    while let Some(first) = chars.next() {
-        if first == '=' {
-            return "=";
-        } else if first == '<' {
-            if let Some('=') = chars.next() {
-                return "<=";
-            } else {
-                return "<";
-            }
-        } else if first == '>' {
-            if let Some('=') = chars.next() {
-                return ">=";
-            } else {
-                return ">";
-            }
-        } else {
-            panic!()
+
+    let first = chars.next().ok_or(TokenizerError)?;
+    let second = chars.next().filter(|c| !c.is_whitespace());
+    let third;
+    if second.is_some() {
+        third = chars.next().filter(|c| !c.is_whitespace());
+    } else {
+        third = None;
+    }
+
+    if second.is_none() || third.is_none() {
+        if first == '=' && second.is_none() {
+            return Ok("=")
+        }
+
+        if first == '<' && second.is_none() {
+            return Ok("<");
+        }
+
+        if first == '>' && second.is_none() {
+            return Ok(">");
+        }
+
+        if first == '<' && second == Some('=') {
+            return Ok("<=");
+        }
+
+        if first == '>' && second == Some('=') {
+            return Ok(">=");
         }
     }
 
-    panic!()
+    Err(TokenizerError)
 }
 
 fn read_util_whitespace(source: &str) -> &str {
@@ -139,6 +151,7 @@ impl<'a> Token<'a> {
             Token::SymbolWithKeyType(x, y, _) => x.len() + "::".len() + y.len() + "::KEY".len(),
             Token::Pipe(_) => "|".len(),
             Token::Op(o, _) => o.len(),
+            Token::End(_) => 0,
         }
     }
 
@@ -149,6 +162,7 @@ impl<'a> Token<'a> {
             Token::SymbolWithKeyType(_, _, pos) => *pos,
             Token::Pipe(pos) => *pos,
             Token::Op(_, pos) => *pos,
+            Token::End(pos) => *pos,
         }
     }
 }
@@ -161,6 +175,7 @@ impl<'a> fmt::Display for Token<'a> {
             Token::SymbolWithKeyType(x, y, _) => write!(f, "{}::{}::KEY", x, y),
             Token::Pipe(_) => write!(f, "|"),
             Token::Op(o, _) => write!(f, "{}", o),
+            Token::End(_) => Ok(()),
         }        
     }
 }
@@ -221,6 +236,14 @@ mod tests {
         }
     }
 
+    macro_rules! assert_tokenize_error {
+        ($source:literal) => {
+            let mut tokenizer = Tokenizer::new($source);
+            let result = dbg!(tokenizer.next());
+            assert!(result.is_err());
+        }
+    }
+
     #[test]
     fn test_tokenize() {
         assert_tokenize!("abc def ghi", symbol!("abc", 0), symbol!("def", 4), symbol!("ghi", 8));
@@ -235,10 +258,22 @@ mod tests {
         assert_tokenize!("< > <= >= =", op!("<"), op!(">"), op!("<="), op!(">="), op!("="));
     }
 
+    #[test]
+    fn test_tokenizer_error() {
+        assert_tokenize_error!("=>");
+        assert_tokenize_error!("=<");
+        assert_tokenize_error!("<=>");
+    }
+
     fn tokenize(source: &str) -> Option<Vec<Token<'_>>> {
-        let tokenizer = Tokenizer::new(source);
+        let mut tokenizer = Tokenizer::new(dbg!(source));
         let mut v = Vec::new();
-        for t in tokenizer {
+        loop {
+            let t = dbg!(tokenizer.next().unwrap());
+            if matches!(t, Token::End(_)) {
+                break;
+            }
+
             v.push(t);
         }
 
