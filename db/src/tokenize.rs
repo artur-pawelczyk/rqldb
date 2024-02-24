@@ -7,6 +7,7 @@ pub enum Token<'a> {
     SymbolWithKeyType(&'a str, &'a str, usize),
     Pipe(usize),
     Op(&'static str, usize),
+    End(usize),
 }
 
 pub struct Tokenizer<'a> {
@@ -18,34 +19,30 @@ impl<'a> Tokenizer<'a> {
     pub fn new(source: &'a str) -> Self {
         Self{ source, pos: 0 }
     }
-}
 
-impl<'a> Iterator for Tokenizer<'a> {
-    type Item = Token<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
+    pub fn next(&mut self) -> Token<'a> {
         for (pos, ch) in self.source.char_indices().skip(self.pos) {
             if ch == '|' {
                 self.pos += 1;
-                return Some(Token::Pipe(pos))
+                return Token::Pipe(pos)
             } else if is_operator(ch) {
                 let op = read_operator(&self.source[pos..]);
                 self.pos += op.len();
-                return Some(Token::Op(op, pos));
+                return Token::Op(op, pos);
             } else if ch == '"' {
                 if let Some(s) = read_string(&self.source[pos..], pos) {
                     self.pos += s.len() + 2;
-                    return Some(s)
+                    return s
                 }
             } else if ch.is_whitespace() {
                 self.pos += 1;
             } else if let Some(sym) = read_symbol(&self.source[pos..], pos) {
                     self.pos += sym.len();
-                    return Some(sym)
+                    return sym
                 }
         }
 
-        None
+        Token::End(self.source.len())
     }
 }
 
@@ -139,6 +136,7 @@ impl<'a> Token<'a> {
             Token::SymbolWithKeyType(x, y, _) => x.len() + "::".len() + y.len() + "::KEY".len(),
             Token::Pipe(_) => "|".len(),
             Token::Op(o, _) => o.len(),
+            Token::End(_) => 0,
         }
     }
 
@@ -149,6 +147,7 @@ impl<'a> Token<'a> {
             Token::SymbolWithKeyType(_, _, pos) => *pos,
             Token::Pipe(pos) => *pos,
             Token::Op(_, pos) => *pos,
+            Token::End(pos) => *pos,
         }
     }
 }
@@ -161,6 +160,7 @@ impl<'a> fmt::Display for Token<'a> {
             Token::SymbolWithKeyType(x, y, _) => write!(f, "{}::{}::KEY", x, y),
             Token::Pipe(_) => write!(f, "|"),
             Token::Op(o, _) => write!(f, "{}", o),
+            Token::End(_) => Ok(()),
         }        
     }
 }
@@ -236,9 +236,13 @@ mod tests {
     }
 
     fn tokenize(source: &str) -> Option<Vec<Token<'_>>> {
-        let tokenizer = Tokenizer::new(source);
+        let mut tokenizer = Tokenizer::new(source);
         let mut v = Vec::new();
-        for t in tokenizer {
+        while let t = tokenizer.next() {
+            if matches!(t, Token::End(_)) {
+                break;
+            }
+
             v.push(t);
         }
 
