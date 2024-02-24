@@ -6,6 +6,7 @@ pub enum Token<'a> {
     SymbolWithType(&'a str, &'a str, usize),
     SymbolWithKeyType(&'a str, &'a str, usize),
     Pipe(usize),
+    Op(&'static str, usize),
 }
 
 pub struct Tokenizer<'a> {
@@ -27,6 +28,10 @@ impl<'a> Iterator for Tokenizer<'a> {
             if ch == '|' {
                 self.pos += 1;
                 return Some(Token::Pipe(pos))
+            } else if is_operator(ch) {
+                let op = read_operator(&self.source[pos..]);
+                self.pos += op.len();
+                return Some(Token::Op(op, pos));
             } else if ch == '"' {
                 if let Some(s) = read_string(&self.source[pos..], pos) {
                     self.pos += s.len() + 2;
@@ -87,6 +92,35 @@ fn read_string(source: &str, offset: usize) -> Option<Token<'_>> {
     None
 }
 
+fn is_operator(c: char) -> bool {
+    c == '<' || c == '>' || c == '='
+}
+
+fn read_operator(source: &str) -> &'static str {
+    let mut chars = source.chars();
+    while let Some(first) = chars.next() {
+        if first == '=' {
+            return "=";
+        } else if first == '<' {
+            if let Some('=') = chars.next() {
+                return "<=";
+            } else {
+                return "<";
+            }
+        } else if first == '>' {
+            if let Some('=') = chars.next() {
+                return ">=";
+            } else {
+                return ">";
+            }
+        } else {
+            panic!()
+        }
+    }
+
+    panic!()
+}
+
 fn read_util_whitespace(source: &str) -> &str {
     for (pos, ch) in source.char_indices() {
         if ch.is_whitespace() {
@@ -104,6 +138,7 @@ impl<'a> Token<'a> {
             Token::SymbolWithType(x, y, _) => x.len() + "::".len() + y.len(),
             Token::SymbolWithKeyType(x, y, _) => x.len() + "::".len() + y.len() + "::KEY".len(),
             Token::Pipe(_) => "|".len(),
+            Token::Op(o, _) => o.len(),
         }
     }
 
@@ -113,6 +148,7 @@ impl<'a> Token<'a> {
             Token::SymbolWithType(_, _, pos) => *pos,
             Token::SymbolWithKeyType(_, _, pos) => *pos,
             Token::Pipe(pos) => *pos,
+            Token::Op(_, pos) => *pos,
         }
     }
 }
@@ -124,6 +160,7 @@ impl<'a> fmt::Display for Token<'a> {
             Token::SymbolWithType(x, y, _) => write!(f, "{}::{}", x, y),
             Token::SymbolWithKeyType(x, y, _) => write!(f, "{}::{}::KEY", x, y),
             Token::Pipe(_) => write!(f, "|"),
+            Token::Op(o, _) => write!(f, "{}", o),
         }        
     }
 }
@@ -168,6 +205,12 @@ mod tests {
         };
     }
 
+    macro_rules! op {
+        ($o:literal) => {
+            Token::Op($o, _)
+        };
+    }
+
     macro_rules! assert_tokenize {
         ($source:literal, $($token:pat),*) => {
             let result = tokenize($source).unwrap();
@@ -188,6 +231,8 @@ mod tests {
         assert_tokenize!("create_table abc::TEXT", symbol!("create_table", 0), symbol_with_type!("abc", "TEXT", 13));
         assert_tokenize!("document.id document.name", symbol!("document.id", 0), symbol!("document.name", 12));
         assert_tokenize!(r#"a "b cd" e"#, symbol!("a", 0), symbol!("b cd", 2), symbol!("e", 9));
+        assert_tokenize!("id = 1 name = something", symbol!("id"), op!("="), symbol!("1"), symbol!("name"), op!("="), symbol!("something"));
+        assert_tokenize!("< > <= >= =", op!("<"), op!(">"), op!("<="), op!(">="), op!("="));
     }
 
     fn tokenize(source: &str) -> Option<Vec<Token<'_>>> {

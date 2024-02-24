@@ -99,7 +99,7 @@ fn read_source<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query<'a>, ParseErro
 fn read_operator(t: Option<Token>) -> Result<Operator, ParseError> {
     if let Some(token) = t {
         match token {
-            Token::Symbol(s, _) => match s {
+            Token::Op(s, _) => match s {
                 "=" => Ok(Operator::EQ),
                 ">" => Ok(Operator::GT),
                 ">=" => Ok(Operator::GE),
@@ -148,6 +148,7 @@ fn read_tuple<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Vec<(AttrKind, &'a st
             Token::Pipe(_) => break,
             Token::SymbolWithType(value, kind, pos) => values.push((AttrKind::from_str(kind).map_err(|_| ParseError{ msg: "Unknown type", pos })?, value)),
             Token::SymbolWithKeyType(_, _, pos) => return Err(ParseError{ msg: "Expected a symbol, got typed field", pos }),
+            Token::Op(_, _) => todo!(),
         }
     }
 
@@ -163,6 +164,7 @@ fn read_list<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Vec<&'a str>, ParseErr
             Token::Pipe(_) => break,
             Token::SymbolWithType(_, _, pos) => return Err(ParseError{ msg: "Expected a symbol, got typed field", pos }),
             Token::SymbolWithKeyType(_, _, pos) => return Err(ParseError{ msg: "Expected a symbol, got typed field", pos }),
+            Token::Op(_, _) => todo!(),
         }
     }
 
@@ -171,11 +173,11 @@ fn read_list<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Vec<&'a str>, ParseErr
 
 fn read_index_scan<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query<'a>, ParseError> {
     let index = read_symbol(tokenizer.next())?;
-    let op = read_symbol(tokenizer.next())?;
+    let op = read_operator(tokenizer.next())?;
     let val = read_symbol(tokenizer.next())?;
     expect_pipe_or_end(tokenizer)?;
 
-    Ok(Query::scan_index(index, op.parse()?, val))
+    Ok(Query::scan_index(index, op, val))
 }
 
 fn expect_pipe_or_end(tokenizer: &mut Tokenizer) -> Result<(), ParseError> {
