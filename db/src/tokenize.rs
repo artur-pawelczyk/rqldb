@@ -238,7 +238,8 @@ mod tests {
     fn tokenize(source: &str) -> Option<Vec<Token<'_>>> {
         let mut tokenizer = Tokenizer::new(source);
         let mut v = Vec::new();
-        while let t = tokenizer.next() {
+        loop {
+            let t = tokenizer.next();
             if matches!(t, Token::End(_)) {
                 break;
             }

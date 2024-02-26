@@ -27,7 +27,8 @@ pub fn parse_query(query_str: &str) -> Result<Query<'_>, ParseError> {
     let mut tokenizer = Tokenizer::new(query_str);
     let mut query = read_source(&mut tokenizer)?;
 
-    while let token = tokenizer.next() {
+    loop {
+        let token = tokenizer.next();
         match token {
             Token::Symbol(name, _) => match name {
                 "select_all" => query = query.select_all(),
@@ -125,7 +126,8 @@ fn read_table_scan<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query<'a>, Parse
 fn read_tuple<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Vec<(AttrKind, &'a str)>, ParseError> {
     let mut values: Vec<(AttrKind, &str)> = Vec::new();
 
-    while let token = tokenizer.next() {
+    loop {
+        let token = tokenizer.next();
         match token {
             Token::Symbol(value, _) => values.push((AttrKind::Infer, value)),
             Token::Pipe(_) => break,
@@ -142,7 +144,8 @@ fn read_tuple<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Vec<(AttrKind, &'a st
 fn read_list<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Vec<&'a str>, ParseError> {
     let mut values: Vec<&str> = Vec::new();
 
-    while let token = tokenizer.next() {
+    loop {
+        let token = tokenizer.next();
         match token {
             Token::Symbol(name, _) => values.push(name),
             Token::Pipe(_) => break,
@@ -181,7 +184,8 @@ pub fn parse_command(source: &str) -> Result<Command, ParseError> {
     let mut tokenizer = Tokenizer::new(source);
     let mut command = Command::create_table("");
 
-    while let token = tokenizer.next() {
+    loop {
+        let token = tokenizer.next();
         match token {
             Token::Symbol(name, _) => {
                 if name == "create_table" {
@@ -191,7 +195,8 @@ pub fn parse_command(source: &str) -> Result<Command, ParseError> {
                     };
                     command = Command::create_table(name);
 
-                    while let arg = tokenizer.next() {
+                    loop {
+                        let arg = tokenizer.next();
                         match arg {
                             Token::SymbolWithType(name, kind, _) => { command = command.column(name, str_to_type(kind)?); },
                             Token::SymbolWithKeyType(name, kind, _) => { command = command.indexed_column(name, str_to_type(kind)?); },
