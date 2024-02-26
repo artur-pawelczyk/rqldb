@@ -10,6 +10,9 @@ pub enum Token<'a> {
     End(usize),
 }
 
+#[derive(Debug)]
+pub struct TokenizerError;
+
 pub struct Tokenizer<'a> {
     source: &'a str,
     pos: usize,
@@ -20,29 +23,29 @@ impl<'a> Tokenizer<'a> {
         Self{ source, pos: 0 }
     }
 
-    pub fn next(&mut self) -> Token<'a> {
+    pub fn next(&mut self) -> Result<Token<'a>, TokenizerError> {
         for (pos, ch) in self.source.char_indices().skip(self.pos) {
             if ch == '|' {
                 self.pos += 1;
-                return Token::Pipe(pos)
+                return Ok(Token::Pipe(pos))
             } else if is_operator(ch) {
                 let op = read_operator(&self.source[pos..]);
                 self.pos += op.len();
-                return Token::Op(op, pos);
+                return Ok(Token::Op(op, pos));
             } else if ch == '"' {
                 if let Some(s) = read_string(&self.source[pos..], pos) {
                     self.pos += s.len() + 2;
-                    return s
+                    return Ok(s)
                 }
             } else if ch.is_whitespace() {
                 self.pos += 1;
             } else if let Some(sym) = read_symbol(&self.source[pos..], pos) {
                     self.pos += sym.len();
-                    return sym
+                    return Ok(sym)
                 }
         }
 
-        Token::End(self.source.len())
+        Ok(Token::End(self.source.len()))
     }
 }
 
@@ -239,7 +242,7 @@ mod tests {
         let mut tokenizer = Tokenizer::new(source);
         let mut v = Vec::new();
         loop {
-            let t = tokenizer.next();
+            let t = tokenizer.next().unwrap();
             if matches!(t, Token::End(_)) {
                 break;
             }

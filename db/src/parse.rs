@@ -1,6 +1,6 @@
 use crate::dsl::{Command, Query, Operator, AttrKind};
 use crate::schema::Type;
-use crate::tokenize::{Token, Tokenizer};
+use crate::tokenize::{Token, Tokenizer, TokenizerError};
 
 use std::fmt;
 use std::str::FromStr;
@@ -23,37 +23,43 @@ impl fmt::Display for ParseError {
     }
 }
 
+impl From<TokenizerError> for ParseError {
+    fn from(_: TokenizerError) -> Self {
+        Self::msg("tokenizer error")
+    }
+}
+
 pub fn parse_query(query_str: &str) -> Result<Query<'_>, ParseError> {
     let mut tokenizer = Tokenizer::new(query_str);
     let mut query = read_source(&mut tokenizer)?;
 
     loop {
-        let token = tokenizer.next();
+        let token = tokenizer.next()?;
         match token {
             Token::Symbol(name, _) => match name {
                 "select_all" => query = query.select_all(),
-                "insert_into" => query = query.insert_into(read_symbol(tokenizer.next())?),
+                "insert_into" => query = query.insert_into(read_symbol(tokenizer.next()?)?),
                 "filter" => {
-                    let left = read_symbol(tokenizer.next())?;
-                    let op = read_operator(tokenizer.next())?;
-                    let right = read_symbol(tokenizer.next())?;
-                    check_if_end(tokenizer.next())?;
+                    let left = read_symbol(tokenizer.next()?)?;
+                    let op = read_operator(tokenizer.next()?)?;
+                    let right = read_symbol(tokenizer.next()?)?;
+                    check_if_end(tokenizer.next()?)?;
                     query = query.filter(left, op, right);
                 },
                 "join" => {
-                    let table = read_symbol(tokenizer.next())?;
-                    let left = read_symbol(tokenizer.next())?;
-                    let right = read_symbol(tokenizer.next())?;
-                    check_if_end(tokenizer.next())?;
+                    let table = read_symbol(tokenizer.next()?)?;
+                    let left = read_symbol(tokenizer.next()?)?;
+                    let right = read_symbol(tokenizer.next()?)?;
+                    check_if_end(tokenizer.next()?)?;
                     query = query.join(table, left, right);
                 },
                 "apply" => {
-                    let function = read_symbol(tokenizer.next())?;
+                    let function = read_symbol(tokenizer.next()?)?;
                     let args = read_list(&mut tokenizer)?;
                     query = query.apply(function, &args);
                 }
                 "count" => {
-                    check_if_end(tokenizer.next())?;
+                    check_if_end(tokenizer.next()?)?;
                     query = query.count();
                 },
                 "delete" => query = query.delete(),
@@ -76,7 +82,7 @@ fn check_if_end(token: Token) -> Result<(), ParseError> {
 }
 
 fn read_source<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query<'a>, ParseError> {
-    let function = match tokenizer.next() {
+    let function = match tokenizer.next()? {
         Token::End(_) => return Err(ParseError::msg("Expected source function, found end of stream")),
         x => x,
     };
@@ -114,7 +120,7 @@ fn read_symbol(t: Token<'_>) -> Result<&str, ParseError> {
 }
 
 fn read_table_scan<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query<'a>, ParseError> {
-    match tokenizer.next() {
+    match tokenizer.next()? {
         Token::Symbol(table, _) => {
             expect_pipe_or_end(tokenizer)?;
             Ok(Query::scan(table))
@@ -127,7 +133,7 @@ fn read_tuple<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Vec<(AttrKind, &'a st
     let mut values: Vec<(AttrKind, &str)> = Vec::new();
 
     loop {
-        let token = tokenizer.next();
+        let token = tokenizer.next()?;
         match token {
             Token::Symbol(value, _) => values.push((AttrKind::Infer, value)),
             Token::Pipe(_) => break,
@@ -145,7 +151,7 @@ fn read_list<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Vec<&'a str>, ParseErr
     let mut values: Vec<&str> = Vec::new();
 
     loop {
-        let token = tokenizer.next();
+        let token = tokenizer.next()?;
         match token {
             Token::Symbol(name, _) => values.push(name),
             Token::Pipe(_) => break,
@@ -160,16 +166,16 @@ fn read_list<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Vec<&'a str>, ParseErr
 }
 
 fn read_index_scan<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query<'a>, ParseError> {
-    let index = read_symbol(tokenizer.next())?;
-    let op = read_operator(tokenizer.next())?;
-    let val = read_symbol(tokenizer.next())?;
+    let index = read_symbol(tokenizer.next()?)?;
+    let op = read_operator(tokenizer.next()?)?;
+    let val = read_symbol(tokenizer.next()?)?;
     expect_pipe_or_end(tokenizer)?;
 
     Ok(Query::scan_index(index, op, val))
 }
 
 fn expect_pipe_or_end(tokenizer: &mut Tokenizer) -> Result<(), ParseError> {
-    let token = tokenizer.next();
+    let token = tokenizer.next()?;
     match token {
         Token::Pipe(_) => Ok(()),
         Token::End(_) => Ok(()),
@@ -185,18 +191,18 @@ pub fn parse_command(source: &str) -> Result<Command, ParseError> {
     let mut command = Command::create_table("");
 
     loop {
-        let token = tokenizer.next();
+        let token = tokenizer.next()?;
         match token {
             Token::Symbol(name, _) => {
                 if name == "create_table" {
-                    let name = match tokenizer.next() {
+                    let name = match tokenizer.next()? {
                         Token::Symbol(name, _) => name,
                         _ => return Err(ParseError::msg("Expected table name"))
                     };
                     command = Command::create_table(name);
 
                     loop {
-                        let arg = tokenizer.next();
+                        let arg = tokenizer.next()?;
                         match arg {
                             Token::SymbolWithType(name, kind, _) => { command = command.column(name, str_to_type(kind)?); },
                             Token::SymbolWithKeyType(name, kind, _) => { command = command.indexed_column(name, str_to_type(kind)?); },
