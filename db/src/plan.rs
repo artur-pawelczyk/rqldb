@@ -206,7 +206,7 @@ impl<'a> Source<'a> {
     }
 
     fn from_tuple(values: &[TupleAttr<'_>]) -> Self {
-        let attributes = values.iter().enumerate().map(|(i, attr)| Attribute::numbered(i).with_type((attr.kind).into())).collect();
+        let attributes = values.iter().enumerate().map(|(i, attr)| Attribute::named(i, attr.name.as_ref()).with_type((attr.kind).into())).collect();
         Self {
             attributes,
             contents: Contents::Tuple(values.iter().map(|attr| String::from(attr.value)).collect()),
@@ -442,7 +442,7 @@ fn validate_type(value: &str, kind: Type) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dsl::AttrKind;
+    use crate::dsl::{AttrKind, TupleBuilder};
     use crate::dsl::Operator::{EQ, GT};
     use crate::schema::Type;
 
@@ -533,8 +533,14 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(result.err(), Some("Cannot filter untyped attribute"));
 
-        let result = compute_plan(&schema, &dsl::Query::tuple(&[(AttrKind::Number, "1"), (AttrKind::Text, "some text")]).filter("0", Operator::EQ, "1"));
-        assert!(result.is_ok());
+        let result = compute_plan(&schema, &dsl::Query::tuple(
+            TupleBuilder::new()
+                .typed(AttrKind::Number, "id", "1")
+                .typed(AttrKind::Text, "name", "some text")
+        ).filter("id", Operator::EQ, "1"));
+
+        let filter = expect_filter(result);
+        assert_eq!(filter.attribute.name.as_ref(), "id");
     }
 
     fn expect_join<'a>(result: Result<Plan<'a>, &str>) -> Join<'a> {

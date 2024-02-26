@@ -1,4 +1,4 @@
-use crate::dsl::{Command, Query, Operator, AttrKind};
+use crate::dsl::{Command, Query, Operator, AttrKind, TupleAttr, TupleBuilder, IntoTuple};
 use crate::schema::Type;
 use crate::tokenize::{Token, Tokenizer, TokenizerError};
 
@@ -129,22 +129,25 @@ fn read_table_scan<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query<'a>, Parse
     }
 }
 
-fn read_tuple<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Vec<(AttrKind, &'a str)>, ParseError> {
-    let mut values: Vec<(AttrKind, &str)> = Vec::new();
+fn read_tuple<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Vec<TupleAttr<'a>>, ParseError> {
+    let mut tuple_builder = TupleBuilder::new();
 
     loop {
         let token = tokenizer.next()?;
         match token {
-            Token::Symbol(value, _) => values.push((AttrKind::Infer, value)),
+            Token::Symbol(value, _) => { tuple_builder = tuple_builder.numbered(value) },
             Token::Pipe(_) => break,
             Token::End(_) => break,
-            Token::SymbolWithType(value, kind, pos) => values.push((AttrKind::from_str(kind).map_err(|_| ParseError{ msg: "Unknown type", pos })?, value)),
+            Token::SymbolWithType(value, kind, pos) => {
+                let kind = AttrKind::from_str(kind).map_err(|_| ParseError{ msg: "Unknown type", pos })?;
+                tuple_builder = tuple_builder.numbered_and_typed(kind, value);
+            },
             Token::SymbolWithKeyType(_, _, pos) => return Err(ParseError{ msg: "Expected a symbol, got typed field", pos }),
-            Token::Op(_, _) => todo!(),
+            t => return Err(ParseError { msg: "Unexpected token", pos: t.pos() }),
         }
     }
 
-    Ok(values)
+    Ok(tuple_builder.into_tuple())
 }
 
 fn read_list<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Vec<&'a str>, ParseError> {

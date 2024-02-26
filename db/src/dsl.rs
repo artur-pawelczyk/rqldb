@@ -25,9 +25,9 @@ impl<'a> Query<'a> {
         }
     }
 
-    pub fn tuple(values: &[(AttrKind, &'a str)]) -> Self {
+    pub fn tuple(values: impl IntoTuple<'a>) -> Self {
         Self {
-            source: Source::Tuple(values.iter().map(|a| (*a).into()).collect()),
+            source: Source::Tuple(values.into_tuple()),
             join_sources: vec![],
             filters: Vec::new(),
             finisher: Finisher::AllColumns,
@@ -37,7 +37,7 @@ impl<'a> Query<'a> {
     // TODO: Remove this function
     pub fn tuple_untyped(values: &[&'a str]) -> Self {
         Self {
-            source: Source::Tuple(values.iter().map(|v| TupleAttr::infer(*v)).collect()),
+            source: Source::Tuple(values.iter().fold(TupleBuilder::new(), |b, v| b.numbered(v)).into_tuple()),
             join_sources: vec![],
             filters: Vec::new(),
             finisher: Finisher::AllColumns,
@@ -180,21 +180,74 @@ impl<'a> fmt::Display for AttrKind {
     }
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct TupleAttr<'a> {
     pub kind: AttrKind,
+    pub name: Box<str>,
     pub value: &'a str,
 }
 
-impl<'a> From<(AttrKind, &'a str)> for TupleAttr<'a> {
-    fn from((kind, value): (AttrKind, &'a str)) -> Self {
-        Self { kind, value }
+pub trait IntoTuple<'a> {
+    fn into_tuple(self) -> Vec<TupleAttr<'a>>;
+}
+
+impl<'a> IntoTuple<'a> for &[&'a str] {
+    fn into_tuple(self) -> Vec<TupleAttr<'a>> {
+        self.iter().fold(TupleBuilder::new(), |b, v| b.numbered(v)).into_tuple()
     }
 }
 
-impl<'a> TupleAttr<'a> {
-    fn infer(value: &'a str) -> Self {
-        Self { kind: AttrKind::Infer, value }
+impl<'a> IntoTuple<'a> for &[TupleAttr<'a>] {
+    fn into_tuple(self) -> Vec<TupleAttr<'a>> {
+        self.to_vec()
+    }
+}
+
+impl<'a> IntoTuple<'a> for Vec<TupleAttr<'a>> {
+    fn into_tuple(self) -> Vec<TupleAttr<'a>> {
+        self
+    }
+}
+
+impl<'a> IntoTuple<'a> for &Vec<TupleAttr<'a>> {
+    fn into_tuple(self) -> Vec<TupleAttr<'a>> {
+        self.to_vec()
+    }
+}
+
+pub struct TupleBuilder<'a>(Vec<TupleAttr<'a>>);
+
+impl<'a> TupleBuilder<'a> {
+    pub fn new() -> Self {
+        TupleBuilder(Default::default())
+    }
+
+    pub fn numbered_and_typed(mut self, kind: AttrKind, value: &'a str) -> Self {
+        let i = self.0.len();
+        self.0.push(TupleAttr { name: Box::from(i.to_string()), kind, value });
+        self
+    }
+
+    pub fn numbered(mut self, value: &'a str) -> Self {
+        let i = self.0.len();
+        self.0.push(TupleAttr { name: Box::from(i.to_string()), kind: AttrKind::Infer, value });
+        self
+    }
+
+    pub fn typed(mut self, kind: AttrKind, name: &'a str, value: &'a str) -> Self {
+        self.0.push(TupleAttr { name: Box::from(name), kind, value });
+        self
+    }
+    
+    pub fn inferred(mut self, name: &'a str, value: &'a str) -> Self {
+        self.0.push(TupleAttr { name: Box::from(name), kind: AttrKind::Infer, value });
+        self
+    }
+}
+
+impl<'a> IntoTuple<'a> for TupleBuilder<'a> {
+    fn into_tuple(self) -> Vec<TupleAttr<'a>> {
+        self.0
     }
 }
 
