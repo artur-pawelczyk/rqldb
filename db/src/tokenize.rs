@@ -50,7 +50,7 @@ impl<'a> Tokenizer<'a> {
 }
 
 fn read_symbol(source: &str, offset: usize) -> Option<Token<'_>> {
-    let part = read_util_whitespace(source);
+    let part = read_util_whitespace(source); // TODO: Don't skip the whitespace here; do it in the caller
     let mut chars = part.char_indices();
 
     while let Some((pos, ch)) = chars.next() {
@@ -97,40 +97,22 @@ fn is_operator(c: char) -> bool {
 }
 
 fn read_operator(source: &str) -> Result<&'static str, TokenizerError> {
-    let mut chars = source.chars();
+    let end = source.char_indices()
+        .take_while(|(_, c)| !c.is_whitespace())
+        .last()
+        .map(|(i, _)| i + 1)
+        .unwrap_or(0);
 
-    let first = chars.next().ok_or(TokenizerError)?;
-    let second = chars.next().filter(|c| !c.is_whitespace());
-    let third;
-    if second.is_some() {
-        third = chars.next().filter(|c| !c.is_whitespace());
-    } else {
-        third = None;
+    let op = &source[0..end];
+
+    match op {
+        "=" => Ok("="),
+        ">" => Ok(">"),
+        "<" => Ok("<"),
+        "<=" => Ok("<="),
+        ">=" => Ok(">="),
+        _ => Err(TokenizerError),
     }
-
-    if second.is_none() || third.is_none() {
-        if first == '=' && second.is_none() {
-            return Ok("=")
-        }
-
-        if first == '<' && second.is_none() {
-            return Ok("<");
-        }
-
-        if first == '>' && second.is_none() {
-            return Ok(">");
-        }
-
-        if first == '<' && second == Some('=') {
-            return Ok("<=");
-        }
-
-        if first == '>' && second == Some('=') {
-            return Ok(">=");
-        }
-    }
-
-    Err(TokenizerError)
 }
 
 fn read_util_whitespace(source: &str) -> &str {
