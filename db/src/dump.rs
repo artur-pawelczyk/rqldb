@@ -63,7 +63,7 @@ mod tests {
                           .indexed_column("id", Type::NUMBER)
                           .column("content", Type::TEXT));
 
-        let creation_query = Query::tuple_untyped(&["1", "first"]).insert_into("example");
+        let creation_query = Query::tuple(&["1", "first"]).insert_into("example");
         db.execute_query(&creation_query).unwrap();
 
         let object = db.raw_object("example").unwrap();

@@ -273,7 +273,7 @@ mod tests {
             .column("content", Type::TEXT);
         db.execute_create(&command);
 
-        let insert_query = Query::tuple_untyped(&["1", "something"]).insert_into("document");
+        let insert_query = Query::tuple(&["1", "something"]).insert_into("document");
         let insert_result = db.execute_query(&insert_query);
         assert!(insert_result.is_ok());
 
@@ -295,7 +295,7 @@ mod tests {
             .column("content", Type::TEXT);
         db.execute_create(&command);
 
-        let result = db.execute_query(&Query::tuple_untyped(&["not-a-number", "random-text"]).insert_into("document"));
+        let result = db.execute_query(&Query::tuple(&["not-a-number", "random-text"]).insert_into("document"));
         assert!(result.is_err());
     }
 
@@ -306,7 +306,7 @@ mod tests {
 
         for i in 1..20 {
             let content = format!("example{}", i);
-            db.execute_query(&Query::tuple_untyped(&[i.to_string().as_str(), content.as_str()]).insert_into("document")).expect("Insert");
+            db.execute_query(&Query::tuple(&[i.to_string().as_str(), content.as_str()]).insert_into("document")).expect("Insert");
         }
 
         let mut result = db.execute_query(&Query::scan("document").filter("document.id", Operator::EQ, "5")).unwrap();
@@ -327,9 +327,9 @@ mod tests {
         db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT).column("type_id", Type::NUMBER));
         db.execute_create(&Command::create_table("type").column("id", Type::NUMBER).column("name", Type::TEXT));
 
-        db.execute_query(&Query::tuple_untyped(&["1", "example", "2"]).insert_into("document")).unwrap();
-        db.execute_query(&Query::tuple_untyped(&["1", "type_a"]).insert_into("type")).unwrap();
-        db.execute_query(&Query::tuple_untyped(&["2", "type_b"]).insert_into("type")).unwrap();
+        db.execute_query(&Query::tuple(&["1", "example", "2"]).insert_into("document")).unwrap();
+        db.execute_query(&Query::tuple(&["1", "type_a"]).insert_into("type")).unwrap();
+        db.execute_query(&Query::tuple(&["2", "type_b"]).insert_into("type")).unwrap();
 
         let result = db.execute_query(&Query::scan("document").join("type", "document.type_id", "type.id")).unwrap();
         assert_eq!(*result.attributes, ["document.id", "document.content", "document.type_id", "type.id", "type.name"]);
@@ -349,7 +349,7 @@ mod tests {
                           .column("size", Type::NUMBER));
 
         for i in 1..=10 {
-            db.execute_query(&Query::tuple_untyped(&[i.to_string().as_str(), "example", i.to_string().as_str()]).insert_into("document")).expect("Insert");
+            db.execute_query(&Query::tuple(&[i.to_string().as_str(), "example", i.to_string().as_str()]).insert_into("document")).expect("Insert");
         }
 
         let sum_result = db.execute_query(&Query::scan("document").apply("sum", &["document.size"])).unwrap();
@@ -373,7 +373,7 @@ mod tests {
         db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT));
 
         for i in 1..21 {
-            db.execute_query(&Query::tuple_untyped(&[i.to_string().as_str(), "example"]).insert_into("document")).expect("Insert");
+            db.execute_query(&Query::tuple(&[i.to_string().as_str(), "example"]).insert_into("document")).expect("Insert");
         }
 
         let result = db.execute_query(&Query::scan("document").count()).unwrap();
@@ -388,9 +388,9 @@ mod tests {
     fn delete() {
         let mut db = Database::default();
         db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT));
-        db.execute_query(&Query::tuple_untyped(&["1", "the content"]).insert_into("document")).unwrap();
+        db.execute_query(&Query::tuple(&["1", "the content"]).insert_into("document")).unwrap();
 
-        let tuple_delete = db.execute_query(&Query::tuple_untyped(&["1"]).delete());
+        let tuple_delete = db.execute_query(&Query::tuple(&["1"]).delete());
         assert!(tuple_delete.is_err());
 
         let no_such_table = db.execute_query(&Query::scan("something").delete());
@@ -407,7 +407,7 @@ mod tests {
         let mut db = Database::default();
         db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT));
 
-        let insert_query = Query::tuple_untyped(&["1", "the content"]).insert_into("document");
+        let insert_query = Query::tuple(&["1", "the content"]).insert_into("document");
         db.execute_query(&insert_query).unwrap();
         db.execute_query(&insert_query).unwrap();
 
@@ -459,7 +459,7 @@ mod tests {
 
         for i in 1..20 {
             let content = format!("example{}", i);
-            db.execute_query(&Query::tuple_untyped(&[i.to_string().as_str(), content.as_str()]).insert_into("document")).expect("Insert");
+            db.execute_query(&Query::tuple(&[i.to_string().as_str(), content.as_str()]).insert_into("document")).expect("Insert");
         }
 
         let result = db.execute_query(&Query::scan_index("document.id", Operator::EQ, "5")).unwrap();
@@ -482,7 +482,7 @@ mod tests {
         let mut db = Database::default();
         db.execute_create(&Command::create_table("first").indexed_column("id", Type::NUMBER).column("content", Type::TEXT));
         db.execute_create(&Command::create_table("second").column("num", Type::NUMBER));
-        db.execute_query(&Query::tuple_untyped(&["1", "one"]).insert_into("first")).unwrap();
+        db.execute_query(&Query::tuple(&["1", "one"][..]).insert_into("first")).unwrap();
 
         let expected = concat!(
             "create_table first id::NUMBER::KEY content::TEXT\n",

@@ -34,16 +34,6 @@ impl<'a> Query<'a> {
         }
     }
 
-    // TODO: Remove this function
-    pub fn tuple_untyped(values: &[&'a str]) -> Self {
-        Self {
-            source: Source::Tuple(values.iter().fold(TupleBuilder::new(), |b, v| b.numbered(v)).into_tuple()),
-            join_sources: vec![],
-            filters: Vec::new(),
-            finisher: Finisher::AllColumns,
-        }
-    }
-
     pub fn join(mut self, table: &'a str, left: &'a str, right: &'a str) -> Self {
         self.join_sources.push(JoinSource{ table, left, right });
         self
@@ -194,6 +184,12 @@ pub trait IntoTuple<'a> {
 impl<'a> IntoTuple<'a> for &[&'a str] {
     fn into_tuple(self) -> Vec<TupleAttr<'a>> {
         self.iter().fold(TupleBuilder::new(), |b, v| b.numbered(v)).into_tuple()
+    }
+}
+
+impl<'a, const N: usize> IntoTuple<'a> for &[&'a str; N] {
+    fn into_tuple(self) -> Vec<TupleAttr<'a>> {
+        self.iter().fold(TupleBuilder::new(), |b, v| b.numbered(v)).into_tuple()        
     }
 }
 
@@ -427,7 +423,7 @@ mod tests {
 
     #[test]
     fn source_is_tuple() {
-        let query = Query::tuple_untyped(&["1", "example_value"]).insert_into("example");
+        let query = Query::tuple(&["1", "example_value"]).insert_into("example");
         assert_eq!(query.to_string(), "tuple 1 example_value | insert_into example");
     }
 
@@ -475,7 +471,7 @@ mod tests {
 
     #[test]
     fn quotes() {
-        let query = Query::tuple_untyped(&["1", "foo bar"]).insert_into("example");
+        let query = Query::tuple(&["1", "foo bar"]).insert_into("example");
 
         assert_eq!("tuple 1 \"foo bar\" | insert_into example", query.to_string());
     }
