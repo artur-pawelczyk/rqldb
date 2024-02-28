@@ -328,14 +328,18 @@ fn write_tokens(f: &mut fmt::Formatter, tokens: &[&str]) -> fmt::Result {
 fn write_attrs(f: &mut fmt::Formatter, attrs: &[TupleAttr<'_>]) -> fmt::Result {
     let mut i = attrs.iter().peekable();
     while let Some(attr) = i.next() {
+        if attr.name.chars().next().map(|c| !c.is_numeric()).unwrap_or(false) {
+            if attr.kind == AttrKind::Infer {
+                write!(f, "{} = ", attr.name)?;
+            } else {
+                write!(f, "{}::{} = ", attr.name, attr.kind)?;
+            }
+        }
+
         if attr.value.contains(' ') {
             write!(f, "\"{}\"", attr.value)?;
         } else {
             write!(f, "{}" , attr.value)?;
-        }
-
-        if attr.kind != AttrKind::Infer {
-            write!(f, "::{}", attr.kind)?;
         }
 
         if i.peek().is_some() {

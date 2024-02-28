@@ -47,6 +47,13 @@ impl<'a> Tokenizer<'a> {
 
         Ok(Token::End(self.source.len()))
     }
+
+    pub fn peek(&mut self) -> Result<Token<'a>, TokenizerError> {
+        let pos_before = self.pos;
+        let token = self.next();
+        self.pos = pos_before;
+        token
+    }
 }
 
 fn read_symbol(source: &str, offset: usize) -> Option<Token<'_>> {

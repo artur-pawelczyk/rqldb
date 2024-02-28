@@ -135,12 +135,32 @@ fn read_tuple<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Vec<TupleAttr<'a>>, P
     loop {
         let token = tokenizer.next()?;
         match token {
-            Token::Symbol(value, _) => { tuple_builder = tuple_builder.numbered(value) },
+            Token::Symbol(value_or_name, _) => {
+                if matches!(tokenizer.peek()?, Token::Op("=", _)) {
+                    tokenizer.next()?;
+                    if let Token::Symbol(value, _) = tokenizer.next()? {
+                        tuple_builder = tuple_builder.inferred(value_or_name, value);
+                    } else {
+                        return Err(ParseError::msg("Expected a symbol"));
+                    }
+                } else {
+                    tuple_builder = tuple_builder.numbered(value_or_name)
+                }
+            },
             Token::Pipe(_) => break,
             Token::End(_) => break,
-            Token::SymbolWithType(value, kind, pos) => {
+            Token::SymbolWithType(value_or_name, kind, pos) => {
                 let kind = AttrKind::from_str(kind).map_err(|_| ParseError{ msg: "Unknown type", pos })?;
-                tuple_builder = tuple_builder.numbered_and_typed(kind, value);
+                if matches!(tokenizer.peek()?, Token::Op("=", _)) {
+                    tokenizer.next()?;
+                    if let Token::Symbol(value, _) = tokenizer.next()? {
+                        tuple_builder = tuple_builder.typed(kind, value_or_name, value);
+                    } else {
+                        return Err(ParseError::msg("Expected a symbol"));
+                    }
+                } else {
+                    tuple_builder = tuple_builder.numbered_and_typed(kind, value_or_name)
+                }
             },
             Token::SymbolWithKeyType(_, _, pos) => return Err(ParseError{ msg: "Expected a symbol, got typed field", pos }),
             t => return Err(ParseError { msg: "Unexpected token", pos: t.pos() }),
@@ -275,10 +295,9 @@ mod tests {
     }
 
     #[test]
-    // TODO: Remove this syntax after named attributes in tuples are enforced,
-    // i.e. tuple id = 1 text = "some text"
-    fn test_parse_typed_tuple() {
-        assert_parse!("tuple 1::NUMBER something::TEXT | select_all");
+    fn test_parse_tuple() {
+        assert_parse!("tuple id = 1 name = something | select_all");
+        assert_parse!("tuple id::NUMBER = 1 name::TEXT = something | select_all");
     }
 
     #[test]
