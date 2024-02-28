@@ -244,8 +244,8 @@ mod tests {
                           .column("c", Type::TEXT)
                           .column("d", Type::TEXT));
 
-        db.execute_query(&Query::tuple_untyped(&["1", "test", "stuff"]).insert_into("example")).unwrap();
-        db.execute_query(&Query::tuple_untyped(&["2", "test2", "stuff"]).insert_into("example")).unwrap();
+        db.execute_query(&Query::tuple(&["1", "test", "stuff"]).insert_into("example")).unwrap();
+        db.execute_query(&Query::tuple(&["2", "test2", "stuff"]).insert_into("example")).unwrap();
 
         let mut out = Vec::new();
         write_db(&mut out, &db).unwrap();
@@ -260,7 +260,7 @@ mod tests {
     fn test_write_to_file() {
         let mut db = Database::default();
         db.execute_create(&Command::create_table("example").indexed_column("id", Type::NUMBER).column("content", Type::TEXT));
-        db.execute_query(&Query::tuple_untyped(&["1", "test"]).insert_into("example")).unwrap();
+        db.execute_query(&Query::tuple(&["1", "test"]).insert_into("example")).unwrap();
 
         let mut persist = TempFilePersist::new();
         persist.write(&db).unwrap();

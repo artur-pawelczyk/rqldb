@@ -83,8 +83,8 @@ mod tests {
         let mut db = Database::default();
         db.execute_create(&Command::create_table("example").indexed_column("id", Type::NUMBER).column("content", Type::TEXT));
 
-        db.execute_query(&Query::tuple_untyped(&["1", "test"]).insert_into("example")).unwrap();
-        db.execute_query(&Query::tuple_untyped(&["2", "test"]).insert_into("example")).unwrap();
+        db.execute_query(&Query::tuple(&["1", "test"]).insert_into("example")).unwrap();
+        db.execute_query(&Query::tuple(&["2", "test"]).insert_into("example")).unwrap();
 
         let raw_object = db.raw_object("example").unwrap();
         let mut out = Vec::new();
