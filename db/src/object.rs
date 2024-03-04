@@ -70,16 +70,15 @@ impl<'a> IndexedObject<'a> {
     }
 
     pub(crate) fn iter<'b>(&'b self) -> Box<dyn Iterator<Item = Tuple<'b>> + 'b> {
-        // TODO: This should skip deleted tuples
-        Box::new(self.tuples.iter().map(|bytes| Tuple::from_bytes(bytes, &self.attrs)))
+        Box::new(
+            self.tuples.iter().enumerate()
+                .filter(|(id, _)| !self.removed_ids.contains(id))
+                .map(|(_, bytes)| Tuple::from_bytes(bytes, &self.attrs))
+        )
     }
 
     pub(crate) fn remove_tuples(&mut self, ids: &[usize]) {
         self.removed_ids.extend(ids);
-    }
-
-    pub(crate) fn is_removed(&self, id: usize) -> bool {
-        self.removed_ids.contains(&id)
     }
 
     pub(crate) fn recover(snapshot: TempObject, table: &Relation) -> Self {
@@ -145,6 +144,10 @@ impl TempObject {
         Self{ values: vec![], attrs }
     }
 
+    pub fn from_relation(rel: &Relation) -> Self {
+        Self { values: vec![], attrs: rel.types() }
+    }
+
     pub fn push(&mut self, input_tuple: Vec<Vec<u8>>) {
         let mut raw_tuple = Vec::new();
         for (val, kind) in zip(input_tuple.iter(), self.attrs.iter()) {
@@ -158,6 +161,7 @@ impl TempObject {
         self.values.push(raw_tuple);
     }
 
+    // TODO: This function is confusing because it takes slice of owned String
     pub(crate) fn push_str(&mut self, vals: &[String]) {
         fn add_cell(val: &str, kind: Type, tuple: &mut Vec<u8>)  {
             match kind {
@@ -210,5 +214,31 @@ impl<'a> RawObjectView<'a> {
 
     pub fn types(&self) -> Vec<Type> {
         self.rel.types()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::schema::Schema;
+
+    #[test]
+    fn test_delete_tuples() {
+        let mut schema = Schema::default();
+        schema.create_table("example")
+            .column("id", Type::NUMBER)
+            .column("name", Type::TEXT)
+            .add();
+        let relation = schema.find_relation("example").unwrap();
+
+        let mut temp_obj = TempObject::from_relation(relation);
+        temp_obj.push_str(&["1".to_string(), "first".to_string()]);
+        temp_obj.push_str(&["2".to_string(), "second".to_string()]);
+
+        let mut obj = IndexedObject::recover(temp_obj, relation);
+        assert_eq!(obj.iter().count(), 2);
+
+        obj.remove_tuples(&[0]);
+        assert_eq!(obj.iter().count(), 1);
     }
 }

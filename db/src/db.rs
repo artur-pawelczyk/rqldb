@@ -80,7 +80,7 @@ impl<'obj> Database<'obj> {
                 _ => return Err("Multiple joins aren't supported")
             };
 
-            if !source.is_removed(idx) && test_filters(&plan.filters, &tuple) {
+            if test_filters(&plan.filters, &tuple) {
                 sink.accept_tuple(idx, &tuple);
             }
         }
@@ -170,13 +170,6 @@ impl<'a> ObjectView<'a> {
             Self::TupleRef(o, id) => Box::new(std::iter::once_with(|| o.get(*id).unwrap())),
             Self::Val(o) => o.iter(),
             Self::Empty => Box::new(std::iter::empty()),
-        }
-    }
-
-    fn is_removed(&self, id: usize) -> bool {
-        match self {
-            Self::Ref(object) => object.is_removed(id),
-            _ => false,
         }
     }
 }
