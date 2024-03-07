@@ -12,15 +12,15 @@ type::NUMBER
 published::BOOLEAN").unwrap());
     db.execute_create(&parse_command("create_table type id::NUMBER name::TEXT").unwrap());
 
-    let insert = parse_query("tuple 1 artictle | insert_into type").unwrap();
+    let insert = parse_query("tuple id = 1 name = artictle | insert_into type").unwrap();
     db.execute_query(&insert).unwrap();
-    let insert = parse_query("tuple 2 blog | insert_into type").unwrap();
+    let insert = parse_query("tuple id = 2 name = blog | insert_into type").unwrap();
     db.execute_query(&insert).unwrap();
-    let insert = parse_query("tuple 3 book | insert_into type").unwrap();
+    let insert = parse_query("tuple id = 3 name = book | insert_into type").unwrap();
     db.execute_query(&insert).unwrap();
-    let insert = parse_query("tuple 1 title content 2 true | insert_into document").unwrap();
+    let insert = parse_query("tuple id = 1 title = title1 content = content1 type = 2 published = true | insert_into document").unwrap();
     db.execute_query(&insert).unwrap();
-    let insert = parse_query("tuple 2 title2 content2 3 false | insert_into document").unwrap();
+    let insert = parse_query("tuple id = 2 title = title2 content = content2 type = 2 published = false | insert_into document").unwrap();
     db.execute_query(&insert).unwrap();
 
     db
@@ -90,4 +90,15 @@ fn test_update() {
     let query = parse_query("scan document | filter document.id = 1").unwrap();
     let result = db.execute_query(&query).unwrap();
     assert_eq!(result.tuples().next().unwrap().cell_by_name("document.title").unwrap().as_string(), "updated_title");
+}
+
+#[test]
+fn test_delete() {
+    let db = prepare_db();
+
+    let delete = parse_query("scan document | filter document.id = 1 | delete").unwrap();
+    db.execute_query(&delete).unwrap();
+
+    let after_delete = db.execute_query(&parse_query("scan document").unwrap()).unwrap();
+    assert_eq!(after_delete.tuples().count(), 1);
 }

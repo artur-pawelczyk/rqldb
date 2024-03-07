@@ -352,7 +352,7 @@ fn compute_finisher<'a>(plan: Plan<'a>, schema: &'a Schema, query: &dsl::Query) 
         },
         dsl::Finisher::Delete => {
             let finisher = match &query.source {
-                dsl::Source::TableScan(name) => schema.find_relation(*name).map(Finisher::Delete).ok_or("No table to delete"),
+                dsl::Source::TableScan(name) => schema.find_relation(*name).map(Finisher::Delete).ok_or("No such relation found for delete operation"),
                 _ => Err("Illegal delete operation"),
             }?;
             Ok(Plan{ finisher, ..plan })
