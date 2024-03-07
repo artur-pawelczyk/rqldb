@@ -118,6 +118,16 @@ impl<'a> IndexedObject<'a> {
             }
         }
     }
+
+    pub(crate) fn vaccum(&mut self) {
+        let old = std::mem::take(&mut self.tuples);
+        self.tuples = old.into_iter().enumerate()
+            .filter(|(i, _)| !self.removed_ids.contains(i))
+            .map(|(_, tuple)| tuple)
+            .collect();
+
+        self.removed_ids.clear();
+    }
 }
 
 impl<'a> fmt::Debug for IndexedObject<'a> {
@@ -239,6 +249,30 @@ mod test {
         assert_eq!(obj.iter().count(), 2);
 
         obj.remove_tuples(&[0]);
+        assert_eq!(obj.iter().count(), 1);
+    }
+
+    #[test]
+    fn test_vaccum() {
+        let mut schema = Schema::default();
+        schema.create_table("example")
+            .column("id", Type::NUMBER)
+            .column("name", Type::TEXT)
+            .add();
+        let relation = schema.find_relation("example").unwrap();
+
+        let mut temp_obj = TempObject::from_relation(relation);
+        temp_obj.push_str(&["1".to_string(), "first".to_string()]);
+        temp_obj.push_str(&["2".to_string(), "second".to_string()]);
+
+        let mut obj = IndexedObject::recover(temp_obj, relation);
+        obj.remove_tuples(&[0]);
+
+        assert_eq!(obj.tuples.len(), 2);
+
+        obj.vaccum();
+
+        assert_eq!(obj.tuples.len(), 1);
         assert_eq!(obj.iter().count(), 1);
     }
 }

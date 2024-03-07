@@ -224,7 +224,7 @@ impl<R: Read> ByteReader<R> {
 
 #[cfg(test)]
 mod tests {
-    use rqldb::{Command, Type, Query};
+    use rqldb::{Command, Type, Query, Operator};
 
     use super::*;
 
@@ -244,8 +244,10 @@ mod tests {
                           .column("c", Type::TEXT)
                           .column("d", Type::TEXT));
 
-        db.execute_query(&Query::tuple(&["1", "test", "stuff"]).insert_into("example")).unwrap();
+        db.execute_query(&Query::tuple(&["1", "test1", "stuff"]).insert_into("example")).unwrap();
         db.execute_query(&Query::tuple(&["2", "test2", "stuff"]).insert_into("example")).unwrap();
+        db.execute_query(&Query::tuple(&["3", "test3", "stuff"]).insert_into("example")).unwrap();
+        db.execute_query(&Query::scan("example").filter("example.id", Operator::EQ, "2").delete()).unwrap();
 
         let mut out = Vec::new();
         write_db(&mut out, &db).unwrap();

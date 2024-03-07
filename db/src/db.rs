@@ -111,6 +111,7 @@ impl<'obj> Database<'obj> {
     pub fn raw_object<'a>(&'a self, name: &str) -> Option<RawObjectView<'a>> {
         let rel = self.schema.find_relation(name)?;
         let o = self.objects.get(rel.id)?;
+        o.borrow_mut().vaccum();
         Some(RawObjectView{ rel, object: o.borrow() })
     }
 
