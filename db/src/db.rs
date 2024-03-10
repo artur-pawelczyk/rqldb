@@ -7,6 +7,8 @@ use crate::tuple::Tuple;
 use crate::{schema::Schema, QueryResults, plan::compute_plan};
 use crate::{dsl, Cell, RawObjectView};
 
+type Result<T> = std::result::Result<T, String>;
+
 #[derive(Default)]
 pub struct Database<'a> {
     schema: Schema,
@@ -35,11 +37,11 @@ impl<'obj> Database<'obj> {
         self.objects.insert(table.id, RefCell::new(IndexedObject::from_table(table)));
     }
 
-    pub fn execute_query(&self, query: &dsl::Query) -> Result<QueryResults, &'static str> {
+    pub fn execute_query(&self, query: &dsl::Query) -> Result<QueryResults> {
         self.execute_plan(compute_plan(&self.schema, query)?)
     }
 
-    fn execute_plan(&self, plan: Plan) -> Result<QueryResults, &'static str> {
+    fn execute_plan(&self, plan: Plan) -> Result<QueryResults> {
         let source: ObjectView = match plan.source.contents {
             Contents::TableScan(rel) => {
                 ObjectView::Ref(self.objects.get(rel.id).expect("Already checked by the planner").borrow())
@@ -77,7 +79,7 @@ impl<'obj> Database<'obj> {
                         joinee
                     }
                 },
-                _ => return Err("Multiple joins aren't supported")
+                _ => return Err(String::from("Multiple joins aren't supported"))
             };
 
             if test_filters(&plan.filters, &tuple) {

@@ -8,6 +8,8 @@ use crate::tuple::Tuple;
 
 use std::iter::zip;
 
+type Result<T> = std::result::Result<T, String>;    
+
 #[derive(Default)]
 pub(crate) struct Plan<'a> {
     pub source: Source<'a>,
@@ -38,7 +40,7 @@ impl<'a> Plan<'a> {
         }
     }
 
-    fn validate_with_finisher(self) -> Result<Self, &'static str> {
+    fn validate_with_finisher(self) -> std::result::Result<Self, &'static str> {
         Ok(Plan{
             source: self.source.validate_with_finisher(&self.finisher)?,
             ..self
@@ -171,7 +173,7 @@ impl PartialEq<str> for Attribute {
 }
 
 impl<'a> Source<'a> {
-    fn new(_: &Plan, schema: &'a Schema, dsl_source: &'a dsl::Source) -> Result<Source<'a>, &'static str> {
+    fn new(_: &Plan, schema: &'a Schema, dsl_source: &'a dsl::Source) -> std::result::Result<Source<'a>, &'static str> {
         match dsl_source {
             dsl::Source::TableScan(name) => {
                 Ok(Self::scan_table(schema.find_relation(*name).ok_or("No such table")?))
@@ -214,7 +216,7 @@ impl<'a> Source<'a> {
         }
     }
 
-    fn validate_with_finisher(self, finisher: &Finisher) -> Result<Source<'a>, &'static str> {
+    fn validate_with_finisher(self, finisher: &Finisher) -> std::result::Result<Source<'a>, &'static str> {
         match finisher {
             Finisher::Insert(rel) => {
                 if let Contents::Tuple(values) = &self.contents {
@@ -273,7 +275,7 @@ impl ApplyFn {
     }
 }
 
-pub(crate) fn compute_plan<'a>(schema: &'a Schema, query: &'a dsl::Query) -> Result<Plan<'a>, &'static str> {
+pub(crate) fn compute_plan<'a>(schema: &'a Schema, query: &'a dsl::Query) -> Result<Plan<'a>> {
     let plan = Plan::default();
 
     let plan = compute_source(plan, schema, &query.source)?;
@@ -287,14 +289,14 @@ pub(crate) fn compute_plan<'a>(schema: &'a Schema, query: &'a dsl::Query) -> Res
     Ok(plan)
 }
 
-fn compute_source<'a>(plan: Plan<'a>, schema: &'a Schema, dsl_source: &'a dsl::Source) -> Result<Plan<'a>, &'static str> {
+fn compute_source<'a>(plan: Plan<'a>, schema: &'a Schema, dsl_source: &'a dsl::Source) -> std::result::Result<Plan<'a>, &'static str> {
     Ok(Plan{
         source: Source::new(&plan, schema, dsl_source)?,
         ..plan
     })
 }
 
-fn compute_filters<'a>(plan: Plan<'a>, query: &dsl::Query) -> Result<Plan<'a>, &'static str> {
+fn compute_filters<'a>(plan: Plan<'a>, query: &dsl::Query) -> std::result::Result<Plan<'a>, &'static str> {
     if query.filters.is_empty() {
         return Ok(plan);
     }
@@ -327,7 +329,7 @@ fn compute_filters<'a>(plan: Plan<'a>, query: &dsl::Query) -> Result<Plan<'a>, &
     Ok(Plan{ filters, ..plan })
 }
 
-fn compute_finisher<'a>(plan: Plan<'a>, schema: &'a Schema, query: &dsl::Query) -> Result<Plan<'a>, &'static str> {
+fn compute_finisher<'a>(plan: Plan<'a>, schema: &'a Schema, query: &dsl::Query) -> std::result::Result<Plan<'a>, &'static str> {
     match &query.finisher {
         dsl::Finisher::Insert(name) => {
             let relation = schema.find_relation(*name).ok_or("No such target table")?;
@@ -379,7 +381,7 @@ fn filter_left<'a>(filter: &'a dsl::Filter) -> &'a str {
     }
 }
 
-fn compute_joins<'a>(plan: Plan<'a>, schema: &'a Schema, query: &dsl::Query) -> Result<Plan<'a>, &'static str> {
+fn compute_joins<'a>(plan: Plan<'a>, schema: &'a Schema, query: &dsl::Query) -> std::result::Result<Plan<'a>, &'static str> {
     if query.join_sources.is_empty() {
         return Ok(plan);
     }
@@ -474,7 +476,7 @@ mod tests {
         assert!(comp_filter.matches_tuple(&Tuple::from_bytes(&tuple_2, &types)));
     }
 
-    fn expect_filters(result: Result<Plan, &'static str>, n: usize) -> Vec<Filter> {
+    fn expect_filters(result: Result<Plan>, n: usize) -> Vec<Filter> {
         match result {
             Ok(plan) => {
                 assert_eq!(plan.filters.len(), n);
@@ -484,7 +486,7 @@ mod tests {
         }
     }
 
-    fn expect_filter(result: Result<Plan, &'static str>) -> Filter {
+    fn expect_filter(result: Result<Plan>) -> Filter {
         let filters = expect_filters(result, 1);
         filters.into_iter().next().unwrap()
     }
@@ -529,7 +531,7 @@ mod tests {
         let query = dsl::Query::tuple(&["1", "some text"]).filter("0", Operator::EQ, "1");
         let result = compute_plan(&schema, &query);
         assert!(result.is_err());
-        assert_eq!(result.err(), Some("Cannot filter untyped attribute"));
+        assert_eq!(result.err(), Some(String::from("Cannot filter untyped attribute")));
 
         let query = dsl::Query::tuple(
             TupleBuilder::new()
@@ -542,7 +544,7 @@ mod tests {
         assert_eq!(filter.attribute.name.as_ref(), "id");
     }
 
-    fn expect_join<'a>(result: Result<Plan<'a>, &str>) -> Join<'a> {
+    fn expect_join<'a>(result: Result<Plan<'a>>) -> Join<'a> {
         let plan = result.unwrap();
         assert_eq!(plan.joins.len(), 1);
         plan.joins.into_iter().next().unwrap()
