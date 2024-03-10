@@ -516,6 +516,21 @@ mod tests {
     }
 
     #[test]
+    fn test_plan_multiple_joins() {
+        let mut schema = Schema::default();
+        schema.create_table("document").column("name", Type::TEXT).column("type_id", Type::NUMBER).column("author", Type::TEXT).add();
+        schema.create_table("type").column("id", Type::TEXT).column("name", Type::NUMBER).add();
+        schema.create_table("author").column("username", Type::TEXT).column("displayname", Type::TEXT).add();
+
+        let query = dsl::Query::scan("document")
+            .join("type", "document.type_id", "type.id")
+            .join("author", "document.author", "author.username");
+        let joins = expect_joins(compute_plan(&schema, &query), 2);
+        assert_eq!(joins[0].table.name, "type");
+        assert_eq!(joins[1].table.name, "author");
+    }
+
+    #[test]
     fn test_filter_after_join() {
         let mut schema = Schema::default();
         schema.create_table("document").column("name", Type::TEXT).column("type_id", Type::NUMBER).add();
@@ -523,6 +538,16 @@ mod tests {
 
         let filter = expect_filter(compute_plan(&schema, &dsl::Query::scan("document").join("type", "document.type_id", "type.id").filter("type.name", EQ, "b")));
         assert_eq!(filter.attribute.pos(), 3);
+    }
+
+    fn expect_joins<'a>(result: Result<Plan<'a>>, n: usize) -> Vec<Join<'a>> {
+        let plan = result.unwrap();
+        assert_eq!(plan.joins.len(), n);
+        plan.joins
+    }
+
+    fn expect_join<'a>(result: Result<Plan<'a>>) -> Join<'a> {
+        expect_joins(result, 1).into_iter().next().unwrap()
     }
 
     #[test]
@@ -542,12 +567,6 @@ mod tests {
 
         let filter = expect_filter(result);
         assert_eq!(filter.attribute.name.as_ref(), "id");
-    }
-
-    fn expect_join<'a>(result: Result<Plan<'a>>) -> Join<'a> {
-        let plan = result.unwrap();
-        assert_eq!(plan.joins.len(), 1);
-        plan.joins.into_iter().next().unwrap()
     }
 
     #[test]
