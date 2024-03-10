@@ -171,7 +171,6 @@ impl TempObject {
         self.values.push(raw_tuple);
     }
 
-    // TODO: This function is confusing because it takes slice of owned String
     pub(crate) fn push_str(&mut self, vals: &[&str]) {
         fn add_cell(val: &str, kind: Type, tuple: &mut Vec<u8>)  {
             match kind {
