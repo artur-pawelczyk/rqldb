@@ -416,8 +416,8 @@ mod tests {
         db.execute_create(&Command::create_table("document").indexed_column("id", Type::NUMBER).column("content", Type::TEXT));
         let table = db.schema.find_relation("document").unwrap();
 
-        db.execute_plan(Plan::insert(table, &["1".to_string(), "orig content".to_string()])).unwrap();
-        db.execute_plan(Plan::insert(table, &["1".to_string(), "new content".to_string()])).unwrap();
+        db.execute_plan(Plan::insert(table, &["1", "orig content"])).unwrap();
+        db.execute_plan(Plan::insert(table, &["1", "new content"])).unwrap();
 
         let result = db.execute_plan(Plan::scan(table)).unwrap();
         assert_eq!(result.tuples().next().unwrap().cell_by_name("document.content").unwrap().as_string(), "new content");
@@ -434,7 +434,7 @@ mod tests {
         target_db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT));
         let target_table = target_db.schema.find_relation("document").unwrap().clone();
 
-        source_db.execute_plan(Plan::insert(&source_table, &["1".to_string(), "one".to_string()])).unwrap();
+        source_db.execute_plan(Plan::insert(&source_table, &["1", "one"])).unwrap();
         let raw_object = source_db.raw_object("document").unwrap();
         let mut temp_object = TempObject::with_attrs(target_table.types());
         for tuple in raw_object.raw_tuples() {

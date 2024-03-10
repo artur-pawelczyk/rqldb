@@ -172,7 +172,7 @@ impl TempObject {
     }
 
     // TODO: This function is confusing because it takes slice of owned String
-    pub(crate) fn push_str(&mut self, vals: &[String]) {
+    pub(crate) fn push_str(&mut self, vals: &[&str]) {
         fn add_cell(val: &str, kind: Type, tuple: &mut Vec<u8>)  {
             match kind {
                 Type::NUMBER => val.parse::<i32>().map(|n| n.to_be_bytes()).unwrap().iter().for_each(|b| tuple.push(*b)),
@@ -242,8 +242,8 @@ mod test {
         let relation = schema.find_relation("example").unwrap();
 
         let mut temp_obj = TempObject::from_relation(relation);
-        temp_obj.push_str(&["1".to_string(), "first".to_string()]);
-        temp_obj.push_str(&["2".to_string(), "second".to_string()]);
+        temp_obj.push_str(&["1", "first"]);
+        temp_obj.push_str(&["2", "second"]);
 
         let mut obj = IndexedObject::recover(temp_obj, relation);
         assert_eq!(obj.iter().count(), 2);
@@ -262,8 +262,8 @@ mod test {
         let relation = schema.find_relation("example").unwrap();
 
         let mut temp_obj = TempObject::from_relation(relation);
-        temp_obj.push_str(&["1".to_string(), "first".to_string()]);
-        temp_obj.push_str(&["2".to_string(), "second".to_string()]);
+        temp_obj.push_str(&["1", "first"]);
+        temp_obj.push_str(&["2", "second"]);
 
         let mut obj = IndexedObject::recover(temp_obj, relation);
         obj.remove_tuples(&[0]);

@@ -228,8 +228,6 @@ mod tests {
 
     use super::*;
 
-    // TODO: test serialization of a table with deleted rows (do a vacuum before serialization)
-
     #[test]
     fn test_serialize_db() {
         let mut db = Database::default();
