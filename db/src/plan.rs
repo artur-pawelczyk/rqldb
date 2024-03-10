@@ -381,7 +381,7 @@ fn filter_left<'a>(filter: &'a dsl::Filter) -> &'a str {
     }
 }
 
-fn compute_joins<'a>(plan: Plan<'a>, schema: &'a Schema, query: &dsl::Query) -> std::result::Result<Plan<'a>, &'static str> {
+fn compute_joins<'a>(plan: Plan<'a>, schema: &'a Schema, query: &dsl::Query) -> Result<Plan<'a>> {
     if query.join_sources.is_empty() {
         return Ok(plan);
     }
@@ -395,7 +395,7 @@ fn compute_joins<'a>(plan: Plan<'a>, schema: &'a Schema, query: &dsl::Query) -> 
     for join_source in &query.join_sources {
         let joiner_table = match schema.find_relation(join_source.table) {
             Some(table) => table,
-            None => return Err("No such table")
+            None => return Err(format!("{} relation not found", join_source.table))
         };
 
         let joinee_attributes = table_attributes(joinee_table);
@@ -408,10 +408,10 @@ fn compute_joins<'a>(plan: Plan<'a>, schema: &'a Schema, query: &dsl::Query) -> 
                     joinee_key, joiner_key
                 })
             } else {
-                return Err("Joiner: no such column")
+                return Err(format!("Joiner: {} attribute not found", join_source.right))
             }
         } else {
-            return Err("Joinee: no such column")
+            return Err(format!("Joinee: {} attribute not found", join_source.left))
         }
     }
 
