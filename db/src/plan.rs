@@ -11,18 +11,18 @@ use std::iter::zip;
 type Result<T> = std::result::Result<T, String>;    
 
 #[derive(Default)]
-pub(crate) struct Plan<'a> {
-    pub source: Source<'a>,
+pub(crate) struct Plan<'schema> {
+    pub source: Source<'schema>,
     pub filters: Vec<Filter>,
-    pub joins: Vec<Join<'a>>,
-    pub finisher: Finisher<'a>,
+    pub joins: Vec<Join<'schema>>,
+    pub finisher: Finisher<'schema>,
 }
 
-impl<'a> Plan<'a> {
+impl<'schema> Plan<'schema> {
     #[cfg(test)]
-    pub fn insert(rel: &'a Relation, values: &[&'a str]) -> Self {
+    pub fn insert(rel: &'schema Relation, values: &[&str]) -> Self {
         let attributes = rel.attributes().iter().enumerate().map(|(pos, (n, t))| Attribute::named(pos, n).with_type(*t)).collect();
-        let contents = Contents::Tuple(values.to_vec());
+        let contents = Contents::Tuple(values.iter().map(|s|String::from(*s)).collect());
 
         Self{
             source: Source{ attributes, contents },
@@ -32,7 +32,7 @@ impl<'a> Plan<'a> {
    }
 
     #[cfg(test)]
-    pub fn scan(rel: &'a Relation) -> Self {
+    pub fn scan(rel: &'schema Relation) -> Self {
         Self{
             source: Source::scan_table(rel),
             finisher: Finisher::Return,
@@ -115,7 +115,7 @@ pub(crate) struct Source<'a> {
 
 pub(crate) enum Contents<'a> {
     TableScan(&'a Relation),
-    Tuple(Vec<&'a str>),
+    Tuple(Vec<String>),
     IndexScan(Column<'a>, Cell),
     Nil,
 }
@@ -172,8 +172,8 @@ impl PartialEq<str> for Attribute {
     }
 }
 
-impl<'a> Source<'a> {
-    fn new(_: &Plan, schema: &'a Schema, dsl_source: &'a dsl::Source) -> std::result::Result<Source<'a>, &'static str> {
+impl<'schema> Source<'schema> {
+    fn new(_: &Plan, schema: &'schema Schema, dsl_source: &dsl::Source) -> std::result::Result<Source<'schema>, &'static str> {
         match dsl_source {
             dsl::Source::TableScan(name) => {
                 Ok(Self::scan_table(schema.find_relation(*name).ok_or("No such table")?))
@@ -193,21 +193,22 @@ impl<'a> Source<'a> {
         }
     }
 
-    fn scan_table(rel: &'a Relation) -> Self {
+    fn scan_table(rel: &'schema Relation) -> Self {
         let attributes = rel.attributes().iter().enumerate()
             .map(|(i, (name, kind))| Attribute::named(i, name).with_type(*kind)).collect();
         Source{ attributes, contents: Contents::TableScan(rel) }
     }
 
-    fn from_tuple(values: &[TupleAttr<'a>]) -> Self {
+    fn from_tuple(values: &[TupleAttr<'_>]) -> Self {
         let attributes = values.iter().enumerate().map(|(i, attr)| Attribute::named(i, attr.name.as_ref()).with_type((attr.kind).into())).collect();
         Self {
             attributes,
-            contents: Contents::Tuple(values.iter().map(|attr| attr.value).collect()),
+            // TODO: Create a byte typle here, so the String allocation can be avoided
+            contents: Contents::Tuple(values.iter().map(|attr| attr.value.to_string()).collect()),
         }
     }
 
-    fn scan_index(index: Column<'a>, val: Cell) -> Self {
+    fn scan_index(index: Column<'schema>, val: Cell) -> Self {
         let attributes = index.table().attributes().iter().enumerate()
             .map(|(i, (name, kind))| Attribute::named(i, name).with_type(*kind)).collect();
         Self{
@@ -216,7 +217,7 @@ impl<'a> Source<'a> {
         }
     }
 
-    fn validate_with_finisher(self, finisher: &Finisher) -> std::result::Result<Source<'a>, &'static str> {
+    fn validate_with_finisher(self, finisher: &Finisher) -> std::result::Result<Source<'schema>, &'static str> {
         match finisher {
             Finisher::Insert(rel) => {
                 if let Contents::Tuple(values) = &self.contents {
@@ -275,7 +276,7 @@ impl ApplyFn {
     }
 }
 
-pub(crate) fn compute_plan<'a>(schema: &'a Schema, query: &'a dsl::Query) -> Result<Plan<'a>> {
+pub(crate) fn compute_plan<'schema>(schema: &'schema Schema, query: &dsl::Query) -> Result<Plan<'schema>> {
     let plan = Plan::default();
 
     let plan = compute_source(plan, schema, &query.source)?;
@@ -289,7 +290,8 @@ pub(crate) fn compute_plan<'a>(schema: &'a Schema, query: &'a dsl::Query) -> Res
     Ok(plan)
 }
 
-fn compute_source<'a>(plan: Plan<'a>, schema: &'a Schema, dsl_source: &'a dsl::Source) -> std::result::Result<Plan<'a>, &'static str> {
+fn compute_source<'schema>(plan: Plan<'schema>, schema: &'schema Schema, dsl_source: &dsl::Source)
+                           -> std::result::Result<Plan<'schema>, &'static str> {
     Ok(Plan{
         source: Source::new(&plan, schema, dsl_source)?,
         ..plan

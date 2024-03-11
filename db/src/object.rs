@@ -167,8 +167,9 @@ impl TempObject {
         self.values.push(raw_tuple);
     }
 
-    pub(crate) fn push_str(&mut self, vals: &[&str]) {
-        fn add_cell(val: &str, kind: Type, tuple: &mut Vec<u8>)  {
+    pub(crate) fn push_str(&mut self, vals: &[impl AsRef<str>]) {
+        fn add_cell(val: &impl AsRef<str>, kind: Type, tuple: &mut Vec<u8>)  {
+            let val = val.as_ref();
             match kind {
                 Type::NUMBER => val.parse::<i32>().map(|n| n.to_be_bytes()).unwrap().iter().for_each(|b| tuple.push(*b)),
                 Type::TEXT => { tuple.push(val.len() as u8); val.as_bytes().iter().for_each(|b| tuple.push(*b)); },
