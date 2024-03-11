@@ -68,7 +68,7 @@ impl error::Error for Error {}
 // TODO: Split into two traits. "read" should consume self
 pub trait Persist {
     fn write(&mut self, db: &Database) -> Result<(), Error>;
-    fn read<'a>(&self, db: Database<'a>) -> Result<Database<'a>, Error>;
+    fn read<'a>(&self, db: Database) -> Result<Database, Error>;
 }
 
 #[allow(dead_code)]
@@ -89,7 +89,7 @@ impl Persist for FilePersist {
         Ok(())
     }
 
-    fn read<'a>(&self, db: Database<'a>) -> Result<Database<'a>, Error> {
+    fn read<'a>(&self, db: Database) -> Result<Database, Error> {
         match File::open(self.path.clone()) {
             Ok(f) => Ok(read_db(f).unwrap()),
             Err(e) if e.kind() == ErrorKind::NotFound => Ok(db),
@@ -140,7 +140,7 @@ impl Persist for TempFilePersist {
         Ok(())
     }
 
-    fn read<'a>(&self, _: Database<'a>) -> Result<Database<'a>, Error> {
+    fn read(&self, _: Database) -> Result<Database, Error> {
         let file = File::open(self.path.clone())?;
         read_db(file)
     }
@@ -155,7 +155,7 @@ pub fn write_db<W: Write>(writer: &mut W, db: &Database) -> Result<(), Error> {
     Ok(())
 }
 
-pub fn read_db<'a, R: Read>(reader: R) -> Result<Database<'a>, Error> {
+pub fn read_db<R: Read>(reader: R) -> Result<Database, Error> {
     let mut reader = ByteReader::new(reader);
     let schema_len = reader.peek_i32().unwrap() as usize;
     let schema_bytes = reader.read_bytes(schema_len).unwrap();

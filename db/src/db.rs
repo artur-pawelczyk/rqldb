@@ -10,12 +10,12 @@ use crate::{dsl, Cell, RawObjectView};
 type Result<T> = std::result::Result<T, String>;
 
 #[derive(Default)]
-pub struct Database<'a> {
+pub struct Database {
     schema: Schema,
-    objects: Vec<RefCell<IndexedObject<'a>>>,
+    objects: Vec<RefCell<IndexedObject>>,
 }
 
-impl<'obj> Database<'obj> {
+impl Database {
     pub fn with_schema(schema: Schema) -> Self {
         let objects = schema.relations.iter().map(IndexedObject::from_table).map(RefCell::new).collect();
 
@@ -95,7 +95,7 @@ impl<'obj> Database<'obj> {
         Ok(sink.into_results())
     }
 
-    fn create_sink<'a>(&'a self, plan: &Plan) -> Sink<'a, 'obj> {
+    fn create_sink<'a>(&'a self, plan: &Plan) -> Sink<'a> {
         match &plan.finisher {
             Finisher::Return => Sink::Return(plan.final_attributes(), vec![]),
             Finisher::Apply(f, attr) => match f {
@@ -160,8 +160,8 @@ fn test_filters(filters: &[Filter], tuple: &Tuple) -> bool {
 }
 
 enum ObjectView<'a> {
-    Ref(Ref<'a, IndexedObject<'a>>),
-    TupleRef(Ref<'a, IndexedObject<'a>>, usize),
+    Ref(Ref<'a, IndexedObject>),
+    TupleRef(Ref<'a, IndexedObject>, usize),
     Val(TempObject),
     Empty,
 }
@@ -178,17 +178,17 @@ impl<'a> ObjectView<'a> {
 }
 
 #[derive(Debug)]
-enum Sink<'a, 'obj> {
+enum Sink<'a> {
     Count(usize),
     Sum(usize, i32),
     Max(usize, i32),
     Return(Vec<Attribute>, Vec<Vec<Cell>>),
-    Insert(RefMut<'a, IndexedObject<'obj>>),
+    Insert(RefMut<'a, IndexedObject>),
     Delete(Vec<usize>),
     NoOp,
 }
 
-impl<'a, 'obj> Sink<'a, 'obj> {
+impl<'a> Sink<'a> {
     fn accept_tuple(&mut self, idx: usize, tuple: &Tuple) {
         match self {
             Self::Count(ref mut count) => *count += 1,

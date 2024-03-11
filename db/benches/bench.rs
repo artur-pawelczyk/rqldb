@@ -1,7 +1,7 @@
 use criterion::{criterion_group, criterion_main, Criterion, black_box};
 use rqldb::*;
 
-fn create_database<'a>() -> Database<'a> {
+fn create_database() -> Database {
     let mut db = Database::default();
     db.execute_create(&Command::create_table("document")
                       .indexed_column("id", Type::NUMBER)

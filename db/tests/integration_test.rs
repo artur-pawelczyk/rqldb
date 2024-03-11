@@ -1,7 +1,7 @@
 use rqldb::{parse_query, parse_command};
 use rqldb::db::Database;
 
-fn prepare_db<'a>() -> Database<'a> {
+fn prepare_db() -> Database {
     let mut db = Database::default();
 
     db.execute_create(&parse_command("create_table document

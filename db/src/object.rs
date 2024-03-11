@@ -1,6 +1,6 @@
 use std::fmt;
 use std::iter::zip;
-use std::{collections::{HashSet, HashMap}, marker::PhantomData, cell::Ref};
+use std::{collections::{HashSet, HashMap}, cell::Ref};
 
 use crate::{tuple::Tuple, schema::Relation, Type};
 
@@ -8,16 +8,15 @@ type ByteCell = Vec<u8>;
 type ByteTuple = Vec<u8>;
 
 #[derive(Default)]
-pub(crate) struct IndexedObject<'a> {
+pub(crate) struct IndexedObject {
     pub(crate) tuples: Vec<ByteTuple>,
     attrs: Vec<Type>,
     index: Index,
     hash: HashMap<ByteCell, usize>,
     removed_ids: HashSet<usize>,
-    marker: PhantomData<&'a ()>,
 }
 
-impl<'a> IndexedObject<'a> {
+impl IndexedObject {
     pub(crate) fn from_table(table: &Relation) -> Self {
         let key = table.indexed_column().map(|col| col.pos());
 
@@ -27,7 +26,6 @@ impl<'a> IndexedObject<'a> {
             index: key.map(Index::Attr).unwrap_or(Index::Uniq),
             hash: Default::default(),
             removed_ids: Default::default(),
-            marker: PhantomData,
         }
     }
 
@@ -92,7 +90,6 @@ impl<'a> IndexedObject<'a> {
                 index,
                 hash: Default::default(),
                 removed_ids: HashSet::new(),
-                marker: PhantomData,
             };
 
             obj.reindex();
@@ -104,7 +101,6 @@ impl<'a> IndexedObject<'a> {
                 index: Default::default(),
                 hash: Default::default(),
                 removed_ids: HashSet::new(),
-                marker: PhantomData,
             }
         }
     }
@@ -130,7 +126,7 @@ impl<'a> IndexedObject<'a> {
     }
 }
 
-impl<'a> fmt::Debug for IndexedObject<'a> {
+impl fmt::Debug for IndexedObject {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "IndexedObject")
     }
@@ -204,7 +200,7 @@ impl TempObject {
 }
 
 pub struct RawObjectView<'a> {
-    pub(crate) object: Ref<'a, IndexedObject<'a>>,
+    pub(crate) object: Ref<'a, IndexedObject>,
     pub(crate) rel: &'a Relation,
 }
 

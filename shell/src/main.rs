@@ -54,12 +54,12 @@ fn main() {
     }
 }
 
-struct Shell<'a> {
+struct Shell {
     persist: Box<dyn Persist>,
-    db: Database<'a>,
+    db: Database,
 }
 
-impl<'a> Default for Shell<'a> {
+impl Default for Shell {
     fn default() -> Self {
         Self{
             persist: Box::new(NoOpPersist),
@@ -68,7 +68,7 @@ impl<'a> Default for Shell<'a> {
     }
 }
 
-impl<'a> Shell<'a> {
+impl Shell {
     fn db_file(s: &str) -> Self {
         let instance = Self{
             persist: Box::new(FilePersist::new(Path::new(s))),
@@ -122,7 +122,7 @@ impl Persist for NoOpPersist {
         Ok(())
     }
 
-    fn read<'a>(&self, db: Database<'a>) -> Result<Database<'a>, PersistError> {
+    fn read(&self, db: Database) -> Result<Database, PersistError> {
         Ok(db)
     }
 }
