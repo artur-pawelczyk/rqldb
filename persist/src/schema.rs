@@ -13,9 +13,9 @@ pub(crate) fn write_schema<W: Write>(writer: &mut W, schema: &Schema) -> Result<
         rel_doc.insert("name", rel.name.as_str());
 
         let mut col_arr = Array::new();
-        for col in rel.columns() {
+        for col in rel.attributes() {
             let mut col_doc = Document::new();
-            col_doc.insert("name", col.name());
+            col_doc.insert("name", col.short_name());
             col_doc.insert("kind", col.kind().to_string());
             col_doc.insert("indexed", col.indexed());
             col_arr.push(Bson::Document(col_doc));
@@ -91,7 +91,7 @@ mod tests {
         for (rel, saved_rel) in zip(&db.schema().relations, saved_schema) {
             assert_eq!(rel.id, saved_rel.id);
             assert_eq!(rel.name, saved_rel.name);
-            assert_eq!(rel.columns().count(), saved_rel.columns.len());
+            assert_eq!(rel.attributes().count(), saved_rel.columns.len());
         }
     }
 

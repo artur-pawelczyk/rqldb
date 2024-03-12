@@ -1,11 +1,11 @@
 use crate::{schema::Relation, Command, Query, RawObjectView, tuple::Tuple, dsl::{TupleBuilder, IntoTuple}};
 
 pub(crate) fn dump_create(rel: &Relation) -> Command {
-    rel.columns().fold(Command::create_table(rel.name()), |acc, col| {
+    rel.attributes().fold(Command::create_table(rel.name()), |acc, col| {
         if col.indexed() {
-            acc.indexed_column(col.name(), col.kind())
+            acc.indexed_column(col.short_name(), col.kind())
         } else {
-            acc.column(col.name(), col.kind())
+            acc.column(col.short_name(), col.kind())
         }
     })
 }

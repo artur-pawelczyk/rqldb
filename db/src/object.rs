@@ -22,7 +22,7 @@ impl IndexedObject {
 
         Self{
             tuples: Vec::new(),
-            attrs: table.attributes().iter().map(|(_, kind)| *kind).collect(),
+            attrs: table.attributes().map(|attr| attr.kind()).collect(),
             index: key.map(Index::Attr).unwrap_or(Index::Uniq),
             hash: Default::default(),
             removed_ids: Default::default(),
@@ -86,7 +86,7 @@ impl IndexedObject {
 
             let mut obj = Self{
                 tuples: snapshot.values,
-                attrs: table.attributes().iter().map(|(_, kind)| *kind).collect(),
+                attrs: table.attributes().map(|attr| attr.kind()).collect(),
                 index,
                 hash: Default::default(),
                 removed_ids: HashSet::new(),
@@ -97,7 +97,7 @@ impl IndexedObject {
         } else {
             Self{
                 tuples: snapshot.values,
-                attrs: table.attributes().iter().map(|(_, kind)| *kind).collect(),
+                attrs: table.attributes().map(|attr| attr.kind()).collect(),
                 index: Default::default(),
                 hash: Default::default(),
                 removed_ids: HashSet::new(),

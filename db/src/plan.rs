@@ -21,7 +21,8 @@ pub(crate) struct Plan<'schema> {
 impl<'schema> Plan<'schema> {
     #[cfg(test)]
     pub fn insert(rel: &'schema Relation, values: &[&str]) -> Self {
-        let attributes = rel.attributes().iter().enumerate().map(|(pos, (n, t))| Attribute::named(pos, n).with_type(*t)).collect();
+        let attributes = rel.attributes().enumerate()
+            .map(|(pos, attr)| Attribute::named(pos, attr.name()).with_type(attr.kind())).collect();
         let contents = Contents::Tuple(values.iter().map(|s|String::from(*s)).collect());
 
         Self{
@@ -194,8 +195,8 @@ impl<'schema> Source<'schema> {
     }
 
     fn scan_table(rel: &'schema Relation) -> Self {
-        let attributes = rel.attributes().iter().enumerate()
-            .map(|(i, (name, kind))| Attribute::named(i, name).with_type(*kind)).collect();
+        let attributes = rel.attributes().enumerate()
+            .map(|(i, attr)| Attribute::named(i, attr.name()).with_type(attr.kind())).collect();
         Source{ attributes, contents: Contents::TableScan(rel) }
     }
 
@@ -209,8 +210,9 @@ impl<'schema> Source<'schema> {
     }
 
     fn scan_index(index: Column<'schema>, val: Cell) -> Self {
-        let attributes = index.table().attributes().iter().enumerate()
-            .map(|(i, (name, kind))| Attribute::named(i, name).with_type(*kind)).collect();
+        let attributes = index.table().attributes().enumerate()
+            .map(|(i, attr)| Attribute::named(i, attr.name()).with_type(attr.kind())).collect();
+
         Self{
             attributes,
             contents: Contents::IndexScan(index, val),
@@ -298,7 +300,7 @@ fn compute_source<'schema>(plan: Plan<'schema>, schema: &'schema Schema, dsl_sou
     })
 }
 
-fn compute_filters<'a>(plan: Plan<'a>, query: &dsl::Query) -> std::result::Result<Plan<'a>, &'static str> {
+fn compute_filters<'a>(plan: Plan<'a>, query: &dsl::Query) -> Result<Plan<'a>> {
     if query.filters.is_empty() {
         return Ok(plan);
     }
@@ -308,7 +310,7 @@ fn compute_filters<'a>(plan: Plan<'a>, query: &dsl::Query) -> std::result::Resul
     for dsl_filter in &query.filters {
         if let Some(attr) = attributes.iter().find(|attr| attr == &filter_left(dsl_filter)) {
             if attr.kind == Type::NONE {
-                return Err("Cannot filter untyped attribute");
+                return Err(format!("Cannot filter untyped attribute {}", attr.name()));
             }
 
             let op = filter_operator(dsl_filter);
@@ -324,26 +326,31 @@ fn compute_filters<'a>(plan: Plan<'a>, query: &dsl::Query) -> std::result::Resul
                 }
             });
         } else {
-            return Err("Column not found");
+            return Err(format!("Attribute not found: {}", filter_left(dsl_filter)));
         }
     }
 
     Ok(Plan{ filters, ..plan })
 }
 
-fn compute_finisher<'a>(plan: Plan<'a>, schema: &'a Schema, query: &dsl::Query) -> std::result::Result<Plan<'a>, &'static str> {
+fn compute_finisher<'a>(plan: Plan<'a>, schema: &'a Schema, query: &dsl::Query) -> Result<Plan<'a>> {
     match &query.finisher {
         dsl::Finisher::Insert(name) => {
             let relation = schema.find_relation(*name).ok_or("No such target table")?;
             let finisher = Finisher::Insert(relation);
-            let attributes = relation.attributes().iter().enumerate().map(|(pos, (n, t))| Attribute::named(pos, n).with_type(*t)).collect();
+            let attributes = relation.attributes().enumerate()
+                .map(|(pos, attr)| Attribute::named(pos, attr.name()).with_type(attr.kind())).collect();
             let source = Source{ attributes, contents: plan.source.contents };
             Ok(Plan{ source, finisher, ..plan })
         },
         dsl::Finisher::AllColumns => Ok(Plan{ finisher: Finisher::Return, ..plan }),
         dsl::Finisher::Count => Ok(Plan{ finisher: Finisher::Count, ..plan }),
         dsl::Finisher::Apply(f, args) => {
-            let finisher = args.first().and_then(|n| schema.find_column(n)).map(|attr| Ok(Finisher::apply(f, attr))).unwrap_or(Err("apply: No such attribute"))?;
+            let finisher = args
+                .first()
+                .and_then(|n| schema.find_column(n))
+                .map(|attr| Ok(Finisher::apply(f, attr)))
+                .unwrap_or(Err("apply: No such attribute"))?;
             Ok(Plan{ finisher, ..plan })
         },
         dsl::Finisher::Delete => {
@@ -421,8 +428,8 @@ fn compute_joins<'a>(plan: Plan<'a>, schema: &'a Schema, query: &dsl::Query) -> 
 }
 
 fn table_attributes(table: &Relation) -> Vec<Attribute> {
-    table.columns().peekable()
-        .map(|col| Attribute { pos: col.pos(), name: Box::from(col.as_full_name()), kind: col.kind() })
+    table.attributes()
+        .map(|col| Attribute { pos: col.pos(), name: Box::from(col.name()), kind: col.kind() })
         .collect()
 }
 
@@ -558,7 +565,7 @@ mod tests {
         let query = dsl::Query::tuple(&["1", "some text"]).filter("0", Operator::EQ, "1");
         let result = compute_plan(&schema, &query);
         assert!(result.is_err());
-        assert_eq!(result.err(), Some(String::from("Cannot filter untyped attribute")));
+        assert_eq!(result.err(), Some(String::from("Cannot filter untyped attribute 0")));
 
         let query = dsl::Query::tuple(
             TupleBuilder::new()
