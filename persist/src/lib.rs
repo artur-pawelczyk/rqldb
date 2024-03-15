@@ -177,8 +177,8 @@ pub fn read_db<R: Read>(reader: R) -> Result<Database, Error> {
 
     let mut object_id = 0usize;
     while reader.has_some().unwrap() {
-        let types = db.schema().relations[object_id].types();
-        let mut object = TempObject::with_attrs(types);
+        let relation = &db.schema().relations[object_id];
+        let mut object = TempObject::from_relation(relation);
         read_object(&mut reader, &mut object).unwrap();
         db.recover_object(object_id, object);
         object_id += 1;
@@ -242,9 +242,9 @@ mod tests {
                           .column("c", Type::TEXT)
                           .column("d", Type::TEXT));
 
-        db.execute_query(&Query::tuple(&["1", "test1", "stuff"]).insert_into("example")).unwrap();
-        db.execute_query(&Query::tuple(&["2", "test2", "stuff"]).insert_into("example")).unwrap();
-        db.execute_query(&Query::tuple(&["3", "test3", "stuff"]).insert_into("example")).unwrap();
+        db.execute_query(&Query::tuple(&[("id", "1"), ("title", "test1"), ("content", "stuff")]).insert_into("example")).unwrap();
+        db.execute_query(&Query::tuple(&[("id", "2"), ("title", "test2"), ("content", "stuff")]).insert_into("example")).unwrap();
+        db.execute_query(&Query::tuple(&[("id", "3"), ("title", "test3"), ("content", "stuff")]).insert_into("example")).unwrap();
         db.execute_query(&Query::scan("example").filter("example.id", Operator::EQ, "2").delete()).unwrap();
 
         let mut out = Vec::new();
@@ -260,7 +260,7 @@ mod tests {
     fn test_write_to_file() {
         let mut db = Database::default();
         db.execute_create(&Command::create_table("example").indexed_column("id", Type::NUMBER).column("content", Type::TEXT));
-        db.execute_query(&Query::tuple(&["1", "test"]).insert_into("example")).unwrap();
+        db.execute_query(&Query::tuple(&[("id", "1"), ("content", "test")]).insert_into("example")).unwrap();
 
         let mut persist = TempFilePersist::new();
         persist.write(&db).unwrap();

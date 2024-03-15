@@ -4,12 +4,12 @@ use crate::schema::Type;
 #[derive(Debug)]
 pub struct Tuple<'a> {
     raw: &'a [u8],
-    attrs: &'a [Type],
+    attrs: &'a [Attribute],
     rest: Option<Box<Tuple<'a>>>,
 }
 
 impl<'a> Tuple<'a> {
-    pub fn from_bytes(raw: &'a [u8], attrs: &'a [Type]) -> Self {
+    pub fn from_bytes(raw: &'a [u8], attrs: &'a [Attribute]) -> Self {
         Self{ raw, attrs, rest: None }
     }
 
@@ -28,10 +28,10 @@ impl<'a> Tuple<'a> {
 
     pub(crate) fn cell(&self, pos: usize) -> Option<Cell> {
         if pos < self.attrs.len() {
-            let kind = self.attrs.get(pos).copied()?;
+            let attr = self.attrs.get(pos)?;
             let start = self.offset(pos);
-            let end = start + cell_len(kind, &self.raw[start..]);
-            Some(Cell{ raw: &self.raw[start..end], kind })
+            let end = start + cell_len(attr.kind(), &self.raw[start..]);
+            Some(Cell{ raw: &self.raw[start..end], name: attr.name(), kind: attr.kind() })
         } else if let Some(rest) = &self.rest {
             let rest_pos = pos - self.attrs.len();
             rest.cell(rest_pos)
@@ -45,7 +45,7 @@ impl<'a> Tuple<'a> {
     fn offset(&self, pos: usize) -> usize {
         let mut offset = 0usize;
         for attr in self.attrs.iter().take(pos) {
-            let len = Cell{ raw: &self.raw[offset..], kind: *attr }.len();
+            let len = Cell{ raw: &self.raw[offset..], name: attr.name(), kind: attr.kind() }.len();
             offset += len;
         }
 
@@ -79,15 +79,11 @@ impl<'a> Tuple<'a> {
 
 pub(crate) struct Cell<'a> {
     pub(crate) raw: &'a [u8],
+    pub(crate) name: &'a str,
     pub(crate) kind: Type,
 }
 
 impl<'a> Cell<'a> {
-    fn new(kind: Type, bytes: &'a [u8]) -> Self {
-        let len = cell_len(kind, bytes);
-        Self{ kind, raw: &bytes[..len] }
-    }
-
     pub fn bytes(&self) -> &[u8] {
         &self.raw[self.offset()..self.len()]
     }
@@ -132,9 +128,9 @@ impl<'a> Iterator for CellIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(attr) = self.inner.attrs.first() {
-            let cell = Cell::new(*attr, self.inner.raw);
-            let offset = cell.len();
-            self.inner = Tuple{ attrs: &self.inner.attrs[1..], raw: &self.inner.raw[offset..], rest: None };
+            let len = cell_len(attr.kind(), self.inner.raw);
+            let cell = Cell { raw: &self.inner.raw[..len], name: attr.name(), kind: attr.kind() };
+            self.inner = Tuple{ attrs: &self.inner.attrs[1..], raw: &self.inner.raw[len..], rest: None };
             Some(cell)
         } else {
             None
@@ -210,16 +206,24 @@ fn cell_len(kind: Type, cell: &[u8]) -> usize {
 #[cfg(test)]
 mod tests {
     use std::iter::zip;
+    use lazy_static::lazy_static;
 
     use super::*;
 
-    const TYPES_1: &[Type] = &[Type::NUMBER, Type::TEXT];
-    const TYPES_2: &[Type] = &[Type::TEXT];
+    lazy_static! {
+        static ref ATTRIBUTES_1: Vec<Attribute> = vec![
+            Attribute { pos: 0, name: Box::from("id"), kind: Type::NUMBER },
+            Attribute { pos: 1, name: Box::from("content"), kind: Type::TEXT }
+        ];
+        static ref ATTRIBUTES_2: Vec<Attribute> = vec![
+            Attribute { pos: 0, name: Box::from("id"), kind: Type::TEXT }
+        ];
+    }
 
     #[test]
     fn test_tuple() {
-        let object = vec![tuple(TYPES_1, &["1", "example"])];
-        let tuple = Tuple::from_bytes(object.get(0).unwrap(), TYPES_1);
+        let object = vec![tuple(&ATTRIBUTES_1, &["1", "example"])];
+        let tuple = Tuple::from_bytes(object.get(0).unwrap(), &ATTRIBUTES_1);
         assert_eq!(tuple.cell(0).unwrap().to_string(), "1");
         assert_eq!(tuple.cell(1).unwrap().to_string(), "example");
     }
@@ -227,11 +231,11 @@ mod tests {
     #[test]
     fn test_filter() {
         let object = vec![
-            tuple(TYPES_1, &["1", "foo"]),
-            tuple(TYPES_1, &["2", "bar"]),
+            tuple(&ATTRIBUTES_1, &["1", "foo"]),
+            tuple(&ATTRIBUTES_1, &["2", "bar"]),
         ];
 
-        let result: Vec<Tuple> = object.iter().map(|bytes| Tuple::from_bytes(bytes, TYPES_1))
+        let result: Vec<Tuple> = object.iter().map(|bytes| Tuple::from_bytes(bytes, &ATTRIBUTES_1))
             .filter(|tuple| tuple.cell(0).map(|cell| i32::try_from(cell).unwrap() == 1).unwrap_or(false))
             .collect();
 
@@ -241,26 +245,27 @@ mod tests {
     #[test]
     fn test_add_cells()  {
         let object_1 = vec![
-            tuple(TYPES_1, &["1", "foo"]),
-            tuple(TYPES_1, &["2", "bar"]),
+            tuple(&ATTRIBUTES_1, &["1", "foo"]),
+            tuple(&ATTRIBUTES_1, &["2", "bar"]),
         ];
         let object_2 = vec![
-            tuple(TYPES_2, &["fizz"]),
+            tuple(&ATTRIBUTES_2, &["fizz"]),
         ];
 
-        let result: Vec<Tuple> = object_1.iter().map(|bytes| Tuple::from_bytes(bytes, TYPES_1))
+        let result: Vec<Tuple> = object_1.iter().map(|bytes| Tuple::from_bytes(bytes, &ATTRIBUTES_1))
             .filter_map(|tuple| {
-                object_2.get(0).map(|joiner_tuple| tuple.add_cells(Tuple::from_bytes(joiner_tuple, TYPES_2)))
+                object_2.get(0).map(|joiner_tuple| tuple.add_cells(Tuple::from_bytes(joiner_tuple, &ATTRIBUTES_2)))
             }).collect();
         let first = result.get(0).unwrap();
+        dbg!(&first);
         assert_eq!(i32::try_from(first.cell(0).unwrap()), Ok(1));
         assert_eq!(first.cell(2).unwrap().to_string(), "fizz");
     }
 
-    fn tuple(types: &[Type], values: &[&str]) -> Vec<u8> {
+    fn tuple(attrs: &[Attribute], values: &[&str]) -> Vec<u8> {
         let mut tuple = Vec::new();
-        for (kind, value) in zip(types, values) {
-            let cell = Cell{ raw: &cell(value), kind: *kind };
+        for (attr, value) in zip(attrs, values) {
+            let cell = Cell{ raw: &cell(value), kind: attr.kind, name: attr.name() };
             tuple.append(&mut cell.serialize());
         }
 

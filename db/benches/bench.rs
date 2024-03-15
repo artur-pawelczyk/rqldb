@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion, black_box};
-use rqldb::*;
+use rqldb::{*, dsl::TupleBuilder};
 
 fn create_database() -> Database {
     let mut db = Database::default();
@@ -26,7 +26,13 @@ fn benchmark_insert(c: &mut Criterion) {
         (db, ids)
     }, |(db, ids)| {
         for id in ids {
-            db.execute_query(&Query::tuple(&[&id, "12", "example_doc", "the content"]).insert_into("document")).unwrap();
+            let query = Query::tuple(TupleBuilder::new()
+                                     .inferred("id", &id)
+                                     .inferred("type", "12")
+                                     .inferred("title", "example_doc")
+                                     .inferred("content", "the content")
+            ).insert_into("document");
+            db.execute_query(&query).unwrap();
         }
     }));
 }
@@ -34,7 +40,14 @@ fn benchmark_insert(c: &mut Criterion) {
 fn benchmark_filter(c: &mut Criterion) {
     let db = create_database();
     for i in 1..100000 {
-        db.execute_query(&Query::tuple(&[i.to_string().as_str(), "12", "example_doc", "the content"]).insert_into("document")).unwrap();
+        let id = i.to_string();
+        let query = Query::tuple(TupleBuilder::new()
+                                 .inferred("id", &id)
+                                 .inferred("type", "12")
+                                 .inferred("title", "example_doc")
+                                 .inferred("content", "the content")
+        ).insert_into("document");
+        db.execute_query(&query).unwrap();
     }
 
     let query = Query::scan("document").filter("document.id", Operator::EQ, "100");
@@ -44,7 +57,14 @@ fn benchmark_filter(c: &mut Criterion) {
 fn benchmark_index_search(c: &mut Criterion) {
     let db = create_database();
     for i in 1..100000 {
-        db.execute_query(&Query::tuple(&[i.to_string().as_str(), "12", "example_doc", "the content"]).insert_into("document")).unwrap();
+        let id = i.to_string();
+        let query = Query::tuple(TupleBuilder::new()
+                                 .inferred("id", &id)
+                                 .inferred("type", "12")
+                                 .inferred("title", "example_doc")
+                                 .inferred("content", "the content")
+        ).insert_into("document");
+        db.execute_query(&query).unwrap();
     }
 
     let query = Query::scan_index("document.id", Operator::EQ, "100");
@@ -56,7 +76,12 @@ fn benchmark_count(c: &mut Criterion) {
 
     for i in 0..1_000_000 {
         let id = i.to_string();
-        let query = Query::tuple(&[&id, "2", "example_doc", "the_content"]).insert_into("document");
+        let query = Query::tuple(TupleBuilder::new()
+                                 .inferred("id", &id)
+                                 .inferred("type", "2")
+                                 .inferred("title", "example_doc")
+                                 .inferred("content", "the content")
+        ).insert_into("document");
         db.execute_query(&query).unwrap();
     }
 
@@ -69,7 +94,12 @@ fn benchmark_read_results(c: &mut Criterion) {
 
     for i in 0..1_000_000 {
         let id = i.to_string();
-        let query = Query::tuple(&[&id, "2", "example_doc", "the_content"]).insert_into("document");
+        let query = Query::tuple(TupleBuilder::new()
+                                 .inferred("id", &id)
+                                 .inferred("type", "2")
+                                 .inferred("title", "example_doc")
+                                 .inferred("content", "the content")
+        ).insert_into("document");
         db.execute_query(&query).unwrap();
     }
 
@@ -90,7 +120,7 @@ fn benchmark_parse(c: &mut Criterion) {
 
 fn benchmark_query_to_string(c: &mut Criterion) {
     let scan_query = Query::scan("document").join("type", "document.type_id", "type.id").filter("document.id", Operator::EQ, "1");
-    let insert_query = Query::tuple(&["1", "foo", "bar"]).insert_into("document");
+    let insert_query = Query::tuple(&[("id", "1"), ("first", "foo"), ("second", "bar")]).insert_into("document");
 
     c.bench_function("dump scan query", |b| b.iter(|| scan_query.to_string()));
     c.bench_function("dump insert query", |b| b.iter(|| insert_query.to_string()));

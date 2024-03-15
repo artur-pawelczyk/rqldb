@@ -181,15 +181,21 @@ pub trait IntoTuple<'a> {
     fn into_tuple(self) -> Vec<TupleAttr<'a>>;
 }
 
-impl<'a> IntoTuple<'a> for &[&'a str] {
+impl<'a> IntoTuple<'a> for &[(&'a str, &'a str)] {
     fn into_tuple(self) -> Vec<TupleAttr<'a>> {
-        self.iter().fold(TupleBuilder::new(), |b, v| b.numbered(v)).into_tuple()
+        self.iter().fold(TupleBuilder::new(), |b, (k, v)| b.inferred(k, v)).into_tuple()
     }
 }
 
-impl<'a, const N: usize> IntoTuple<'a> for &[&'a str; N] {
+impl<'a> IntoTuple<'a> for &'a [(&'a str, String)] {
     fn into_tuple(self) -> Vec<TupleAttr<'a>> {
-        self.iter().fold(TupleBuilder::new(), |b, v| b.numbered(v)).into_tuple()        
+        self.iter().fold(TupleBuilder::new(), |b, (k, v)| b.inferred(k, v)).into_tuple()
+    }
+}
+
+impl<'a, const N: usize> IntoTuple<'a> for &[(&'a str, &'a str); N] {
+    fn into_tuple(self) -> Vec<TupleAttr<'a>> {
+        self.iter().fold(TupleBuilder::new(), |b, (k, v)| b.inferred(k, v)).into_tuple()        
     }
 }
 
@@ -216,18 +222,6 @@ pub struct TupleBuilder<'a>(Vec<TupleAttr<'a>>);
 impl<'a> TupleBuilder<'a> {
     pub fn new() -> Self {
         TupleBuilder(Default::default())
-    }
-
-    pub fn numbered_and_typed(mut self, kind: AttrKind, value: &'a str) -> Self {
-        let i = self.0.len();
-        self.0.push(TupleAttr { name: Box::from(i.to_string()), kind, value });
-        self
-    }
-
-    pub fn numbered(mut self, value: &'a str) -> Self {
-        let i = self.0.len();
-        self.0.push(TupleAttr { name: Box::from(i.to_string()), kind: AttrKind::Infer, value });
-        self
     }
 
     pub fn typed(mut self, kind: AttrKind, name: &'a str, value: &'a str) -> Self {
@@ -427,8 +421,8 @@ mod tests {
 
     #[test]
     fn source_is_tuple() {
-        let query = Query::tuple(&["1", "example_value"]).insert_into("example");
-        assert_eq!(query.to_string(), "tuple 1 example_value | insert_into example");
+        let query = Query::tuple(&[("id", "1"), ("value", "example_value")]).insert_into("example");
+        assert_eq!(query.to_string(), "tuple id = 1 value = example_value | insert_into example");
     }
 
     #[test]
@@ -475,8 +469,8 @@ mod tests {
 
     #[test]
     fn quotes() {
-        let query = Query::tuple(&["1", "foo bar"]).insert_into("example");
+        let query = Query::tuple(&[("id", "1"), ("value", "foo bar")]).insert_into("example");
 
-        assert_eq!("tuple 1 \"foo bar\" | insert_into example", query.to_string());
+        assert_eq!("tuple id = 1 value = \"foo bar\" | insert_into example", query.to_string());
     }
 }

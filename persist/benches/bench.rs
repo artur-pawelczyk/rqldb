@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use rqldb::*;
+use rqldb::{*, dsl::TupleBuilder};
 use rqldb_persist::*;
 
 fn create_database() -> Database {
@@ -16,7 +16,13 @@ fn create_database() -> Database {
         let id = i.to_string();
         let title = "title".to_string() + &id;
         let content = "content".to_string() + &id;
-        db.execute_query(&Query::tuple(&[&id, "1", &title, &content]).insert_into("document")).unwrap();
+        let query = Query::tuple(TupleBuilder::new()
+                                 .inferred("id", &id)
+                                 .inferred("type", "2")
+                                 .inferred("title", &title)
+                                 .inferred("content", &content)
+        ).insert_into("document");
+        db.execute_query(&query).unwrap();
     }
 
     db

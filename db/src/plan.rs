@@ -102,10 +102,10 @@ impl<'a> Join<'a> {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Attribute {
-    pos: usize,
-    name: Box<str>,
-    kind: Type,
+pub struct Attribute {
+    pub pos: usize, // TODO: position should be internal to the object. Find a way to hide it there.
+    pub name: Box<str>,
+    pub kind: Type,
 }
 
 #[derive(Default)]
@@ -468,21 +468,21 @@ mod tests {
     fn test_apply_filter() {
         let mut schema = Schema::default();
         schema.create_table("example").column("id", Type::NUMBER).column("content", Type::TEXT).column("type", Type::NUMBER).add();
-        let types = schema.find_relation("example").unwrap().types();
+        let attributes: Vec<Attribute> = schema.find_relation("example").unwrap().attributes().map(Into::into).collect();
         let tuple_1 = tuple(&[(Type::NUMBER, "1"), (Type::TEXT, "content1"), (Type::NUMBER, "11")]);
         let tuple_2 = tuple(&[(Type::NUMBER, "2"), (Type::TEXT, "content2"), (Type::NUMBER, "12")]);
 
         let id_filter = expect_filter(compute_plan(&schema, &dsl::Query::scan("example").filter("example.id", EQ, "1")));
-        assert!(id_filter.matches_tuple(&Tuple::from_bytes(&tuple_1, &types)));
-        assert!(!id_filter.matches_tuple(&Tuple::from_bytes(&tuple_2, &types)));
+        assert!(id_filter.matches_tuple(&Tuple::from_bytes(&tuple_1, &attributes)));
+        assert!(!id_filter.matches_tuple(&Tuple::from_bytes(&tuple_2, &attributes)));
 
         let content_filter = expect_filter(compute_plan(&schema, &dsl::Query::scan("example").filter("example.content", EQ, "content1")));
-        assert!(content_filter.matches_tuple(&Tuple::from_bytes(&tuple_1, &types)));
-        assert!(!content_filter.matches_tuple(&Tuple::from_bytes(&tuple_2, &types)));
+        assert!(content_filter.matches_tuple(&Tuple::from_bytes(&tuple_1, &attributes)));
+        assert!(!content_filter.matches_tuple(&Tuple::from_bytes(&tuple_2, &attributes)));
 
         let comp_filter = expect_filter(compute_plan(&schema, &dsl::Query::scan("example").filter("example.id", GT, "1")));
-        assert!(!comp_filter.matches_tuple(&Tuple::from_bytes(&tuple_1, &types)));
-        assert!(comp_filter.matches_tuple(&Tuple::from_bytes(&tuple_2, &types)));
+        assert!(!comp_filter.matches_tuple(&Tuple::from_bytes(&tuple_1, &attributes)));
+        assert!(comp_filter.matches_tuple(&Tuple::from_bytes(&tuple_2, &attributes)));
     }
 
     fn expect_filters(result: Result<Plan>, n: usize) -> Vec<Filter> {
@@ -562,10 +562,10 @@ mod tests {
     #[test]
     fn test_filter_tuple() {
         let schema = Schema::default();
-        let query = dsl::Query::tuple(&["1", "some text"]).filter("0", Operator::EQ, "1");
+        let query = dsl::Query::tuple(&[("id", "1"), ("value", "some text")]).filter("id", Operator::EQ, "1");
         let result = compute_plan(&schema, &query);
         assert!(result.is_err());
-        assert_eq!(result.err(), Some(String::from("Cannot filter untyped attribute 0")));
+        assert_eq!(result.err(), Some(String::from("Cannot filter untyped attribute id")));
 
         let query = dsl::Query::tuple(
             TupleBuilder::new()
@@ -594,16 +594,16 @@ mod tests {
         let mut schema = Schema::default();
         schema.create_table("example").column("id", Type::NUMBER).column("content", Type::TEXT).column("title", Type::TEXT).add();
 
-        let query = dsl::Query::tuple(&["1", "the-content", "title"]).insert_into("example");
+        let query = dsl::Query::tuple(&[("id", "1"), ("content", "the-content"), ("title", "title")]).insert_into("example");
         let result = compute_plan(&schema, &query).unwrap();
         assert_eq!(source_attributes(&result.source), vec![Type::NUMBER, Type::TEXT, Type::TEXT]);
         assert_eq!(attribute_names(&result.final_attributes()), vec!["example.id", "example.content", "example.title"]);
 
-        let query = dsl::Query::tuple(&["1", "the-content"]).insert_into("example");
+        let query = dsl::Query::tuple(&[("id", "1"), ("content", "the-content")]).insert_into("example");
         let wrong_tuple_len = compute_plan(&schema, &query);
         assert!(wrong_tuple_len.is_err());
 
-        let query = dsl::Query::tuple(&["not-ID", "the-content", "something"]).insert_into("example");
+        let query = dsl::Query::tuple(&[("id", "not-ID"), ("content", "the-content"), ("title", "something")]).insert_into("example");
         let wrong_type = compute_plan(&schema, &query);
         assert!(wrong_type.is_err());
     }
@@ -618,7 +618,7 @@ mod tests {
             .unwrap().finisher;
         assert_eq!(finisher, Finisher::Return);
 
-        let query = dsl::Query::tuple(&["1", "the content"]).insert_into("example");
+        let query = dsl::Query::tuple(&[("id", "1"), ("content", "the content")]).insert_into("example");
         let finisher = compute_plan(&schema, &query)
             .unwrap().finisher;
         assert!(matches!(finisher, Finisher::Insert{..}));
@@ -633,7 +633,7 @@ mod tests {
             .unwrap().finisher;
         assert!(matches!(finisher, Finisher::Apply(ApplyFn::Sum, _)));
 
-        let query = dsl::Query::tuple(&["a", "b", "c"]).insert_into("not-a-table");
+        let query = dsl::Query::tuple(&[("id", "1")]).insert_into("not-a-table");
         let failure = compute_plan(&schema, &query);
         assert!(failure.is_err());
     }
@@ -643,7 +643,7 @@ mod tests {
         let mut schema = Schema::default();
         schema.create_table("example").column("id", Type::NUMBER).column("content", Type::TEXT).add();
 
-        let query = dsl::Query::tuple(&["1", "aaa"]).insert_into("example");
+        let query = dsl::Query::tuple(&[("id", "1"), ("content", "aaa")]).insert_into("example");
         let plan = compute_plan(&schema, &query).unwrap();
 
         assert_eq!(plan.source.attributes[0], Attribute::named(0, "example.id").with_type(Type::NUMBER));
@@ -677,7 +677,7 @@ mod tests {
     fn tuple(cells: &[(Type, &str)]) -> Vec<u8> {
         let mut tuple = Vec::new();
         for (kind, value) in cells.iter() {
-            let cell = crate::tuple::Cell{ raw: &bytes(*kind, value), kind: *kind };
+            let cell = crate::tuple::Cell{ name: "", raw: &bytes(*kind, value), kind: *kind };
             let mut serialized = cell.serialize();
             tuple.append(&mut serialized);
         }

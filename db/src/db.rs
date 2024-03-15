@@ -47,8 +47,7 @@ impl Database {
                 ObjectView::Ref(self.objects.get(rel.id).expect("Already checked by the planner").borrow())
             },
             Contents::Tuple(ref values) => {
-                let attrs = plan.source.attributes.iter().map(Attribute::kind).collect();
-                let mut temp_object = TempObject::with_attrs(attrs);
+                let mut temp_object = TempObject::with_attrs(plan.source.attributes.clone());
                 temp_object.push_str(values);
                 ObjectView::Val(temp_object)
             },
@@ -233,7 +232,7 @@ fn tuple_to_cells(attrs: &[Attribute], tuple: &Tuple) -> Vec<Cell> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{dsl::{Command, Operator, Query}, Type};
+    use crate::{dsl::{Command, Operator, Query, TupleBuilder}, Type};
 
     #[test]
     fn query_not_existing_relation() {
@@ -269,7 +268,7 @@ mod tests {
             .column("content", Type::TEXT);
         db.execute_create(&command);
 
-        let insert_query = Query::tuple(&["1", "something"]).insert_into("document");
+        let insert_query = Query::tuple(&[("id", "1"), ("content", "something")]).insert_into("document");
         let insert_result = db.execute_query(&insert_query);
         assert!(insert_result.is_ok());
 
@@ -291,7 +290,7 @@ mod tests {
             .column("content", Type::TEXT);
         db.execute_create(&command);
 
-        let result = db.execute_query(&Query::tuple(&["not-a-number", "random-text"]).insert_into("document"));
+        let result = db.execute_query(&Query::tuple(&[("id", "not-a-number"), ("id", "random-text")]).insert_into("document"));
         assert!(result.is_err());
     }
 
@@ -301,8 +300,10 @@ mod tests {
         db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT));
 
         for i in 1..20 {
+            let id = i.to_string();
             let content = format!("example{}", i);
-            db.execute_query(&Query::tuple(&[i.to_string().as_str(), content.as_str()]).insert_into("document")).expect("Insert");
+            let query = Query::tuple(TupleBuilder::new().inferred("id", &id).inferred("content", &content)).insert_into("document");
+            db.execute_query(&query).expect("Insert");
         }
 
         let mut result = db.execute_query(&Query::scan("document").filter("document.id", Operator::EQ, "5")).unwrap();
@@ -323,9 +324,9 @@ mod tests {
         db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT).column("type_id", Type::NUMBER));
         db.execute_create(&Command::create_table("type").column("id", Type::NUMBER).column("name", Type::TEXT));
 
-        db.execute_query(&Query::tuple(&["1", "example", "2"]).insert_into("document")).unwrap();
-        db.execute_query(&Query::tuple(&["1", "type_a"]).insert_into("type")).unwrap();
-        db.execute_query(&Query::tuple(&["2", "type_b"]).insert_into("type")).unwrap();
+        db.execute_query(&Query::tuple(&[("id", "1"), ("content", "example"), ("type_id", "2")]).insert_into("document")).unwrap();
+        db.execute_query(&Query::tuple(&[("id", "1"), ("name", "type_a")]).insert_into("type")).unwrap();
+        db.execute_query(&Query::tuple(&[("id", "2"), ("name", "type_b")]).insert_into("type")).unwrap();
 
         let result = db.execute_query(&Query::scan("document").join("type", "document.type_id", "type.id")).unwrap();
         assert_eq!(*result.attributes, ["document.id", "document.content", "document.type_id", "type.id", "type.name"]);
@@ -345,7 +346,13 @@ mod tests {
                           .column("size", Type::NUMBER));
 
         for i in 1..=10 {
-            db.execute_query(&Query::tuple(&[i.to_string().as_str(), "example", i.to_string().as_str()]).insert_into("document")).expect("Insert");
+            let s = i.to_string();
+            let query = Query::tuple(TupleBuilder::new()
+                                     .inferred("id", &s)
+                                     .inferred("content", "example")
+                                     .inferred("size", &s)
+            ).insert_into("document");
+            db.execute_query(&query).expect("Insert");
         }
 
         let sum_result = db.execute_query(&Query::scan("document").apply("sum", &["document.size"])).unwrap();
@@ -369,7 +376,12 @@ mod tests {
         db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT));
 
         for i in 1..21 {
-            db.execute_query(&Query::tuple(&[i.to_string().as_str(), "example"]).insert_into("document")).expect("Insert");
+            let s = i.to_string();
+            let query = Query::tuple(TupleBuilder::new()
+                                     .inferred("id", &s)
+                                     .inferred("content", "example")
+            ).insert_into("document");
+            db.execute_query(&query).expect("Insert");
         }
 
         let result = db.execute_query(&Query::scan("document").count()).unwrap();
@@ -384,9 +396,9 @@ mod tests {
     fn delete() {
         let mut db = Database::default();
         db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT));
-        db.execute_query(&Query::tuple(&["1", "the content"]).insert_into("document")).unwrap();
+        db.execute_query(&Query::tuple(&[("id", "1"), ("content", "the content")]).insert_into("document")).unwrap();
 
-        let tuple_delete = db.execute_query(&Query::tuple(&["1"]).delete());
+        let tuple_delete = db.execute_query(&Query::tuple(&[("id", "1")]).delete());
         assert!(tuple_delete.is_err());
 
         let no_such_table = db.execute_query(&Query::scan("something").delete());
@@ -403,7 +415,7 @@ mod tests {
         let mut db = Database::default();
         db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT));
 
-        let insert_query = Query::tuple(&["1", "the content"]).insert_into("document");
+        let insert_query = Query::tuple(&[("id", "1"), ("content", "the content")]).insert_into("document");
         db.execute_query(&insert_query).unwrap();
         db.execute_query(&insert_query).unwrap();
 
@@ -438,7 +450,7 @@ mod tests {
 
         source_db.execute_plan(Plan::insert(&source_table, &["1", "one"])).unwrap();
         let raw_object = source_db.raw_object("document").unwrap();
-        let mut temp_object = TempObject::with_attrs(target_table.types());
+        let mut temp_object = TempObject::from_relation(&target_table);
         for tuple in raw_object.raw_tuples() {
             temp_object.push(tuple.as_bytes().to_vec());
         }
@@ -454,8 +466,13 @@ mod tests {
         db.execute_create(&Command::create_table("document").indexed_column("id", Type::NUMBER).column("content", Type::TEXT));
 
         for i in 1..20 {
+            let id = i.to_string();
             let content = format!("example{}", i);
-            db.execute_query(&Query::tuple(&[i.to_string().as_str(), content.as_str()]).insert_into("document")).expect("Insert");
+            let query = Query::tuple(TupleBuilder::new()
+                                     .inferred("id", &id)
+                                     .inferred("content", &content)
+            ).insert_into("document");
+            db.execute_query(&query).expect("Insert");
         }
 
         let result = db.execute_query(&Query::scan_index("document.id", Operator::EQ, "5")).unwrap();
@@ -478,11 +495,11 @@ mod tests {
         let mut db = Database::default();
         db.execute_create(&Command::create_table("first").indexed_column("id", Type::NUMBER).column("content", Type::TEXT));
         db.execute_create(&Command::create_table("second").column("num", Type::NUMBER));
-        db.execute_query(&Query::tuple(&["1", "one"][..]).insert_into("first")).unwrap();
+        db.execute_query(&Query::tuple(&[("id", "1"), ("content", "one")]).insert_into("first")).unwrap();
 
         let expected = concat!(
             "create_table first id::NUMBER::KEY content::TEXT\n",
-            "tuple 1 one | insert_into first\n",
+            "tuple first.id = 1 first.content = one | insert_into first\n",
             "create_table second num::NUMBER",
         );
 

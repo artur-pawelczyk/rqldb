@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use rqldb::{Database, Command, Type, Query};
+use rqldb::{Database, Command, Type, Query, dsl::TupleBuilder};
 use rqldb_persist::{Persist, TempFilePersist};
 
 fn main() {
@@ -13,9 +13,15 @@ fn main() {
 
     let mut last_time = SystemTime::now();
     for i in 0..50_000_000 {
+        let id = i.to_string();
         let title = format!("title {i}");
         let content = format!("content {i}");
-        db.execute_query(&Query::tuple(&[i.to_string().as_str(), title.as_str(), content.as_str()]).insert_into("document")).unwrap();
+        let query = Query::tuple(TupleBuilder::new()
+                                 .inferred("id", &id)
+                                 .inferred("title", &title)
+                                 .inferred("content", &content)
+        ).insert_into("document");
+        db.execute_query(&query).unwrap();
 
         if i % 100_000 == 0 {
             println!("Inserted {} tuples; took {:?}", i, SystemTime::now().duration_since(last_time));

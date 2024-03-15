@@ -1,4 +1,4 @@
-use crate::{schema::Relation, Command, Query, RawObjectView, tuple::Tuple, dsl::{TupleBuilder, IntoTuple}};
+use crate::{schema::Relation, Command, Query, RawObjectView, tuple::Tuple};
 
 pub(crate) fn dump_create(rel: &Relation) -> Command {
     rel.attributes().fold(Command::create_table(rel.name()), |acc, col| {
@@ -25,10 +25,9 @@ impl<'a> Iterator for QueryIter<'a> {
     type Item = String;
 
     fn next(&mut self) -> Option<String> {
-        self.inner.next().map(|tuple| {
-            let vals: Vec<String> = tuple.iter().map(|cell| cell.to_string()).collect();
-            let tuple = vals.iter().fold(TupleBuilder::new(), |b, v| b.numbered(v)).into_tuple();
-            Query::tuple(tuple)
+        self.inner.next().map(|byte_tuple| {
+            let key_values: Vec<_> = byte_tuple.iter().map(|cell| (cell.name, cell.to_string())).collect();
+            Query::tuple(key_values.as_slice())
                 .insert_into(&self.name)
                 .to_string()
         })
@@ -63,7 +62,7 @@ mod tests {
                           .indexed_column("id", Type::NUMBER)
                           .column("content", Type::TEXT));
 
-        let creation_query = Query::tuple(&["1", "first"]).insert_into("example");
+        let creation_query = Query::tuple(&[("example.id", "1"), ("example.content", "first")]).insert_into("example");
         db.execute_query(&creation_query).unwrap();
 
         let object = db.raw_object("example").unwrap();

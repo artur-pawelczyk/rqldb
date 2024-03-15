@@ -1,5 +1,7 @@
 use std::{fmt, str::FromStr};
 
+use crate::{dsl::AttrKind, plan::Attribute};
+
 #[derive(Default, PartialEq)]
 pub struct Schema {
     pub relations: Vec<Relation>,
@@ -56,6 +58,16 @@ pub struct Column<'a> {
 impl<'a> fmt::Debug for Column<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.name())
+    }
+}
+
+impl Into<Attribute> for Column<'_> {
+    fn into(self) -> Attribute {
+        Attribute {
+            pos: self.pos,
+            name: Box::from(self.name()),
+            kind: self.kind(),
+        }
     }
 }
 
@@ -131,6 +143,16 @@ impl FromStr for Type {
             "UINT16" => Ok(Type::BYTE(16)),
             "UINT32" => Ok(Type::BYTE(32)),
             _ => Err(()),
+        }
+    }
+}
+
+impl Into<AttrKind> for Type {
+    fn into(self) -> AttrKind {
+        match self {
+            Self::NUMBER => AttrKind::Number,
+            Self::TEXT => AttrKind::Text,
+            _ => unimplemented!(),
         }
     }
 }

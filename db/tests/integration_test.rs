@@ -53,22 +53,17 @@ fn test_basic_queries() {
 fn test_tuple_queries() {
     let db = prepare_db();
 
-    let query = parse_query("tuple 1::NUMBER something::TEXT | filter 0 = 1").unwrap();
+    let query = parse_query("tuple 0::NUMBER = 1 1::TEXT = something | filter 0 = 1").unwrap();
     let result = db.execute_query(&query).unwrap();
     assert_eq!(result.tuples().count(), 1);
 
-    let query = parse_query("tuple 1::NUMBER something::TEXT | filter 1 = something").unwrap();
+    let query = parse_query("tuple 0::NUMBER = 1 1::TEXT = something | filter 1 = something").unwrap();
     let result = db.execute_query(&query).unwrap();
     assert_eq!(result.tuples().count(), 1);
 
-
-    let query = parse_query("tuple 1::NUMBER something::TEXT | filter 0 = 2").unwrap();
+    let query = parse_query("tuple 0::NUMBER = 1 1::TEXT = something | filter 0 = 2").unwrap();
     let result = db.execute_query(&query).unwrap();
     assert!(result.tuples().next().is_none());
-
-    let query = parse_query("tuple 1 something | filter 0 = 1").unwrap();
-    let result = db.execute_query(&query);
-    assert!(result.is_err());
 }
 
 #[test]
@@ -84,7 +79,7 @@ fn test_single_join() {
 fn test_update() {
     let db = prepare_db();
 
-    let insert = parse_query("tuple 1 updated_title content 2 true | insert_into document").unwrap();
+    let insert = parse_query("tuple id = 1 title = updated_title content = content type = 2 published = true | insert_into document").unwrap();
     db.execute_query(&insert).unwrap();
 
     let query = parse_query("scan document | filter document.id = 1").unwrap();

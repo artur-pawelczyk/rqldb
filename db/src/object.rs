@@ -2,6 +2,7 @@ use std::fmt;
 use std::iter::zip;
 use std::{collections::{HashSet, HashMap}, cell::Ref};
 
+use crate::plan::Attribute;
 use crate::{tuple::Tuple, schema::Relation, Type};
 
 type ByteCell = Vec<u8>;
@@ -10,7 +11,7 @@ type ByteTuple = Vec<u8>;
 #[derive(Default)]
 pub(crate) struct IndexedObject {
     pub(crate) tuples: Vec<ByteTuple>,
-    attrs: Vec<Type>,
+    attrs: Vec<Attribute>,
     index: Index,
     hash: HashMap<ByteCell, usize>,
     removed_ids: HashSet<usize>,
@@ -22,7 +23,7 @@ impl IndexedObject {
 
         Self{
             tuples: Vec::new(),
-            attrs: table.attributes().map(|attr| attr.kind()).collect(),
+            attrs: table.attributes().enumerate().map(|(i, attr)| Attribute { pos: i, name: Box::from(attr.name()), kind: attr.kind() }).collect(),
             index: key.map(Index::Attr).unwrap_or(Index::Uniq),
             hash: Default::default(),
             removed_ids: Default::default(),
@@ -86,7 +87,7 @@ impl IndexedObject {
 
             let mut obj = Self{
                 tuples: snapshot.values,
-                attrs: table.attributes().map(|attr| attr.kind()).collect(),
+                attrs: table.attributes().enumerate().map(|(i, attr)| Attribute { pos: i, name: Box::from(attr.name()), kind: attr.kind() }).collect(),
                 index,
                 hash: Default::default(),
                 removed_ids: HashSet::new(),
@@ -97,7 +98,7 @@ impl IndexedObject {
         } else {
             Self{
                 tuples: snapshot.values,
-                attrs: table.attributes().map(|attr| attr.kind()).collect(),
+                attrs: table.attributes().enumerate().map(|(i, attr)| Attribute { pos: i, name: Box::from(attr.name()), kind: attr.kind() }).collect(),
                 index: Default::default(),
                 hash: Default::default(),
                 removed_ids: HashSet::new(),
@@ -142,22 +143,26 @@ enum Index {
 #[derive(Debug)]
 pub struct TempObject {
     values: Vec<Vec<u8>>,
-    attrs: Vec<Type>,
+    attrs: Vec<Attribute>,
 }
 
 impl TempObject {
-    pub fn with_attrs(attrs: Vec<Type>) -> Self {
+    pub fn with_attrs(attrs: Vec<Attribute>) -> Self {
         Self{ values: vec![], attrs }
     }
 
     pub fn from_relation(rel: &Relation) -> Self {
-        Self { values: vec![], attrs: rel.types() }
+        let attrs = rel.attributes().enumerate()
+            .map(|(i, attr)| Attribute { pos: i, name: Box::from(attr.name()), kind: attr.kind() })
+            .collect();
+
+        Self { values: vec![], attrs }
     }
 
     pub fn push(&mut self, input_tuple: Vec<Vec<u8>>) {
         let mut raw_tuple = Vec::new();
-        for (val, kind) in zip(input_tuple.iter(), self.attrs.iter()) {
-            if *kind == Type::TEXT {
+        for (val, attr) in zip(input_tuple.iter(), self.attrs.iter()) {
+            if attr.kind() == Type::TEXT {
                 raw_tuple.push(val.len() as u8);
             }
 
@@ -179,8 +184,8 @@ impl TempObject {
             };
         }
 
-        let tuple = zip(vals.iter(), self.attrs.iter()).fold(Vec::new(), |mut acc, (val, kind)| {
-            add_cell(val, *kind, &mut acc);
+        let tuple = zip(vals.iter(), self.attrs.iter()).fold(Vec::new(), |mut acc, (val, attr)| {
+            add_cell(val, attr.kind(), &mut acc);
             acc
         });
 
@@ -220,6 +225,10 @@ impl<'a> RawObjectView<'a> {
 
     pub fn types(&self) -> Vec<Type> {
         self.rel.types()
+    }
+
+    pub fn schema(&self) -> &Relation {
+        self.rel
     }
 }
 

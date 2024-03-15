@@ -136,30 +136,30 @@ fn read_tuple<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Vec<TupleAttr<'a>>, P
         let token = tokenizer.next()?;
         match token {
             Token::Symbol(value_or_name, _) => {
-                if matches!(tokenizer.peek()?, Token::Op("=", _)) {
-                    tokenizer.next()?;
-                    if let Token::Symbol(value, _) = tokenizer.next()? {
-                        tuple_builder = tuple_builder.inferred(value_or_name, value);
-                    } else {
-                        return Err(ParseError::msg("Expected a symbol"));
-                    }
-                } else {
-                    tuple_builder = tuple_builder.numbered(value_or_name)
+                match tokenizer.next()? {
+                    Token::Op("=", _) => {
+                        if let Token::Symbol(value, _) = tokenizer.next()? {
+                            tuple_builder = tuple_builder.inferred(value_or_name, value);
+                        } else {
+                            return Err(ParseError::msg("Expected a symbol"));
+                        }
+                    },
+                    token => return Err(ParseError { pos: token.pos(), msg: "Expected an equals sign" })
                 }
             },
             Token::Pipe(_) => break,
             Token::End(_) => break,
             Token::SymbolWithType(value_or_name, kind, pos) => {
                 let kind = AttrKind::from_str(kind).map_err(|_| ParseError{ msg: "Unknown type", pos })?;
-                if matches!(tokenizer.peek()?, Token::Op("=", _)) {
-                    tokenizer.next()?;
-                    if let Token::Symbol(value, _) = tokenizer.next()? {
-                        tuple_builder = tuple_builder.typed(kind, value_or_name, value);
-                    } else {
-                        return Err(ParseError::msg("Expected a symbol"));
-                    }
-                } else {
-                    tuple_builder = tuple_builder.numbered_and_typed(kind, value_or_name)
+                match tokenizer.next()? {
+                    Token::Op("=", _) => {
+                        if let Token::Symbol(value, _) = tokenizer.next()? {
+                            tuple_builder = tuple_builder.typed(kind, value_or_name, value);
+                        } else {
+                            return Err(ParseError::msg("Expected a symbol"));
+                        }
+                    },
+                    token => return Err(ParseError { pos: token.pos(), msg: "Expected an equals sign" })
                 }
             },
             Token::SymbolWithKeyType(_, _, pos) => return Err(ParseError{ msg: "Expected a symbol, got typed field", pos }),
@@ -283,8 +283,9 @@ mod tests {
     #[test]
     fn test_parse_query() {
         assert_parse!("scan example | select_all");
-        assert_parse!("tuple 1 2 | select_all");
-        assert_parse!("tuple 1 2 | insert_into example");
+        assert_parse!("tuple first = 1 second = 2 | select_all");
+        assert_parse!("tuple first = 1 second = 2 | insert_into example");
+        assert_parse!("tuple id::NUMBER = 1 name::TEXT = something | select_all");
         assert_parse!("scan example | filter id = 1 | select_all");
         assert_parse!("scan example | filter id > 1 | select_all");
         assert_parse!("scan example | join other example.other_id example.id | select_all");
@@ -292,12 +293,6 @@ mod tests {
         assert_parse!("scan example | filter example.id = 1 | delete");
         assert_parse!("scan_index example.id = 1 | select_all");
         assert_parse!("scan example | apply sum example.n");
-    }
-
-    #[test]
-    fn test_parse_tuple() {
-        assert_parse!("tuple id = 1 name = something | select_all");
-        assert_parse!("tuple id::NUMBER = 1 name::TEXT = something | select_all");
     }
 
     #[test]
@@ -310,6 +305,7 @@ mod tests {
         assert_parse_query_fails!("scan example | i_dont_know", 15);
         assert_parse_query_fails!("scan example | id::NUMBER", 15);
         assert_parse_query_fails!("scan example | filter id ! 1", 25);
+        assert_parse_query_fails!("tuple 1 2 | select_all", 8);
     }
 
     #[test]

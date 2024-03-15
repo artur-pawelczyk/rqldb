@@ -73,7 +73,7 @@ mod tests {
         let raw_object = db.raw_object("example").unwrap();
         let mut out = Vec::new();
         write_object(&mut out, &raw_object).unwrap();
-        let mut saved_object = TempObject::with_attrs(raw_object.types());
+        let mut saved_object = TempObject::from_relation(raw_object.schema());
         read_object(&mut ByteReader::new(Cursor::new(out)), &mut saved_object).unwrap();
         assert!(saved_object.is_empty());
     }
@@ -83,13 +83,13 @@ mod tests {
         let mut db = Database::default();
         db.execute_create(&Command::create_table("example").indexed_column("id", Type::NUMBER).column("content", Type::TEXT));
 
-        db.execute_query(&Query::tuple(&["1", "test"]).insert_into("example")).unwrap();
-        db.execute_query(&Query::tuple(&["2", "test"]).insert_into("example")).unwrap();
+        db.execute_query(&Query::tuple(&[("id", "1"), ("content", "test")]).insert_into("example")).unwrap();
+        db.execute_query(&Query::tuple(&[("id", "2"), ("content", "test")]).insert_into("example")).unwrap();
 
         let raw_object = db.raw_object("example").unwrap();
         let mut out = Vec::new();
         write_object(&mut out, &raw_object).unwrap();
-        let mut saved_object = TempObject::with_attrs(raw_object.types());
+        let mut saved_object = TempObject::from_relation(raw_object.schema());
         read_object(&mut ByteReader::new(Cursor::new(out)), &mut saved_object).unwrap();
         
 
