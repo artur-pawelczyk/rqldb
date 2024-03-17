@@ -508,7 +508,7 @@ mod tests {
 
         let query = dsl::Query::scan("document").join("type", "document.type_id", "type.id");
         let joins = expect_join(compute_plan(&schema, &query));
-        assert_eq!(joins.source_table().name, "type");
+        assert_eq!(joins.source_table().name.as_ref(), "type");
         assert_eq!(attribute_names(&joins.attributes_after()), vec!["document.name", "document.type_id", "type.id", "type.name"]);
 
         let query = dsl::Query::scan("nothing").join("type", "a", "b");
@@ -535,8 +535,8 @@ mod tests {
             .join("type", "document.type_id", "type.id")
             .join("author", "document.author", "author.username");
         let joins = expect_joins(compute_plan(&schema, &query), 2);
-        assert_eq!(joins[0].table.name, "type");
-        assert_eq!(joins[1].table.name, "author");
+        assert_eq!(joins[0].table.name.as_ref(), "type");
+        assert_eq!(joins[1].table.name.as_ref(), "author");
     }
 
     #[test]

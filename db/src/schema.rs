@@ -10,7 +10,7 @@ pub struct Schema {
 #[derive(Clone)]
 pub struct Relation {
     pub id: usize,
-    pub name: String,
+    pub name: Box<str>,
     columns: Vec<InnerColumn>,
 }
 
@@ -38,13 +38,13 @@ impl TableId for usize {
 
 impl TableId for &str {
     fn find_in(self, schema: &Schema) -> Option<&Relation> {
-        schema.relations.iter().find(|rel| rel.name == self)
+        schema.relations.iter().find(|rel| rel.name.as_ref() == self)
     }
 }
 
 impl TableId for &String {
     fn find_in(self, schema: &Schema) -> Option<&Relation> {
-        schema.relations.iter().find(|rel| &rel.name == self)
+        schema.relations.iter().find(|rel| rel.name.as_ref() == self)
     }
 }
 
@@ -101,7 +101,7 @@ impl<'a> Column<'a> {
 
 #[derive(Clone, PartialEq)]
 struct InnerColumn {
-    name: String,
+    name: Box<str>,
     kind: Type,
     indexed: bool,
 }
@@ -203,7 +203,7 @@ impl<'a> TableBuilder<'a> {
     #[must_use]
     pub fn column(mut self, name: &str, kind: Type) -> Self {
         self.columns.push(InnerColumn {
-            name: format!("{}.{}", self.name, name),
+            name: Box::from(format!("{}.{}", self.name, name)),
             kind,
             indexed: false
         });
@@ -213,7 +213,7 @@ impl<'a> TableBuilder<'a> {
     #[must_use]
     pub fn indexed_column(mut self, name: &str, kind: Type) -> Self {
         self.columns.push(InnerColumn {
-            name: format!("{}.{}", self.name, name),
+            name: Box::from(format!("{}.{}", self.name, name)),
             kind,
             indexed: true
         });
@@ -222,7 +222,7 @@ impl<'a> TableBuilder<'a> {
 
     pub fn add(self) -> &'a Relation {
         let id = self.schema.relations.len();
-        self.schema.relations.push(Relation { id, name: self.name, columns: self.columns });
+        self.schema.relations.push(Relation { id, name: Box::from(self.name), columns: self.columns });
         self.schema.relations.last().unwrap()
     }
 }
@@ -273,7 +273,7 @@ impl Relation {
     /// assert_eq!(relation.column_position("something.id"), None);
     /// ```
     pub fn column_position(&self, name: &str) -> Option<u32> {
-        if let Some((pos, _)) = self.columns.iter().enumerate().find(|(_, col)| col.name == name) {
+        if let Some((pos, _)) = self.columns.iter().enumerate().find(|(_, col)| col.name.as_ref() == name) {
             Some(pos as u32)
         } else {
             None
@@ -295,7 +295,7 @@ impl Relation {
     /// assert_eq!(relation.column_type("something.id"), None);
     /// ```
     pub fn column_type(&self, name: &str) -> Option<Type> {
-        self.columns.iter().find(|col| col.name == name).map(|col| col.kind)
+        self.columns.iter().find(|col| col.name.as_ref() == name).map(|col| col.kind)
     }
 
     /// # Examples
@@ -323,7 +323,7 @@ impl Relation {
     /// assert_eq!(schema.find_relation("example").unwrap().find_column("example.name").unwrap().short_name(), "name");
     /// ```
     pub fn find_column(&self, name: &str) -> Option<Column> {
-        self.columns.iter().enumerate().find(|(_, col)| col.name == name).map(|(pos, col)| Column{ table: self, inner: col, pos })
+        self.columns.iter().enumerate().find(|(_, col)| col.name.as_ref() == name).map(|(pos, col)| Column{ table: self, inner: col, pos })
     }
 
     pub fn types(&self) -> Vec<Type> {
