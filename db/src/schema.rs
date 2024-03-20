@@ -48,6 +48,16 @@ impl TableId for &String {
     }
 }
 
+pub trait AttributeIdentifier {
+    fn find_in<'a>(self, schema: &'a Schema) -> Option<Column<'a>>;
+}
+
+impl AttributeIdentifier for &str {
+    fn find_in<'a>(self, schema: &'a Schema) -> Option<Column<'a>> {
+        todo!()
+    }
+}
+
 #[derive(Clone, PartialEq)]
 pub struct Column<'a> {
     inner: &'a InnerColumn,
@@ -174,6 +184,10 @@ impl Schema {
     }
 
     pub fn find_relation<T: TableId>(&self, id: T) -> Option<&Relation> {
+        id.find_in(self)
+    }
+
+    pub fn lookup_attribute(&self, id: impl AttributeIdentifier) -> Option<Column<'_>> {
         id.find_in(self)
     }
 
