@@ -10,7 +10,7 @@ pub(crate) fn write_schema<W: Write>(writer: &mut W, schema: &Schema) -> Result<
     for rel in &schema.relations {
         let mut rel_doc = Document::new();
         rel_doc.insert("id", rel.id as i64);
-        rel_doc.insert("name", rel.name.as_str());
+        rel_doc.insert("name", rel.name.as_ref());
 
         let mut col_arr = Array::new();
         for col in rel.attributes() {
@@ -90,10 +90,8 @@ mod tests {
 
         for (rel, saved_rel) in zip(&db.schema().relations, saved_schema) {
             assert_eq!(rel.id, saved_rel.id);
-            assert_eq!(rel.name, saved_rel.name);
+            assert_eq!(rel.name.as_ref(), saved_rel.name.as_str());
             assert_eq!(rel.attributes().count(), saved_rel.columns.len());
         }
     }
-
-
 }
