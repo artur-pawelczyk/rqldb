@@ -54,7 +54,7 @@ pub trait AttributeIdentifier {
 
 impl AttributeIdentifier for &str {
     fn find_in<'a>(self, schema: &'a Schema) -> Option<Column<'a>> {
-        todo!()
+        schema.find_column(self)
     }
 }
 

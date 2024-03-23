@@ -6,6 +6,7 @@ use crate::schema::Column;
 use crate::schema::{Schema, Relation, Type};
 use crate::tuple::Tuple;
 
+use std::collections::HashMap;
 use std::iter::zip;
 
 type Result<T> = std::result::Result<T, String>;    
@@ -41,7 +42,7 @@ impl<'schema> Plan<'schema> {
         }
     }
 
-    fn validate_with_finisher(self) -> std::result::Result<Self, &'static str> {
+    fn validate_with_finisher(self) -> Result<Self> {
         Ok(Plan{
             source: self.source.validate_with_finisher(&self.finisher)?,
             ..self
@@ -114,6 +115,22 @@ pub(crate) struct Source<'a> {
     pub contents: Contents<'a>,
 }
 
+enum QuerySource<'schema> {
+    Tuple(HashMap<String, (Type, String)>),
+    Scan(&'schema Relation),
+    IndexScan(Column<'schema>, Cell),
+}
+
+impl<'schema> Into<Source<'schema>> for QuerySource<'schema> {
+    fn into(self) -> Source<'schema> {
+        match self {
+            Self::Tuple(values) => Source::from_map(values),
+            Self::Scan(rel) => Source::scan_table(rel),
+            Self::IndexScan(attr, cell) => Source::scan_index(attr, cell),
+        }
+    }
+}
+
 pub(crate) enum Contents<'a> {
     TableScan(&'a Relation),
     Tuple(Vec<String>),
@@ -165,6 +182,14 @@ impl Attribute {
     pub fn kind(&self) -> Type {
         self.kind
     }
+
+    pub fn short_name(&self) -> &str {
+        if let Some(i) = self.name.find('.') {
+            &self.name[i+1..]
+        } else {
+            &self.name
+        }
+    }
 }
 
 impl PartialEq<str> for Attribute {
@@ -209,6 +234,18 @@ impl<'schema> Source<'schema> {
         }
     }
 
+    fn from_map(map: HashMap<String, (Type, String)>) -> Self {
+        let mut attributes = Vec::new();
+        let mut values = Vec::new();
+
+        for (pos, (k, v)) in map.into_iter().enumerate() {
+            attributes.push(Attribute { pos, name: Box::from(k.as_str()), kind: v.0 });
+            values.push(v.1);
+        }
+
+        Self { attributes, contents: Contents::Tuple(values) }
+    }
+
     fn scan_index(index: Column<'schema>, val: Cell) -> Self {
         let attributes = index.table().attributes().enumerate()
             .map(|(i, attr)| Attribute::named(i, attr.name()).with_type(attr.kind())).collect();
@@ -219,22 +256,23 @@ impl<'schema> Source<'schema> {
         }
     }
 
-    fn validate_with_finisher(self, finisher: &Finisher) -> std::result::Result<Source<'schema>, &'static str> {
+    fn validate_with_finisher(self, finisher: &Finisher) -> Result<Source<'schema>> {
         match finisher {
             Finisher::Insert(rel) => {
                 if let Contents::Tuple(values) = &self.contents {
                     let target_types = rel.types();
                     if target_types.len() != self.attributes.len() || target_types.len() != self.contents.len() {
-                        return Err("Number of attributes in the tuple doesn't match the target table");
+                        return Err(format!("Cannot insert tuple with {} attributes into relation with {} attributes", self.attributes.len(), target_types.len()));
+
                     }
 
                     if zip(values.iter(), target_types.iter()).any(|(val, expected)| !validate_type(val, *expected)) {
-                        return Err("Type incompatible with the target table");
+                        return Err(String::from("Type incompatible with the target table"));
                     }
 
                     Ok(self)
                 } else {
-                    Err("Expected a tuple source for insert")
+                    Err(String::from("Expected a tuple source for insert"))
                 }
             },
             _ => {
@@ -281,8 +319,8 @@ impl ApplyFn {
 pub(crate) fn compute_plan<'schema>(schema: &'schema Schema, query: &dsl::Query) -> Result<Plan<'schema>> {
     let plan = Plan::default();
 
-    let plan = compute_source(plan, schema, &query.source)?;
-    let plan = compute_finisher(plan, schema, query)?;
+    let source = compute_source(plan, schema, &query.source)?;
+    let plan = compute_finisher(source, schema, query)?;
     let plan = plan.validate_with_finisher()?;
 
     let plan = compute_joins(plan, schema, query)?;
@@ -293,11 +331,32 @@ pub(crate) fn compute_plan<'schema>(schema: &'schema Schema, query: &dsl::Query)
 }
 
 fn compute_source<'schema>(plan: Plan<'schema>, schema: &'schema Schema, dsl_source: &dsl::Source)
-                           -> std::result::Result<Plan<'schema>, &'static str> {
-    Ok(Plan{
-        source: Source::new(&plan, schema, dsl_source)?,
-        ..plan
-    })
+                           -> Result<QuerySource<'schema>> {
+    match dsl_source {
+        dsl::Source::Tuple(values) => {
+            let tuple = values.iter().map(|attr| {
+                let name = attr.name.to_string();
+                let kind: Type = attr.kind.into();
+                let value = attr.value.to_string();
+                (name, (kind, value))
+            }).collect();
+            Ok(QuerySource::Tuple(tuple))
+        },
+        dsl::Source::TableScan(relation_name) => {
+            let relation = schema.find_relation(*relation_name)
+                .ok_or_else(|| format!("Relation {relation_name} not found"))?;
+            Ok(QuerySource::Scan(relation))
+        },
+        dsl::Source::IndexScan(index, Operator::EQ, val) => {
+            let attribute = schema.lookup_attribute(*index).ok_or_else(|| format!("Attribute {index} not found"))?;
+            if attribute.indexed() {
+                Ok(QuerySource::IndexScan(attribute, Cell::from_string(val)))
+            } else {
+                Err(format!("Attribute {index} is not an index"))
+            }
+        },
+        _ => Err(String::from("Source not supported"))
+    }
 }
 
 fn compute_filters<'a>(plan: Plan<'a>, query: &dsl::Query) -> Result<Plan<'a>> {
@@ -333,32 +392,46 @@ fn compute_filters<'a>(plan: Plan<'a>, query: &dsl::Query) -> Result<Plan<'a>> {
     Ok(Plan{ filters, ..plan })
 }
 
-fn compute_finisher<'a>(plan: Plan<'a>, schema: &'a Schema, query: &dsl::Query) -> Result<Plan<'a>> {
+fn compute_finisher<'a>(source: QuerySource<'a>, schema: &'a Schema, query: &dsl::Query) -> Result<Plan<'a>> {
     match &query.finisher {
         dsl::Finisher::Insert(name) => {
-            let relation = schema.find_relation(*name).ok_or("No such target table")?;
-            let finisher = Finisher::Insert(relation);
-            let attributes = relation.attributes().enumerate()
-                .map(|(pos, attr)| Attribute::named(pos, attr.name()).with_type(attr.kind())).collect();
-            let source = Source{ attributes, contents: plan.source.contents };
-            Ok(Plan{ source, finisher, ..plan })
+            if let QuerySource::Tuple(map) = source {
+                let relation = schema.find_relation(*name).ok_or("No such target table")?;
+                let finisher = Finisher::Insert(relation);
+                let attributes: Vec<_> = relation.attributes().enumerate()
+                    .map(|(pos, attr)| Attribute::named(pos, attr.name()).with_type(attr.kind())).collect();
+                let mut values = Vec::new();
+                for attr in &attributes {
+                    if let Some((_, val)) = map.get(attr.name.as_ref()) {
+                        values.push(String::from(val));
+                    } else if let Some((_, val)) = map.get(attr.short_name()) {
+                        values.push(String::from(val));
+                    } else {
+                        return Err(format!("Missing attribute in source {}", attr.name));
+                    }
+                }
+                let source = Source{ attributes, contents: Contents::Tuple(values) };
+                Ok(Plan{ source, finisher, ..Default::default() })
+            } else {
+                panic!()
+            }
         },
-        dsl::Finisher::AllColumns => Ok(Plan{ finisher: Finisher::Return, ..plan }),
-        dsl::Finisher::Count => Ok(Plan{ finisher: Finisher::Count, ..plan }),
+        dsl::Finisher::AllColumns => Ok(Plan{ finisher: Finisher::Return, source: source.into(), ..Default::default() }),
+        dsl::Finisher::Count => Ok(Plan{ finisher: Finisher::Count, source: source.into(), ..Default::default() }),
         dsl::Finisher::Apply(f, args) => {
             let finisher = args
                 .first()
                 .and_then(|n| schema.find_column(n))
                 .map(|attr| Ok(Finisher::apply(f, attr)))
                 .unwrap_or(Err("apply: No such attribute"))?;
-            Ok(Plan{ finisher, ..plan })
+            Ok(Plan{ finisher, source: source.into(), ..Default::default() })
         },
         dsl::Finisher::Delete => {
             let finisher = match &query.source {
                 dsl::Source::TableScan(name) => schema.find_relation(*name).map(Finisher::Delete).ok_or("No such relation found for delete operation"),
                 _ => Err("Illegal delete operation"),
             }?;
-            Ok(Plan{ finisher, ..plan })
+            Ok(Plan{ finisher, source: source.into(), ..Default::default() })
         }
         _ => todo!(),
     }
