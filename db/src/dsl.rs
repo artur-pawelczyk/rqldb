@@ -160,7 +160,7 @@ impl Into<Type> for AttrKind {
     }
 }
 
-impl<'a> fmt::Display for AttrKind {
+impl fmt::Display for AttrKind {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Infer => write!(f, "INFER"),

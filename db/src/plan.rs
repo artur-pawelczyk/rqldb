@@ -114,18 +114,28 @@ pub(crate) struct Source<'a> {
     pub contents: Contents<'a>,
 }
 
-enum QuerySource<'schema> {
-    Tuple(HashMap<String, (Type, String)>),
-    Scan(&'schema Relation),
-    IndexScan(Column<'schema>, Cell),
+enum QuerySource<'q> {
+    Tuple(HashMap<&'q str, (Type, &'q str)>),
+    Scan(&'q str),
+    IndexScan(&'q str, Cell),
 }
 
-impl<'schema> Into<Source<'schema>> for QuerySource<'schema> {
-    fn into(self) -> Source<'schema> {
+impl<'q> QuerySource<'q> {
+    fn into_source<'schema>(self, schema: &'schema Schema) -> Result<Source<'schema>> {
         match self {
-            Self::Tuple(values) => Source::from_map(values),
-            Self::Scan(rel) => Source::scan_table(rel),
-            Self::IndexScan(attr, cell) => Source::scan_index(attr, cell),
+            Self::Tuple(values) => Ok(Source::from_map(&values)),
+            Self::Scan(name) => {
+                let rel = schema.find_relation(name).ok_or_else(|| format!("No such relation {name}"))?;
+                Ok(Source::scan_table(rel))
+            },
+            Self::IndexScan(attr_name, cell) => {
+                let attr = schema.find_column(&attr_name).ok_or_else(|| format!("No such attribute {attr_name}"))?;
+                if attr.indexed() {
+                    Ok(Source::scan_index(attr, cell))
+                } else {
+                    Err(format!("Attribute {attr_name} is not an index"))
+                }
+            },
         }
     }
 }
@@ -204,13 +214,13 @@ impl<'schema> Source<'schema> {
         Source{ attributes, contents: Contents::TableScan(rel) }
     }
 
-    fn from_map(map: HashMap<String, (Type, String)>) -> Self {
+    fn from_map(map: &HashMap<&str, (Type, &str)>) -> Self {
         let mut attributes = Vec::new();
         let mut values = Vec::new();
 
         for (pos, (k, v)) in map.into_iter().enumerate() {
-            attributes.push(Attribute { pos, name: Box::from(k.as_str()), kind: v.0 });
-            values.push(v.1);
+            attributes.push(Attribute { pos, name: Box::from(*k), kind: v.0 });
+            values.push(v.1.to_string());
         }
 
         Self { attributes, contents: Contents::Tuple(values) }
@@ -287,7 +297,7 @@ impl ApplyFn {
 }
 
 pub(crate) fn compute_plan<'schema>(schema: &'schema Schema, query: &dsl::Query) -> Result<Plan<'schema>> {
-    let source = compute_source(schema, &query.source)?;
+    let source = compute_source(&query.source)?;
     let plan = compute_finisher(source, schema, query)?;
     let plan = plan.validate_with_finisher()?;
 
@@ -298,30 +308,22 @@ pub(crate) fn compute_plan<'schema>(schema: &'schema Schema, query: &dsl::Query)
     Ok(plan)
 }
 
-fn compute_source<'schema>(schema: &'schema Schema, dsl_source: &dsl::Source)
-                           -> Result<QuerySource<'schema>> {
+fn compute_source<'query>(dsl_source: &'query dsl::Source) -> Result<QuerySource<'query>> {
     match dsl_source {
         dsl::Source::Tuple(values) => {
             let tuple = values.iter().map(|attr| {
-                let name = attr.name.to_string();
+                let name = attr.name.as_ref();
                 let kind: Type = attr.kind.into();
-                let value = attr.value.to_string();
+                let value = attr.value;
                 (name, (kind, value))
             }).collect();
             Ok(QuerySource::Tuple(tuple))
         },
         dsl::Source::TableScan(relation_name) => {
-            let relation = schema.find_relation(*relation_name)
-                .ok_or_else(|| format!("Relation {relation_name} not found"))?;
-            Ok(QuerySource::Scan(relation))
+            Ok(QuerySource::Scan(relation_name))
         },
         dsl::Source::IndexScan(index, Operator::EQ, val) => {
-            let attribute = schema.lookup_attribute(*index).ok_or_else(|| format!("Attribute {index} not found"))?;
-            if attribute.indexed() {
-                Ok(QuerySource::IndexScan(attribute, Cell::from_string(val)))
-            } else {
-                Err(format!("Attribute {index} is not an index"))
-            }
+            Ok(QuerySource::IndexScan(index, Cell::from_string(val)))
         },
         _ => Err(String::from("Source not supported"))
     }
@@ -360,7 +362,7 @@ fn compute_filters<'a>(plan: Plan<'a>, query: &dsl::Query) -> Result<Plan<'a>> {
     Ok(Plan{ filters, ..plan })
 }
 
-fn compute_finisher<'a>(source: QuerySource<'a>, schema: &'a Schema, query: &dsl::Query) -> Result<Plan<'a>> {
+fn compute_finisher<'query, 'schema>(source: QuerySource<'query>, schema: &'schema Schema, query: &'query dsl::Query) -> Result<Plan<'schema>> {
     match &query.finisher {
         dsl::Finisher::Insert(name) => {
             if let QuerySource::Tuple(map) = source {
@@ -371,9 +373,9 @@ fn compute_finisher<'a>(source: QuerySource<'a>, schema: &'a Schema, query: &dsl
                 let mut values = Vec::new();
                 for attr in &attributes {
                     if let Some((_, val)) = map.get(attr.name.as_ref()) {
-                        values.push(String::from(val));
+                        values.push(val.to_string());
                     } else if let Some((_, val)) = map.get(attr.short_name()) {
-                        values.push(String::from(val));
+                        values.push(val.to_string());
                     } else {
                         return Err(format!("Missing attribute in source {}", attr.name));
                     }
@@ -384,22 +386,22 @@ fn compute_finisher<'a>(source: QuerySource<'a>, schema: &'a Schema, query: &dsl
                 panic!()
             }
         },
-        dsl::Finisher::AllColumns => Ok(Plan{ finisher: Finisher::Return, source: source.into(), ..Default::default() }),
-        dsl::Finisher::Count => Ok(Plan{ finisher: Finisher::Count, source: source.into(), ..Default::default() }),
+        dsl::Finisher::AllColumns => Ok(Plan{ finisher: Finisher::Return, source: source.into_source(&schema)?, ..Default::default() }),
+        dsl::Finisher::Count => Ok(Plan{ finisher: Finisher::Count, source: source.into_source(&schema)?, ..Default::default() }),
         dsl::Finisher::Apply(f, args) => {
             let finisher = args
                 .first()
                 .and_then(|n| schema.find_column(n))
                 .map(|attr| Ok(Finisher::apply(f, attr)))
                 .unwrap_or(Err("apply: No such attribute"))?;
-            Ok(Plan{ finisher, source: source.into(), ..Default::default() })
+            Ok(Plan{ finisher, source: source.into_source(&schema)?, ..Default::default() })
         },
         dsl::Finisher::Delete => {
             let finisher = match &query.source {
                 dsl::Source::TableScan(name) => schema.find_relation(*name).map(Finisher::Delete).ok_or("No such relation found for delete operation"),
                 _ => Err("Illegal delete operation"),
             }?;
-            Ok(Plan{ finisher, source: source.into(), ..Default::default() })
+            Ok(Plan{ finisher, source: source.into_source(&schema)?, ..Default::default() })
         }
         _ => todo!(),
     }
