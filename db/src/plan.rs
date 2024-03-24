@@ -1,7 +1,6 @@
 use crate::Cell;
 use crate::Operator;
 use crate::dsl;
-use crate::dsl::TupleAttr;
 use crate::schema::Column;
 use crate::schema::{Schema, Relation, Type};
 use crate::tuple::Tuple;
@@ -199,39 +198,10 @@ impl PartialEq<str> for Attribute {
 }
 
 impl<'schema> Source<'schema> {
-    fn new(_: &Plan, schema: &'schema Schema, dsl_source: &dsl::Source) -> std::result::Result<Source<'schema>, &'static str> {
-        match dsl_source {
-            dsl::Source::TableScan(name) => {
-                Ok(Self::scan_table(schema.find_relation(*name).ok_or("No such table")?))
-            },
-
-            dsl::Source::Tuple(values) => {
-                Ok(Self::from_tuple(values))
-            },
-            dsl::Source::IndexScan(index, Operator::EQ, val) => {
-                let index = schema.find_column(index)
-                    .and_then(|col| if col.indexed() { Some(col) } else { None })
-                    .ok_or("Index not found")?;
-                let val = Cell::from_string(val);
-                Ok(Self::scan_index(index, val))
-            }
-            _ => Err("Not supported source"),
-        }
-    }
-
     fn scan_table(rel: &'schema Relation) -> Self {
         let attributes = rel.attributes().enumerate()
             .map(|(i, attr)| Attribute::named(i, attr.name()).with_type(attr.kind())).collect();
         Source{ attributes, contents: Contents::TableScan(rel) }
-    }
-
-    fn from_tuple(values: &[TupleAttr<'_>]) -> Self {
-        let attributes = values.iter().enumerate().map(|(i, attr)| Attribute::named(i, attr.name.as_ref()).with_type((attr.kind).into())).collect();
-        Self {
-            attributes,
-            // TODO: Create a byte typle here, so the String allocation can be avoided
-            contents: Contents::Tuple(values.iter().map(|attr| attr.value.to_string()).collect()),
-        }
     }
 
     fn from_map(map: HashMap<String, (Type, String)>) -> Self {
@@ -317,9 +287,7 @@ impl ApplyFn {
 }
 
 pub(crate) fn compute_plan<'schema>(schema: &'schema Schema, query: &dsl::Query) -> Result<Plan<'schema>> {
-    let plan = Plan::default();
-
-    let source = compute_source(plan, schema, &query.source)?;
+    let source = compute_source(schema, &query.source)?;
     let plan = compute_finisher(source, schema, query)?;
     let plan = plan.validate_with_finisher()?;
 
@@ -330,7 +298,7 @@ pub(crate) fn compute_plan<'schema>(schema: &'schema Schema, query: &dsl::Query)
     Ok(plan)
 }
 
-fn compute_source<'schema>(plan: Plan<'schema>, schema: &'schema Schema, dsl_source: &dsl::Source)
+fn compute_source<'schema>(schema: &'schema Schema, dsl_source: &dsl::Source)
                            -> Result<QuerySource<'schema>> {
     match dsl_source {
         dsl::Source::Tuple(values) => {
