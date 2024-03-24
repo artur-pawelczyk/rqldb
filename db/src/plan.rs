@@ -103,7 +103,9 @@ impl<'a> Join<'a> {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Attribute {
-    pub pos: usize, // TODO: position should be internal to the object. Find a way to hide it there.
+    // TODO: position should be internal to the object (but not schema
+    // because the element ordering should be private for the object)
+    pub pos: usize,
     pub name: Box<str>,
     pub kind: Type,
 }
