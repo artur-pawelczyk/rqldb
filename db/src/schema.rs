@@ -1,6 +1,6 @@
 use std::{fmt, str::FromStr};
 
-use crate::{dsl::AttrKind, plan::Attribute};
+use crate::{dsl::AttrKind, object::Attribute};
 
 #[derive(Default, PartialEq)]
 pub struct Schema {

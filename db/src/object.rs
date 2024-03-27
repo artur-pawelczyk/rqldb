@@ -2,7 +2,7 @@ use std::fmt;
 use std::iter::zip;
 use std::{collections::{HashSet, HashMap}, cell::Ref};
 
-use crate::plan::Attribute;
+use crate::tuple::PositionalAttribute;
 use crate::{tuple::Tuple, schema::Relation, Type};
 
 type ByteCell = Vec<u8>;
@@ -202,6 +202,64 @@ impl TempObject {
 
     pub fn len(&self) -> usize {
         self.values.len()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Attribute {
+    // TODO: position should be internal to the object (but not schema
+    // because the element ordering should be private for the object)
+    pub pos: usize,
+    pub name: Box<str>,
+    pub kind: Type,
+}
+
+impl PositionalAttribute for Attribute {
+    fn pos(&self) -> usize {
+        self.pos
+    }
+}
+
+impl Attribute {
+    pub fn named(pos: usize, name: &str) -> Self {
+        Self {
+            pos,
+            name: Box::from(name),
+            kind: Type::default(),
+        }
+    }
+
+    pub fn with_type(self, kind: Type) -> Self {
+        Self {
+            kind,
+            ..self
+        }
+    }
+
+    pub fn pos(&self) -> usize {
+        self.pos
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn kind(&self) -> Type {
+        self.kind
+    }
+
+    pub fn short_name(&self) -> &str {
+        if let Some(i) = self.name.find('.') {
+            &self.name[i+1..]
+        } else {
+            &self.name
+        }
+    }
+}
+
+impl PartialEq<str> for Attribute {
+    fn eq(&self, s: &str) -> bool {
+        self.name.as_ref() == s
     }
 }
 

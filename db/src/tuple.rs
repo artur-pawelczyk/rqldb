@@ -1,4 +1,4 @@
-use crate::plan::Attribute;
+use crate::object::Attribute;
 use crate::schema::Type;
 
 pub(crate) trait PositionalAttribute {

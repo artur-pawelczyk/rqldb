@@ -1,8 +1,8 @@
 use std::cell::{RefCell, Ref, RefMut};
 
 use crate::dump::{dump_values, dump_create};
-use crate::object::{IndexedObject, TempObject};
-use crate::plan::{Contents, Attribute, Filter, Plan, Finisher, ApplyFn};
+use crate::object::{IndexedObject, TempObject, Attribute};
+use crate::plan::{Contents, Filter, Plan, Finisher, ApplyFn};
 use crate::tuple::Tuple;
 use crate::{schema::Schema, QueryResults, plan::compute_plan};
 use crate::{dsl, Cell, RawObjectView};
