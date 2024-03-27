@@ -1,7 +1,7 @@
 use std::cell::{RefCell, Ref, RefMut};
 
 use crate::dump::{dump_values, dump_create};
-use crate::object::{IndexedObject, TempObject, Attribute};
+use crate::object::{IndexedObject, TempObject, Attribute, NamedAttribute as _};
 use crate::plan::{Contents, Filter, Plan, Finisher, ApplyFn};
 use crate::tuple::Tuple;
 use crate::{schema::Schema, QueryResults, plan::compute_plan};
@@ -47,7 +47,7 @@ impl Database {
                 ObjectView::Ref(self.objects.get(rel.id).expect("Already checked by the planner").borrow())
             },
             Contents::Tuple(ref values) => {
-                let mut temp_object = TempObject::with_attrs(plan.source.attributes.clone());
+                let mut temp_object = TempObject::with_attrs(&plan.source.attributes);
                 temp_object.push_str(values);
                 ObjectView::Val(temp_object)
             },

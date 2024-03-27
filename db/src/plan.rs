@@ -2,9 +2,9 @@ use crate::Cell;
 use crate::Operator;
 use crate::dsl;
 use crate::object::Attribute;
+use crate::object::NamedAttribute as _;
 use crate::schema::Column;
 use crate::schema::{Schema, Relation, Type};
-use crate::tuple::PositionalAttribute;
 use crate::tuple::Tuple;
 
 use std::collections::HashMap;
@@ -443,6 +443,7 @@ mod tests {
     use crate::dsl::{AttrKind, TupleBuilder};
     use crate::dsl::Operator::{EQ, GT};
     use crate::schema::Type;
+    use crate::tuple::PositionalAttribute as _;
 
 
     #[test]

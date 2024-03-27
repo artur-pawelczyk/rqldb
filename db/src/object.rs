@@ -147,7 +147,8 @@ pub struct TempObject {
 }
 
 impl TempObject {
-    pub fn with_attrs(attrs: Vec<Attribute>) -> Self {
+    pub fn with_attrs(attrs: &[impl NamedAttribute]) -> Self {
+        let attrs = attrs.iter().enumerate().map(|(pos, a)| Attribute { pos, name: Box::from(a.name()), kind: a.kind() }).collect();
         Self{ values: vec![], attrs }
     }
 
@@ -205,6 +206,20 @@ impl TempObject {
     }
 }
 
+pub trait NamedAttribute {
+    fn name(&self) -> &str;
+    fn kind(&self) -> Type;
+
+    fn short_name(&self) -> &str {
+        let name = self.name();
+        if let Some(i) = name.find('.') {
+            &name[i+1..]
+        } else {
+            &name
+        }        
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Attribute {
     // TODO: position should be internal to the object (but not schema
@@ -217,6 +232,16 @@ pub struct Attribute {
 impl PositionalAttribute for Attribute {
     fn pos(&self) -> usize {
         self.pos
+    }
+}
+
+impl NamedAttribute for Attribute {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn kind(&self) -> Type {
+        self.kind
     }
 }
 
@@ -233,26 +258,6 @@ impl Attribute {
         Self {
             kind,
             ..self
-        }
-    }
-
-    pub fn pos(&self) -> usize {
-        self.pos
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    pub fn kind(&self) -> Type {
-        self.kind
-    }
-
-    pub fn short_name(&self) -> &str {
-        if let Some(i) = self.name.find('.') {
-            &self.name[i+1..]
-        } else {
-            &self.name
         }
     }
 }
