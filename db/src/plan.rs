@@ -138,7 +138,7 @@ impl<'q> QuerySource<'q> {
                 Ok(Source::scan_table(rel))
             },
             Self::IndexScan(attr_name, cell) => {
-                let attr = schema.find_column(&attr_name).ok_or_else(|| format!("No such attribute {attr_name}"))?;
+                let attr = schema.find_column(attr_name).ok_or_else(|| format!("No such attribute {attr_name}"))?;
                 if attr.indexed() {
                     Ok(Source::scan_index(attr, cell))
                 } else {
@@ -227,7 +227,7 @@ impl<'schema> Source<'schema> {
         let mut attributes = Vec::new();
         let mut values = Vec::new();
 
-        for (pos, (k, v)) in map.into_iter().enumerate() {
+        for (pos, (k, v)) in map.iter().enumerate() {
             attributes.push(Attribute { pos, name: Box::from(*k), kind: v.0 });
             values.push(v.1.to_string());
         }
@@ -395,22 +395,22 @@ fn compute_finisher<'query, 'schema>(source: QuerySource<'query>, schema: &'sche
                 panic!()
             }
         },
-        dsl::Finisher::AllColumns => Ok(Plan{ finisher: Finisher::Return, source: source.into_source(&schema)?, ..Default::default() }),
-        dsl::Finisher::Count => Ok(Plan{ finisher: Finisher::Count, source: source.into_source(&schema)?, ..Default::default() }),
+        dsl::Finisher::AllColumns => Ok(Plan{ finisher: Finisher::Return, source: source.into_source(schema)?, ..Default::default() }),
+        dsl::Finisher::Count => Ok(Plan{ finisher: Finisher::Count, source: source.into_source(schema)?, ..Default::default() }),
         dsl::Finisher::Apply(f, args) => {
             let finisher = args
                 .first()
                 .and_then(|n| schema.find_column(n))
                 .map(|attr| Ok(Finisher::apply(f, attr)))
                 .unwrap_or(Err("apply: No such attribute"))?;
-            Ok(Plan{ finisher, source: source.into_source(&schema)?, ..Default::default() })
+            Ok(Plan{ finisher, source: source.into_source(schema)?, ..Default::default() })
         },
         dsl::Finisher::Delete => {
             let finisher = match &query.source {
                 dsl::Source::TableScan(name) => schema.find_relation(*name).map(Finisher::Delete).ok_or("No such relation found for delete operation"),
                 _ => Err("Illegal delete operation"),
             }?;
-            Ok(Plan{ finisher, source: source.into_source(&schema)?, ..Default::default() })
+            Ok(Plan{ finisher, source: source.into_source(schema)?, ..Default::default() })
         }
         _ => todo!(),
     }

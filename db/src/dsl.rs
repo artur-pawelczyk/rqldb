@@ -217,11 +217,12 @@ impl<'a> IntoTuple<'a> for &Vec<TupleAttr<'a>> {
     }
 }
 
+#[derive(Default)]
 pub struct TupleBuilder<'a>(Vec<TupleAttr<'a>>);
 
 impl<'a> TupleBuilder<'a> {
     pub fn new() -> Self {
-        TupleBuilder(Default::default())
+        Self::default()
     }
 
     pub fn typed(mut self, kind: AttrKind, name: &'a str, value: &'a str) -> Self {
