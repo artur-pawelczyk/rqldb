@@ -70,10 +70,10 @@ impl Database {
                 [] => byte_tuple,
                 [join] => {
                     let joinee = byte_tuple;
-                    let key = joinee.cell_by_attr(join.joinee_key());
+                    let key = joinee.element(join.joinee_key());
                     let source_object = join_sources.first().expect("join source is computed from the list of joins");
-                    if let Some(join_source) = source_object.iter().find(|bytes| bytes.cell_by_attr(join.joiner_key()) == key) {
-                        joinee.add_cells(join_source)
+                    if let Some(join_source) = source_object.iter().find(|bytes| bytes.element(join.joiner_key()) == key) {
+                        joinee.extend(join_source)
                     } else {
                         joinee
                     }
@@ -191,8 +191,8 @@ impl<'a> Sink<'a> {
     fn accept_tuple(&mut self, idx: usize, tuple: &Tuple) {
         match self {
             Self::Count(ref mut count) => *count += 1,
-            Self::Sum(pos, ref mut sum) => *sum += tuple.cell(*pos).unwrap().as_number().unwrap(),
-            Self::Max(pos, ref mut max) => *max = std::cmp::max(*max, tuple.cell(*pos).unwrap().as_number().unwrap()),
+            Self::Sum(pos, ref mut sum) => *sum += tuple.element(pos).unwrap().as_number().unwrap(),
+            Self::Max(pos, ref mut max) => *max = std::cmp::max(*max, tuple.element(pos).unwrap().as_number().unwrap()),
             Self::Return(attrs, ref mut results) => results.push(tuple_to_cells(attrs, tuple)),
             Self::Insert(object) => { object.add_tuple(tuple); },
             Self::Delete(ref mut tuples) => tuples.push(idx),
@@ -225,7 +225,9 @@ impl<'a> Sink<'a> {
 }
 
 fn tuple_to_cells(attrs: &[Attribute], tuple: &Tuple) -> Vec<Cell> {
-    attrs.iter().map(|attr| Cell::from_bytes(attr.kind(), tuple.cell_by_attr(attr).bytes())).collect()
+    attrs.iter().flat_map(|attr| {
+        tuple.element(attr).map(|elem| Cell::from_bytes(attr.kind(), elem.bytes()))
+    }).collect()
 }
 
 

@@ -3,6 +3,7 @@ use crate::Operator;
 use crate::dsl;
 use crate::schema::Column;
 use crate::schema::{Schema, Relation, Type};
+use crate::tuple::PositionalAttribute;
 use crate::tuple::Tuple;
 
 use std::collections::HashMap;
@@ -65,7 +66,7 @@ pub(crate) struct Filter {
 
 impl Filter {
     pub fn matches_tuple(&self, tuple: &Tuple) -> bool {
-        let cell = tuple.cell_by_attr(&self.attribute);
+        let cell = tuple.element(&self.attribute).unwrap();
         let left = cell.bytes();
         (self.comp)(left, &self.right)
     }
@@ -108,6 +109,12 @@ pub struct Attribute {
     pub pos: usize,
     pub name: Box<str>,
     pub kind: Type,
+}
+
+impl PositionalAttribute for Attribute {
+    fn pos(&self) -> usize {
+        self.pos
+    }
 }
 
 #[derive(Default)]
@@ -722,7 +729,7 @@ mod tests {
     fn tuple(cells: &[(Type, &str)]) -> Vec<u8> {
         let mut tuple = Vec::new();
         for (kind, value) in cells.iter() {
-            let cell = crate::tuple::Cell{ name: "", raw: &bytes(*kind, value), kind: *kind };
+            let cell = crate::tuple::Element{ name: "", raw: &bytes(*kind, value), kind: *kind };
             let mut serialized = cell.serialize();
             tuple.append(&mut serialized);
         }
