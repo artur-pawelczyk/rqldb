@@ -424,7 +424,7 @@ fn compute_joins<'a>(plan: Plan<'a>, schema: &'a Schema, query: &dsl::Query) -> 
 
 fn table_attributes(table: &Relation) -> Vec<Attribute> {
     table.attributes()
-        .map(|col| Attribute { pos: col.pos(), name: Box::from(col.name()), kind: col.kind() })
+        .map(|col| Attribute::from(col))
         .collect()
 }
 

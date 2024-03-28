@@ -58,11 +58,17 @@ impl AttributeIdentifier for &str {
     }
 }
 
+pub struct AttributeRef {
+    rel_id: usize,
+    attr_id: usize,
+}
+
 #[derive(Clone, PartialEq)]
 pub struct Column<'a> {
     inner: &'a InnerColumn,
     table: &'a Relation,
-    pos: usize,
+    id: usize,
+    rel_id: usize,
 }
 
 impl<'a> fmt::Debug for Column<'a> {
@@ -71,12 +77,22 @@ impl<'a> fmt::Debug for Column<'a> {
     }
 }
 
-impl Into<Attribute> for Column<'_> {
-    fn into(self) -> Attribute {
-        Attribute {
-            pos: self.pos,
-            name: Box::from(self.name()),
-            kind: self.kind(),
+impl From<Column<'_>> for Attribute {
+    fn from(a: Column<'_>) -> Self {
+        Self {
+            pos: a.id,
+            name: Box::from(a.name()),
+            kind: a.kind()
+        }
+    }
+}
+
+impl From<&Column<'_>> for Attribute {
+    fn from(a: &Column<'_>) -> Self {
+        Self {
+            pos: a.id,
+            name: Box::from(a.name()),
+            kind: a.kind()
         }
     }
 }
@@ -84,10 +100,6 @@ impl Into<Attribute> for Column<'_> {
 impl<'a> Column<'a> {
     pub fn indexed(&self) -> bool {
         self.inner.indexed
-    }
-
-    pub fn pos(&self) -> usize {
-        self.pos
     }
 
     pub fn name(&self) -> &str {
@@ -106,6 +118,13 @@ impl<'a> Column<'a> {
 
     pub fn table(&self) -> &Relation {
         self.table
+    }
+
+    pub fn reference(&self) -> AttributeRef {
+        AttributeRef {
+            rel_id: self.rel_id,
+            attr_id: self.id
+        }
     }
 }
 
@@ -243,6 +262,7 @@ impl<'a> TableBuilder<'a> {
 
 pub struct ColumnIter<'a> {
     table: &'a Relation,
+    rel_id: usize,
     pos: usize,
 }
 
@@ -250,7 +270,12 @@ impl<'a> Iterator for ColumnIter<'a> {
     type Item = Column<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let next = self.table.columns.get(self.pos).map(|inner| Column{ inner, table: self.table, pos: self.pos });
+        let next = self.table.columns.get(self.pos).map(|inner| Column {
+            inner,
+            table: self.table,
+            id: self.pos,
+            rel_id: self.rel_id
+        });
         self.pos += 1;
         next
     }
@@ -269,30 +294,9 @@ impl Relation {
     }
 
     pub fn attributes(&self) -> ColumnIter {
-        ColumnIter{ table: self, pos: 0 }
+        ColumnIter{ table: self, pos: 0, rel_id: self.id }
     }
-    
-    /// # Examples
-    /// 
-    /// ```
-    /// use rqldb::schema::{Column, Type, Relation, Schema};
-    ///
-    /// let mut schema = Schema::default();
-    /// let relation = schema.create_table("document")
-    ///     .column("id", Type::NUMBER)
-    ///     .column("content", Type::TEXT)
-    ///     .add();
-    ///
-    /// assert_eq!(relation.column_position("document.id"), Some(0));
-    /// assert_eq!(relation.column_position("something.id"), None);
-    /// ```
-    pub fn column_position(&self, name: &str) -> Option<u32> {
-        if let Some((pos, _)) = self.columns.iter().enumerate().find(|(_, col)| col.name.as_ref() == name) {
-            Some(pos as u32)
-        } else {
-            None
-        }
-    }
+
 
     /// # Examples
     /// 
@@ -323,7 +327,12 @@ impl Relation {
     /// assert_eq!(schema.find_relation("example").unwrap().indexed_column().unwrap().short_name(), "id");
     /// ```
     pub fn indexed_column(&self) -> Option<Column> {
-        self.columns.iter().enumerate().find(|(_, col)| col.indexed).map(|(pos, col)| Column{ table: self, inner: col, pos })
+        self.columns.iter().enumerate().find(|(_, col)| col.indexed).map(|(pos, col)| Column{
+            table: self,
+            inner: col,
+            id: pos,
+            rel_id: self.id
+        })
     }
 
     /// # Examples
@@ -337,7 +346,14 @@ impl Relation {
     /// assert_eq!(schema.find_relation("example").unwrap().find_column("example.name").unwrap().short_name(), "name");
     /// ```
     pub fn find_column(&self, name: &str) -> Option<Column> {
-        self.columns.iter().enumerate().find(|(_, col)| col.name.as_ref() == name).map(|(pos, col)| Column{ table: self, inner: col, pos })
+        self.columns.iter().enumerate()
+            .find(|(_, col)| col.name.as_ref() == name)
+            .map(|(pos, col)| Column {
+                table: self,
+                inner: col,
+                id: pos,
+                rel_id: self.id,
+            })
     }
 
     pub fn types(&self) -> Vec<Type> {

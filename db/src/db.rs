@@ -98,8 +98,8 @@ impl Database {
         match &plan.finisher {
             Finisher::Return => Sink::Return(plan.final_attributes(), vec![]),
             Finisher::Apply(f, attr) => match f {
-                ApplyFn::Max => Sink::Max(attr.pos(), 0),
-                ApplyFn::Sum => Sink::Sum(attr.pos(), 0),
+                ApplyFn::Max => Sink::Max(attr.into(), 0),
+                ApplyFn::Sum => Sink::Sum(attr.into(), 0),
                 _ => Sink::NoOp,
             }
             Finisher::Count => Sink::Count(0),
@@ -179,8 +179,8 @@ impl<'a> ObjectView<'a> {
 #[derive(Debug)]
 enum Sink<'a> {
     Count(usize),
-    Sum(usize, i32),
-    Max(usize, i32),
+    Sum(Attribute, i32),
+    Max(Attribute, i32),
     Return(Vec<Attribute>, Vec<Vec<Cell>>),
     Insert(RefMut<'a, IndexedObject>),
     Delete(Vec<usize>),

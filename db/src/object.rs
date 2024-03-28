@@ -19,7 +19,7 @@ pub(crate) struct IndexedObject {
 
 impl IndexedObject {
     pub(crate) fn from_table(table: &Relation) -> Self {
-        let key = table.indexed_column().map(|col| col.pos());
+        let key = table.indexed_column().map(|col| Attribute::from(col));
 
         Self{
             tuples: Vec::new(),
@@ -31,14 +31,14 @@ impl IndexedObject {
     }
 
     pub(crate) fn add_tuple(&mut self, tuple: &Tuple) -> bool {
-        match self.index {
+        match &self.index {
             Index::Attr(key_pos) => {
-                let key = tuple.element(&key_pos);
+                let key = tuple.element(key_pos);
                 if let Some(id) = self.hash.get(key.unwrap().bytes()) {
                     let _ = std::mem::replace(&mut self.tuples[*id], tuple.raw_bytes().to_vec());
                     false
                 } else {
-                    self.hash.insert(tuple.element(&key_pos).expect("Already validated").bytes().to_vec(), self.tuples.len());
+                    self.hash.insert(tuple.element(key_pos).expect("Already validated").bytes().to_vec(), self.tuples.len());
                     self.tuples.push(tuple.raw_bytes().to_vec());
                     true
                 }
@@ -82,7 +82,7 @@ impl IndexedObject {
 
     pub(crate) fn recover(snapshot: TempObject, table: &Relation) -> Self {
         if let Some(key_col) = table.indexed_column() {
-            let key = key_col.pos();
+            let key = Attribute::from(key_col);
             let index = Index::Attr(key);
 
             let mut obj = Self{
@@ -107,11 +107,11 @@ impl IndexedObject {
     }
 
     fn reindex(&mut self) {
-        if let Index::Attr(key_pos) = self.index {
+        if let Index::Attr(key_pos) = &self.index {
             self.hash.clear();
             for (id, raw_tuple) in self.tuples.iter().enumerate() {
                 let tuple = Tuple::from_bytes(raw_tuple, &self.attrs);
-                self.hash.insert(tuple.element(&key_pos).unwrap().bytes().to_vec(), id);
+                self.hash.insert(tuple.element(key_pos).unwrap().bytes().to_vec(), id);
             }
         }
     }
@@ -137,7 +137,7 @@ impl fmt::Debug for IndexedObject {
 enum Index {
     #[default]
     Uniq,
-    Attr(usize),
+    Attr(Attribute),
 }
 
 #[derive(Debug)]
