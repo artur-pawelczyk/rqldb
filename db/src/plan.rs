@@ -3,12 +3,12 @@ use crate::Operator;
 use crate::dsl;
 use crate::object::Attribute;
 use crate::object::NamedAttribute as _;
+use crate::schema::AttributeRef;
 use crate::schema::Column;
 use crate::schema::{Schema, Relation, Type};
 use crate::tuple::Tuple;
 
 use std::collections::HashMap;
-use std::iter::zip;
 
 type Result<T> = std::result::Result<T, String>;    
 
@@ -41,13 +41,6 @@ impl<'schema> Plan<'schema> {
             finisher: Finisher::Return,
             ..Plan::default()
         }
-    }
-
-    fn validate_with_finisher(self) -> Result<Self> {
-        Ok(Plan{
-            source: self.source.validate_with_finisher(&self.finisher)?,
-            ..self
-        })
     }
 
     pub fn final_attributes(&self) -> Vec<Attribute> {
@@ -98,7 +91,7 @@ impl<'a> Join<'a> {
         self.joinee_attributes.iter()
             .chain(self.joiner_attributes.iter())
             .enumerate()
-            .map(|(pos, attr)| Attribute { pos, name: Box::from(attr.name()), kind: attr.kind() })
+            .map(|(pos, attr)| Attribute { pos, name: Box::from(attr.name()), kind: attr.kind(), reference: attr.reference.clone() })
             .collect()
     }
 }
@@ -138,6 +131,7 @@ impl<'q> QuerySource<'q> {
 pub(crate) enum Contents<'a> {
     TableScan(&'a Relation),
     Tuple(Vec<String>),
+    ReferencedTuple(HashMap<AttributeRef, String>),
     IndexScan(Column<'a>, Cell),
     Nil,
 }
@@ -148,21 +142,9 @@ impl<'a> Default for Contents<'a> {
     }
 }
 
-impl<'a> Contents<'a> {
-    fn len(&self) -> usize {
-        match self {
-            Self::TableScan(rel) => rel.attributes().len(),
-            Self::Tuple(vals) => vals.len(),
-            Self::IndexScan(_, _) => 1,
-            Self::Nil => 0,
-        }
-    }
-}
-
 impl<'schema> Source<'schema> {
     fn scan_table(rel: &'schema Relation) -> Self {
-        let attributes = rel.attributes().enumerate()
-            .map(|(i, attr)| Attribute::named(i, attr.name()).with_type(attr.kind())).collect();
+        let attributes = rel.attributes().map(Attribute::from).collect();
         Source{ attributes, contents: Contents::TableScan(rel) }
     }
 
@@ -171,7 +153,7 @@ impl<'schema> Source<'schema> {
         let mut values = Vec::new();
 
         for (pos, (k, v)) in map.iter().enumerate() {
-            attributes.push(Attribute { pos, name: Box::from(*k), kind: v.0 });
+            attributes.push(Attribute { pos, name: Box::from(*k), kind: v.0, reference: None });
             values.push(v.1.to_string());
         }
 
@@ -185,31 +167,6 @@ impl<'schema> Source<'schema> {
         Self{
             attributes,
             contents: Contents::IndexScan(index, val),
-        }
-    }
-
-    fn validate_with_finisher(self, finisher: &Finisher) -> Result<Source<'schema>> {
-        match finisher {
-            Finisher::Insert(rel) => {
-                if let Contents::Tuple(values) = &self.contents {
-                    let target_types = rel.types();
-                    if target_types.len() != self.attributes.len() || target_types.len() != self.contents.len() {
-                        return Err(format!("Cannot insert tuple with {} attributes into relation with {} attributes", self.attributes.len(), target_types.len()));
-
-                    }
-
-                    if zip(values.iter(), target_types.iter()).any(|(val, expected)| !validate_type(val, *expected)) {
-                        return Err(String::from("Type incompatible with the target table"));
-                    }
-
-                    Ok(self)
-                } else {
-                    Err(String::from("Expected a tuple source for insert"))
-                }
-            },
-            _ => {
-                Ok(Source{ attributes: self.attributes, contents: self.contents })
-            },
         }
     }
 }
@@ -251,10 +208,7 @@ impl ApplyFn {
 pub(crate) fn compute_plan<'schema>(schema: &'schema Schema, query: &dsl::Query) -> Result<Plan<'schema>> {
     let source = compute_source(&query.source)?;
     let plan = compute_finisher(source, schema, query)?;
-    let plan = plan.validate_with_finisher()?;
-
     let plan = compute_joins(plan, schema, query)?;
-
     let plan = compute_filters(plan, query)?;
 
     Ok(plan)
@@ -317,22 +271,22 @@ fn compute_filters<'a>(plan: Plan<'a>, query: &dsl::Query) -> Result<Plan<'a>> {
 fn compute_finisher<'query, 'schema>(source: QuerySource<'query>, schema: &'schema Schema, query: &'query dsl::Query) -> Result<Plan<'schema>> {
     match &query.finisher {
         dsl::Finisher::Insert(name) => {
-            if let QuerySource::Tuple(map) = source {
+            if let QuerySource::Tuple(input_map) = source {
                 let relation = schema.find_relation(*name).ok_or("No such target table")?;
                 let finisher = Finisher::Insert(relation);
                 let attributes: Vec<_> = relation.attributes().enumerate()
                     .map(|(pos, attr)| Attribute::named(pos, attr.name()).with_type(attr.kind())).collect();
-                let mut values = Vec::new();
-                for attr in &attributes {
-                    if let Some((_, val)) = map.get(attr.name.as_ref()) {
-                        values.push(val.to_string());
-                    } else if let Some((_, val)) = map.get(attr.short_name()) {
-                        values.push(val.to_string());
+                let mut values = HashMap::new();
+                for attr in relation.attributes() {
+                    if let Some((_, val)) = input_map.get(attr.name()) {
+                        values.insert(attr.reference(), val.to_string());
+                    } else if let Some((_, val)) = input_map.get(attr.short_name()) {
+                        values.insert(attr.reference(), val.to_string());
                     } else {
-                        return Err(format!("Missing attribute in source {}", attr.name));
+                        return Err(format!("Missing attribute in source {}", attr.name()));
                     }
                 }
-                let source = Source{ attributes, contents: Contents::Tuple(values) };
+                let source = Source{ attributes, contents: Contents::ReferencedTuple(values) };
                 Ok(Plan{ source, finisher, ..Default::default() })
             } else {
                 panic!()
@@ -426,15 +380,6 @@ fn table_attributes(table: &Relation) -> Vec<Attribute> {
     table.attributes()
         .map(|col| Attribute::from(col))
         .collect()
-}
-
-fn validate_type(value: &str, kind: Type) -> bool {
-    match kind {
-        Type::NUMBER => value.parse::<i32>().is_ok(),
-        Type::TEXT => true,
-        Type::BOOLEAN => value.parse::<bool>().is_ok(),
-        _ => false,
-    }
 }
 
 #[cfg(test)]
@@ -598,10 +543,6 @@ mod tests {
         let query = dsl::Query::tuple(&[("id", "1"), ("content", "the-content")]).insert_into("example");
         let wrong_tuple_len = compute_plan(&schema, &query);
         assert!(wrong_tuple_len.is_err());
-
-        let query = dsl::Query::tuple(&[("id", "not-ID"), ("content", "the-content"), ("title", "something")]).insert_into("example");
-        let wrong_type = compute_plan(&schema, &query);
-        assert!(wrong_type.is_err());
     }
 
     #[test]

@@ -1,6 +1,6 @@
 use std::{fmt, str::FromStr};
 
-use crate::{dsl::AttrKind, object::Attribute};
+use crate::{dsl::AttrKind, object::Attribute, tuple::PositionalAttribute};
 
 #[derive(Default, PartialEq)]
 pub struct Schema {
@@ -48,6 +48,12 @@ impl TableId for &String {
     }
 }
 
+impl TableId for &AttributeRef {
+    fn find_in(self, schema: &Schema) -> Option<&Relation> {
+        schema.relations.get(self.rel_id)
+    }
+}
+
 pub trait AttributeIdentifier {
     fn find_in<'a>(self, schema: &'a Schema) -> Option<Column<'a>>;
 }
@@ -58,9 +64,16 @@ impl AttributeIdentifier for &str {
     }
 }
 
+#[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct AttributeRef {
     rel_id: usize,
     attr_id: usize,
+}
+
+impl PositionalAttribute for AttributeRef {
+    fn pos(&self) -> usize {
+        self.rel_id
+    }
 }
 
 #[derive(Clone, PartialEq)]
@@ -82,7 +95,8 @@ impl From<Column<'_>> for Attribute {
         Self {
             pos: a.id,
             name: Box::from(a.name()),
-            kind: a.kind()
+            kind: a.kind(),
+            reference: Some(a.reference()),
         }
     }
 }
@@ -92,7 +106,8 @@ impl From<&Column<'_>> for Attribute {
         Self {
             pos: a.id,
             name: Box::from(a.name()),
-            kind: a.kind()
+            kind: a.kind(),
+            reference: Some(a.reference()),
         }
     }
 }

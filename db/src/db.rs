@@ -3,6 +3,7 @@ use std::cell::{RefCell, Ref, RefMut};
 use crate::dump::{dump_values, dump_create};
 use crate::object::{IndexedObject, TempObject, Attribute, NamedAttribute as _};
 use crate::plan::{Contents, Filter, Plan, Finisher, ApplyFn};
+use crate::schema::AttributeRef;
 use crate::tuple::Tuple;
 use crate::{schema::Schema, QueryResults, plan::compute_plan};
 use crate::{dsl, Cell, RawObjectView};
@@ -51,6 +52,16 @@ impl Database {
                 temp_object.push_str(values);
                 ObjectView::Val(temp_object)
             },
+            Contents::ReferencedTuple(ref map) => {
+                let first_attribute = map.iter().next().map(|(k, _)| k).ok_or("Cannot insert empty tuple")?;
+                let target = self.schema.find_relation(first_attribute).expect("Already verified by the planner");
+                let temp_object = TempObject::from_relation(target);
+                let mut tuple = temp_object.build_tuple();
+                for (k, v) in map {
+                    tuple.add(k, v);
+                }
+                ObjectView::Val(tuple.build())
+            },
             Contents::IndexScan(ref col, ref val) => {
                 let object = self.objects.get(col.table().id).expect("Already checked by the planner").borrow();
                 if let Some(tuple_id) = object.find_in_index(val.as_bytes()) {
@@ -98,8 +109,8 @@ impl Database {
         match &plan.finisher {
             Finisher::Return => Sink::Return(plan.final_attributes(), vec![]),
             Finisher::Apply(f, attr) => match f {
-                ApplyFn::Max => Sink::Max(attr.into(), 0),
-                ApplyFn::Sum => Sink::Sum(attr.into(), 0),
+                ApplyFn::Max => Sink::Max(attr.reference(), 0),
+                ApplyFn::Sum => Sink::Sum(attr.reference(), 0),
                 _ => Sink::NoOp,
             }
             Finisher::Count => Sink::Count(0),
@@ -179,8 +190,8 @@ impl<'a> ObjectView<'a> {
 #[derive(Debug)]
 enum Sink<'a> {
     Count(usize),
-    Sum(Attribute, i32),
-    Max(Attribute, i32),
+    Sum(AttributeRef, i32),
+    Max(AttributeRef, i32),
     Return(Vec<Attribute>, Vec<Vec<Cell>>),
     Insert(RefMut<'a, IndexedObject>),
     Delete(Vec<usize>),
@@ -191,8 +202,8 @@ impl<'a> Sink<'a> {
     fn accept_tuple(&mut self, idx: usize, tuple: &Tuple) {
         match self {
             Self::Count(ref mut count) => *count += 1,
-            Self::Sum(pos, ref mut sum) => *sum += tuple.element(pos).unwrap().as_number().unwrap(),
-            Self::Max(pos, ref mut max) => *max = std::cmp::max(*max, tuple.element(pos).unwrap().as_number().unwrap()),
+            Self::Sum(attr, ref mut sum) => *sum += tuple.element(attr).unwrap().as_number().unwrap(),
+            Self::Max(attr, ref mut max) => *max = std::cmp::max(*max, tuple.element(attr).unwrap().as_number().unwrap()),
             Self::Return(attrs, ref mut results) => results.push(tuple_to_cells(attrs, tuple)),
             Self::Insert(object) => { object.add_tuple(tuple); },
             Self::Delete(ref mut tuples) => tuples.push(idx),
@@ -354,7 +365,7 @@ mod tests {
                                      .inferred("content", "example")
                                      .inferred("size", &s)
             ).insert_into("document");
-            db.execute_query(&query).expect("Insert");
+           db.execute_query(&query).expect("Insert");
         }
 
         let sum_result = db.execute_query(&Query::scan("document").apply("sum", &["document.size"])).unwrap();

@@ -84,6 +84,7 @@ impl<'a> Tuple<'a> {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct Element<'a> {
     pub(crate) raw: &'a [u8],
     pub(crate) name: &'a str,
@@ -219,11 +220,11 @@ mod tests {
 
     lazy_static! {
         static ref ATTRIBUTES_1: Vec<Attribute> = vec![
-            Attribute { pos: 0, name: Box::from("id"), kind: Type::NUMBER },
-            Attribute { pos: 1, name: Box::from("content"), kind: Type::TEXT }
+            Attribute { pos: 0, name: Box::from("id"), kind: Type::NUMBER, reference: None },
+            Attribute { pos: 1, name: Box::from("content"), kind: Type::TEXT, reference: None }
         ];
         static ref ATTRIBUTES_2: Vec<Attribute> = vec![
-            Attribute { pos: 0, name: Box::from("id"), kind: Type::TEXT }
+            Attribute { pos: 0, name: Box::from("id"), kind: Type::TEXT, reference: None }
         ];
     }
 
@@ -264,7 +265,6 @@ mod tests {
                 object_2.get(0).map(|joiner_tuple| tuple.extend(Tuple::from_bytes(joiner_tuple, &ATTRIBUTES_2)))
             }).collect();
         let first = result.get(0).unwrap();
-        dbg!(&first);
         assert_eq!(i32::try_from(first.element(&0).unwrap()), Ok(1));
         assert_eq!(first.element(&2).unwrap().to_string(), "fizz");
     }

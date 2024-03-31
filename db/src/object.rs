@@ -2,6 +2,7 @@ use std::fmt;
 use std::iter::zip;
 use std::{collections::{HashSet, HashMap}, cell::Ref};
 
+use crate::schema::AttributeRef;
 use crate::tuple::PositionalAttribute;
 use crate::{tuple::Tuple, schema::Relation, Type};
 
@@ -11,7 +12,7 @@ type ByteTuple = Vec<u8>;
 #[derive(Default)]
 pub(crate) struct IndexedObject {
     pub(crate) tuples: Vec<ByteTuple>,
-    attrs: Vec<Attribute>,
+    pub(crate) attrs: Vec<Attribute>,
     index: Index,
     hash: HashMap<ByteCell, usize>,
     removed_ids: HashSet<usize>,
@@ -23,7 +24,7 @@ impl IndexedObject {
 
         Self{
             tuples: Vec::new(),
-            attrs: table.attributes().enumerate().map(|(i, attr)| Attribute { pos: i, name: Box::from(attr.name()), kind: attr.kind() }).collect(),
+            attrs: table.attributes().map(|attr| Attribute::from(attr)).collect(),
             index: key.map(Index::Attr).unwrap_or(Index::Uniq),
             hash: Default::default(),
             removed_ids: Default::default(),
@@ -87,7 +88,7 @@ impl IndexedObject {
 
             let mut obj = Self{
                 tuples: snapshot.values,
-                attrs: table.attributes().enumerate().map(|(i, attr)| Attribute { pos: i, name: Box::from(attr.name()), kind: attr.kind() }).collect(),
+                attrs: table.attributes().map(|attr| Attribute::from(attr)).collect(),
                 index,
                 hash: Default::default(),
                 removed_ids: HashSet::new(),
@@ -98,7 +99,7 @@ impl IndexedObject {
         } else {
             Self{
                 tuples: snapshot.values,
-                attrs: table.attributes().enumerate().map(|(i, attr)| Attribute { pos: i, name: Box::from(attr.name()), kind: attr.kind() }).collect(),
+                attrs: table.attributes().map(Attribute::from).collect(),
                 index: Default::default(),
                 hash: Default::default(),
                 removed_ids: HashSet::new(),
@@ -148,16 +149,21 @@ pub struct TempObject {
 
 impl TempObject {
     pub fn with_attrs(attrs: &[impl NamedAttribute]) -> Self {
-        let attrs = attrs.iter().enumerate().map(|(pos, a)| Attribute { pos, name: Box::from(a.name()), kind: a.kind() }).collect();
+        let attrs = attrs.iter().enumerate().map(|(pos, a)| Attribute { pos, name: Box::from(a.name()), kind: a.kind(), reference: None }).collect();
         Self{ values: vec![], attrs }
     }
 
     pub fn from_relation(rel: &Relation) -> Self {
-        let attrs = rel.attributes().enumerate()
-            .map(|(i, attr)| Attribute { pos: i, name: Box::from(attr.name()), kind: attr.kind() })
-            .collect();
-
+        let attrs = rel.attributes().map(Attribute::from).collect();
         Self { values: vec![], attrs }
+    }
+
+    pub(crate) fn build_tuple(self) -> TupleBuilder {
+        let raw = (0..self.attrs.len()).map(|_| Vec::new()).collect();
+        TupleBuilder {
+            obj: self,
+            raw,
+        }
     }
 
     pub fn push(&mut self, input_tuple: Vec<Vec<u8>>) {
@@ -206,6 +212,30 @@ impl TempObject {
     }
 }
 
+pub(crate) struct TupleBuilder {
+    obj: TempObject,
+    raw: Vec<Vec<u8>>,
+}
+
+impl TupleBuilder {
+    pub(crate) fn add(&mut self, attr_ref: &AttributeRef, val: &str) {
+        let attr = self.obj.attrs.iter().find(|a| *a == attr_ref).unwrap();
+        let container = &mut self.raw[attr.pos];
+        match attr.kind() {
+            Type::NUMBER => val.parse::<i32>().map(|n| n.to_be_bytes()).unwrap().iter().for_each(|b| container.push(*b)),
+            Type::TEXT => { container.push(val.len() as u8); val.as_bytes().iter().for_each(|b| container.push(*b)); },
+            Type::BOOLEAN => if val == "true" { container.push(1) } else if val == "false" { container.push(0) } else { panic!() },
+            Type::NONE => {},
+            _ => panic!("unknown type: {}", attr.kind()),
+        };
+    }
+
+    pub(crate) fn build(mut self) -> TempObject {
+        self.obj.values.push(self.raw.iter().flatten().map(|x| *x).collect());
+        self.obj
+    }
+}
+
 pub trait NamedAttribute {
     fn name(&self) -> &str;
     fn kind(&self) -> Type;
@@ -227,6 +257,7 @@ pub struct Attribute {
     pub pos: usize,
     pub name: Box<str>,
     pub kind: Type,
+    pub reference: Option<AttributeRef>,
 }
 
 impl PositionalAttribute for Attribute {
@@ -251,6 +282,7 @@ impl Attribute {
             pos,
             name: Box::from(name),
             kind: Type::default(),
+            reference: None,
         }
     }
 
@@ -265,6 +297,12 @@ impl Attribute {
 impl PartialEq<str> for Attribute {
     fn eq(&self, s: &str) -> bool {
         self.name.as_ref() == s
+    }
+}
+
+impl PartialEq<AttributeRef> for Attribute {
+    fn eq(&self, a: &AttributeRef) -> bool {
+        self.reference.as_ref().map(|r| r == a).unwrap_or(false)
     }
 }
 

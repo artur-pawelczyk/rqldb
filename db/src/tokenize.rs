@@ -255,7 +255,7 @@ mod tests {
     }
 
     fn tokenize(source: &str) -> Option<Vec<Token<'_>>> {
-        let mut tokenizer = Tokenizer::new(dbg!(source));
+        let mut tokenizer = Tokenizer::new(source);
         let mut v = Vec::new();
         loop {
             let t = dbg!(tokenizer.next().unwrap());
