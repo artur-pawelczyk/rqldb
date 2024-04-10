@@ -1,4 +1,5 @@
 use std::cell::{RefCell, Ref, RefMut};
+use std::rc::Rc;
 
 use crate::dump::{dump_values, dump_create};
 use crate::object::{IndexedObject, TempObject, Attribute, NamedAttribute as _};
@@ -9,16 +10,20 @@ use crate::{schema::Schema, QueryResults, plan::compute_plan};
 use crate::{dsl, Cell, RawObjectView};
 
 type Result<T> = std::result::Result<T, String>;
+type SharedObject = Rc<RefCell<IndexedObject>>;
 
 #[derive(Default)]
 pub struct Database {
     schema: Schema,
-    objects: Vec<RefCell<IndexedObject>>,
+    objects: Vec<SharedObject>,
 }
 
 impl Database {
     pub fn with_schema(schema: Schema) -> Self {
-        let objects = schema.relations.iter().map(IndexedObject::from_table).map(RefCell::new).collect();
+        let objects = schema.relations.iter()
+            .map(IndexedObject::from_table)
+            .map(|o| Rc::new(RefCell::new(o)))
+            .collect();
 
         Self{
             schema,
@@ -35,7 +40,7 @@ impl Database {
             }
         }).add();
 
-        self.objects.insert(table.id, RefCell::new(IndexedObject::from_table(table)));
+        self.objects.insert(table.id, Rc::new(RefCell::new(IndexedObject::from_table(table))));
     }
 
     pub fn execute_query(&self, query: &dsl::Query) -> Result<QueryResults> {
@@ -138,7 +143,7 @@ impl Database {
     pub fn recover_object(&mut self, id: usize, snapshot: TempObject) {
         let table = self.schema.find_relation(id).unwrap();
         let new_obj = IndexedObject::recover(snapshot, table);
-        let _ = std::mem::replace(&mut self.objects[id], RefCell::new(new_obj));
+        let _ = std::mem::replace(&mut self.objects[id], Rc::new(RefCell::new(new_obj)));
     }
 
     pub fn dump(&self, name: &str) -> String {
