@@ -66,7 +66,7 @@ impl AttributeIdentifier for &str {
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct AttributeRef {
-    rel_id: usize,
+    pub(crate) rel_id: usize,
     attr_id: usize,
 }
 

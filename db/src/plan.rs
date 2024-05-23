@@ -1,4 +1,6 @@
+use crate::db::SharedObject;
 use crate::Cell;
+use crate::Database;
 use crate::Operator;
 use crate::dsl;
 use crate::object::Attribute;
@@ -9,12 +11,13 @@ use crate::schema::{Schema, Relation, Type};
 use crate::tuple::Tuple;
 
 use std::collections::HashMap;
+use std::rc::Rc;
 
 type Result<T> = std::result::Result<T, String>;    
 
 #[derive(Default)]
 pub(crate) struct Plan<'schema> {
-    pub source: Source<'schema>,
+    pub source: Source,
     pub filters: Vec<Filter>,
     pub joins: Vec<Join<'schema>>,
     pub finisher: Finisher<'schema>,
@@ -22,22 +25,21 @@ pub(crate) struct Plan<'schema> {
 
 impl<'schema> Plan<'schema> {
     #[cfg(test)]
-    pub fn insert(rel: &'schema Relation, values: &[&str]) -> Self {
-        let attributes = rel.attributes().enumerate()
-            .map(|(pos, attr)| Attribute::named(pos, attr.name()).with_type(attr.kind())).collect();
+    pub fn insert(obj: &SharedObject, values: &[&str]) -> Self {
+        let attributes = obj.borrow().attributes().cloned().collect();
         let contents = Contents::Tuple(values.iter().map(|s|String::from(*s)).collect());
 
         Self{
-            source: Source{ attributes, contents },
-            finisher: Finisher::Insert(rel),
+            source: Source { attributes, contents },
+            finisher: Finisher::Insert(Rc::clone(obj)),
             ..Plan::default()
         }
    }
 
     #[cfg(test)]
-    pub fn scan(rel: &'schema Relation) -> Self {
+    pub fn scan(obj: &SharedObject) -> Self {
         Self{
-            source: Source::scan_table(rel),
+            source: Source::scan_table(obj),
             finisher: Finisher::Return,
             ..Plan::default()
         }
@@ -97,9 +99,9 @@ impl<'a> Join<'a> {
 }
 
 #[derive(Default)]
-pub(crate) struct Source<'a> {
+pub(crate) struct Source {
     pub attributes: Vec<Attribute>,
-    pub contents: Contents<'a>,
+    pub contents: Contents,
 }
 
 enum QuerySource<'q> {
@@ -109,17 +111,17 @@ enum QuerySource<'q> {
 }
 
 impl<'q> QuerySource<'q> {
-    fn into_source<'schema>(self, schema: &'schema Schema) -> Result<Source<'schema>> {
+    fn into_source(self, db: &Database) -> Result<Source> {
         match self {
             Self::Tuple(values) => Ok(Source::from_map(&values)),
             Self::Scan(name) => {
-                let rel = schema.find_relation(name).ok_or_else(|| format!("No such relation {name}"))?;
-                Ok(Source::scan_table(rel))
+                let obj = db.object(name).ok_or_else(|| format!("No such relation {name}"))?;
+                Ok(Source::scan_table(&obj))
             },
             Self::IndexScan(attr_name, cell) => {
-                let attr = schema.find_column(attr_name).ok_or_else(|| format!("No such attribute {attr_name}"))?;
+                let attr = db.schema().find_column(attr_name).ok_or_else(|| format!("No such attribute {attr_name}"))?;
                 if attr.indexed() {
-                    Ok(Source::scan_index(attr, cell))
+                    Ok(Source::scan_index(db.schema(), attr.reference(), cell))
                 } else {
                     Err(format!("Attribute {attr_name} is not an index"))
                 }
@@ -128,24 +130,24 @@ impl<'q> QuerySource<'q> {
     }
 }
 
-pub(crate) enum Contents<'a> {
-    TableScan(&'a Relation),
+pub(crate) enum Contents {
+    TableScan(SharedObject),
     Tuple(Vec<String>),
     ReferencedTuple(HashMap<AttributeRef, String>),
-    IndexScan(Column<'a>, Cell),
+    IndexScan(AttributeRef, Cell),
     Nil,
 }
 
-impl<'a> Default for Contents<'a> {
+impl Default for Contents {
     fn default() -> Self {
         Self::Nil
     }
 }
 
-impl<'schema> Source<'schema> {
-    fn scan_table(rel: &'schema Relation) -> Self {
-        let attributes = rel.attributes().map(Attribute::from).collect();
-        Source{ attributes, contents: Contents::TableScan(rel) }
+impl Source {
+    fn scan_table(obj: &SharedObject) -> Self {
+        let attributes = obj.borrow().attributes().cloned().collect();
+        Source{ attributes, contents: Contents::TableScan(Rc::clone(obj)) }
     }
 
     fn from_map(map: &HashMap<&str, (Type, &str)>) -> Self {
@@ -160,8 +162,8 @@ impl<'schema> Source<'schema> {
         Self { attributes, contents: Contents::Tuple(values) }
     }
 
-    fn scan_index(index: Column<'schema>, val: Cell) -> Self {
-        let attributes = index.table().attributes().enumerate()
+    fn scan_index(schema: &Schema, index: AttributeRef, val: Cell) -> Self {
+        let attributes = schema.find_relation(&index).unwrap().attributes().enumerate()
             .map(|(i, attr)| Attribute::named(i, attr.name()).with_type(attr.kind())).collect();
 
         Self{
@@ -171,10 +173,10 @@ impl<'schema> Source<'schema> {
     }
 }
 
-#[derive(Default, PartialEq, Debug)]
-pub enum Finisher<'a> {
+#[derive(Default, Debug)]
+pub(crate) enum Finisher<'a> {
     Return,
-    Insert(&'a Relation),
+    Insert(SharedObject),
     Count,
     Apply(ApplyFn, Column<'a>),
     Delete(&'a Relation),
@@ -205,10 +207,10 @@ impl ApplyFn {
     }
 }
 
-pub(crate) fn compute_plan<'schema>(schema: &'schema Schema, query: &dsl::Query) -> Result<Plan<'schema>> {
+pub(crate) fn compute_plan<'schema>(db: &'schema Database, query: &dsl::Query) -> Result<Plan<'schema>> {
     let source = compute_source(&query.source)?;
-    let plan = compute_finisher(source, schema, query)?;
-    let plan = compute_joins(plan, schema, query)?;
+    let plan = compute_finisher(source, db, query)?;
+    let plan = compute_joins(plan, db.schema(), query)?;
     let plan = compute_filters(plan, query)?;
 
     Ok(plan)
@@ -268,12 +270,13 @@ fn compute_filters<'a>(plan: Plan<'a>, query: &dsl::Query) -> Result<Plan<'a>> {
     Ok(Plan{ filters, ..plan })
 }
 
-fn compute_finisher<'query, 'schema>(source: QuerySource<'query>, schema: &'schema Schema, query: &'query dsl::Query) -> Result<Plan<'schema>> {
+fn compute_finisher<'query, 'schema>(source: QuerySource<'query>, db: &'schema Database, query: &'query dsl::Query) -> Result<Plan<'schema>> {
     match &query.finisher {
         dsl::Finisher::Insert(name) => {
             if let QuerySource::Tuple(input_map) = source {
-                let relation = schema.find_relation(*name).ok_or("No such target table")?;
-                let finisher = Finisher::Insert(relation);
+                let relation = db.schema().find_relation(*name).ok_or("No such target table")?;
+                let obj = db.object(name).ok_or_else(|| format!("Target relation {name} not found"))?;
+                let finisher = Finisher::Insert(Rc::clone(&obj));
                 let attributes: Vec<_> = relation.attributes().enumerate()
                     .map(|(pos, attr)| Attribute::named(pos, attr.name()).with_type(attr.kind())).collect();
                 let mut values = HashMap::new();
@@ -292,22 +295,22 @@ fn compute_finisher<'query, 'schema>(source: QuerySource<'query>, schema: &'sche
                 panic!()
             }
         },
-        dsl::Finisher::AllColumns => Ok(Plan{ finisher: Finisher::Return, source: source.into_source(schema)?, ..Default::default() }),
-        dsl::Finisher::Count => Ok(Plan{ finisher: Finisher::Count, source: source.into_source(schema)?, ..Default::default() }),
+        dsl::Finisher::AllColumns => Ok(Plan{ finisher: Finisher::Return, source: source.into_source(db)?, ..Default::default() }),
+        dsl::Finisher::Count => Ok(Plan{ finisher: Finisher::Count, source: source.into_source(db)?, ..Default::default() }),
         dsl::Finisher::Apply(f, args) => {
             let finisher = args
                 .first()
-                .and_then(|n| schema.find_column(n))
+                .and_then(|n| db.schema().find_column(n))
                 .map(|attr| Ok(Finisher::apply(f, attr)))
                 .unwrap_or(Err("apply: No such attribute"))?;
-            Ok(Plan{ finisher, source: source.into_source(schema)?, ..Default::default() })
+            Ok(Plan{ finisher, source: source.into_source(db)?, ..Default::default() })
         },
         dsl::Finisher::Delete => {
             let finisher = match &query.source {
-                dsl::Source::TableScan(name) => schema.find_relation(*name).map(Finisher::Delete).ok_or("No such relation found for delete operation"),
+                dsl::Source::TableScan(name) => db.schema().find_relation(*name).map(Finisher::Delete).ok_or("No such relation found for delete operation"),
                 _ => Err("Illegal delete operation"),
             }?;
-            Ok(Plan{ finisher, source: source.into_source(schema)?, ..Default::default() })
+            Ok(Plan{ finisher, source: source.into_source(db)?, ..Default::default() })
         }
         _ => todo!(),
     }
@@ -389,39 +392,48 @@ mod tests {
     use crate::dsl::Operator::{EQ, GT};
     use crate::schema::Type;
     use crate::tuple::PositionalAttribute as _;
+    use crate::Command;
 
 
     #[test]
     fn test_compute_filter() {
-        let mut schema = Schema::default();
-        schema.create_table("example").column("id", Type::NUMBER).column("content", Type::TEXT).column("type", Type::NUMBER).add();
+        let mut db = Database::default();
+        let command = Command::create_table("example")
+            .column("id", Type::NUMBER)
+            .column("content", Type::TEXT)
+            .column("type", Type::NUMBER);
+        db.execute_create(&command);
 
-        let filters = expect_filters(compute_plan(&schema, &dsl::Query::scan("example").filter("example.id", EQ, "1").filter("example.type", EQ, "2")), 2);
+        let filters = expect_filters(compute_plan(&db, &dsl::Query::scan("example").filter("example.id", EQ, "1").filter("example.type", EQ, "2")), 2);
         assert_eq!(filters.get(0).map(|x| x.attribute.pos()), Some(0));
         assert_eq!(filters.get(1).map(|x| x.attribute.pos()), Some(2));
 
         let query = dsl::Query::scan("example").filter("not-a-column", EQ, "0");
-        let failure = compute_plan(&schema, &query);
+        let failure = compute_plan(&db, &query);
         assert!(failure.is_err());
     }
 
     #[test]
     fn test_apply_filter() {
-        let mut schema = Schema::default();
-        schema.create_table("example").column("id", Type::NUMBER).column("content", Type::TEXT).column("type", Type::NUMBER).add();
-        let attributes: Vec<Attribute> = schema.find_relation("example").unwrap().attributes().map(Into::into).collect();
+        let mut db = Database::default();
+        db.execute_create(&Command::create_table("example")
+                          .column("id", Type::NUMBER)
+                          .column("content", Type::TEXT)
+                          .column("type", Type::NUMBER));
+
+        let attributes: Vec<Attribute> = db.object("example").unwrap().borrow().attributes().cloned().collect();
         let tuple_1 = tuple(&[(Type::NUMBER, "1"), (Type::TEXT, "content1"), (Type::NUMBER, "11")]);
         let tuple_2 = tuple(&[(Type::NUMBER, "2"), (Type::TEXT, "content2"), (Type::NUMBER, "12")]);
 
-        let id_filter = expect_filter(compute_plan(&schema, &dsl::Query::scan("example").filter("example.id", EQ, "1")));
+        let id_filter = expect_filter(compute_plan(&db, &dsl::Query::scan("example").filter("example.id", EQ, "1")));
         assert!(id_filter.matches_tuple(&Tuple::from_bytes(&tuple_1, &attributes)));
         assert!(!id_filter.matches_tuple(&Tuple::from_bytes(&tuple_2, &attributes)));
 
-        let content_filter = expect_filter(compute_plan(&schema, &dsl::Query::scan("example").filter("example.content", EQ, "content1")));
+        let content_filter = expect_filter(compute_plan(&db, &dsl::Query::scan("example").filter("example.content", EQ, "content1")));
         assert!(content_filter.matches_tuple(&Tuple::from_bytes(&tuple_1, &attributes)));
         assert!(!content_filter.matches_tuple(&Tuple::from_bytes(&tuple_2, &attributes)));
 
-        let comp_filter = expect_filter(compute_plan(&schema, &dsl::Query::scan("example").filter("example.id", GT, "1")));
+        let comp_filter = expect_filter(compute_plan(&db, &dsl::Query::scan("example").filter("example.id", GT, "1")));
         assert!(!comp_filter.matches_tuple(&Tuple::from_bytes(&tuple_1, &attributes)));
         assert!(comp_filter.matches_tuple(&Tuple::from_bytes(&tuple_2, &attributes)));
     }
@@ -443,25 +455,29 @@ mod tests {
 
     #[test]
     fn test_compute_join() {
-        let mut schema = Schema::default();
-        schema.create_table("document").column("name", Type::TEXT).column("type_id", Type::NUMBER).add();
-        schema.create_table("type").column("id", Type::TEXT).column("name", Type::NUMBER).add();
+        let mut db = Database::default();
+        db.execute_create(&Command::create_table("document")
+                          .column("name", Type::TEXT)
+                          .column("type_id", Type::NUMBER));
+        db.execute_create(&Command::create_table("type")
+                          .column("id", Type::NUMBER)
+                          .column("name", Type::TEXT));
 
         let query = dsl::Query::scan("document").join("type", "document.type_id", "type.id");
-        let joins = expect_join(compute_plan(&schema, &query));
+        let joins = expect_join(compute_plan(&db, &query));
         assert_eq!(joins.source_table().name.as_ref(), "type");
         assert_eq!(attribute_names(&joins.attributes_after()), vec!["document.name", "document.type_id", "type.id", "type.name"]);
 
         let query = dsl::Query::scan("nothing").join("type", "a", "b");
-        let missing_source_table = compute_plan(&schema, &query);
+        let missing_source_table = compute_plan(&db, &query);
         assert!(missing_source_table.is_err());
 
         let query = dsl::Query::scan("document").join("nothing", "a", "b");
-        let missing_table = compute_plan(&schema, &query);
+        let missing_table = compute_plan(&db, &query);
         assert!(missing_table.is_err());
 
         let query = dsl::Query::scan("document").join("type", "something", "else");
-        let missing_column = compute_plan(&schema, &query);
+        let missing_column = compute_plan(&db, &query);
         assert!(missing_column.is_err());
     }
 
@@ -471,11 +487,12 @@ mod tests {
         schema.create_table("document").column("name", Type::TEXT).column("type_id", Type::NUMBER).column("author", Type::TEXT).add();
         schema.create_table("type").column("id", Type::TEXT).column("name", Type::NUMBER).add();
         schema.create_table("author").column("username", Type::TEXT).column("displayname", Type::TEXT).add();
+        let db = Database::with_schema(schema);
 
         let query = dsl::Query::scan("document")
             .join("type", "document.type_id", "type.id")
             .join("author", "document.author", "author.username");
-        let joins = expect_joins(compute_plan(&schema, &query), 2);
+        let joins = expect_joins(compute_plan(&db, &query), 2);
         assert_eq!(joins[0].table.name.as_ref(), "type");
         assert_eq!(joins[1].table.name.as_ref(), "author");
     }
@@ -485,8 +502,9 @@ mod tests {
         let mut schema = Schema::default();
         schema.create_table("document").column("name", Type::TEXT).column("type_id", Type::NUMBER).add();
         schema.create_table("type").column("id", Type::NUMBER).column("name", Type::TEXT).add();
+        let db = Database::with_schema(schema);
 
-        let filter = expect_filter(compute_plan(&schema, &dsl::Query::scan("document").join("type", "document.type_id", "type.id").filter("type.name", EQ, "b")));
+        let filter = expect_filter(compute_plan(&db, &dsl::Query::scan("document").join("type", "document.type_id", "type.id").filter("type.name", EQ, "b")));
         assert_eq!(filter.attribute.pos(), 3);
     }
 
@@ -502,9 +520,9 @@ mod tests {
 
     #[test]
     fn test_filter_tuple() {
-        let schema = Schema::default();
+        let db = Database::default();
         let query = dsl::Query::tuple(&[("id", "1"), ("value", "some text")]).filter("id", Operator::EQ, "1");
-        let result = compute_plan(&schema, &query);
+        let result = compute_plan(&db, &query);
         assert!(result.is_err());
         assert_eq!(result.err(), Some(String::from("Cannot filter untyped attribute id")));
 
@@ -513,7 +531,7 @@ mod tests {
                 .typed(AttrKind::Number, "id", "1")
                 .typed(AttrKind::Text, "name", "some text")
         ).filter("id", Operator::EQ, "1");
-        let result = compute_plan(&schema, &query);
+        let result = compute_plan(&db, &query);
 
         let filter = expect_filter(result);
         assert_eq!(filter.attribute.name.as_ref(), "id");
@@ -523,9 +541,10 @@ mod tests {
     fn test_source_types_for_select() {
         let mut schema = Schema::default();
         schema.create_table("example").column("id", Type::NUMBER).column("content", Type::TEXT).column("type", Type::NUMBER).add();
+        let db = Database::with_schema(schema);
 
         let query = dsl::Query::scan("example");
-        let result = compute_plan(&schema, &query).unwrap();
+        let result = compute_plan(&db, &query).unwrap();
         assert_eq!(source_attributes(&result.source), vec![Type::NUMBER, Type::TEXT, Type::NUMBER]);
         assert_eq!(attribute_names(&result.final_attributes()), vec!["example.id", "example.content", "example.type"]);
     }
@@ -534,14 +553,15 @@ mod tests {
     fn test_source_types_for_insert() {
         let mut schema = Schema::default();
         schema.create_table("example").column("id", Type::NUMBER).column("content", Type::TEXT).column("title", Type::TEXT).add();
+        let db = Database::with_schema(schema);
 
         let query = dsl::Query::tuple(&[("id", "1"), ("content", "the-content"), ("title", "title")]).insert_into("example");
-        let result = compute_plan(&schema, &query).unwrap();
+        let result = compute_plan(&db, &query).unwrap();
         assert_eq!(source_attributes(&result.source), vec![Type::NUMBER, Type::TEXT, Type::TEXT]);
         assert_eq!(attribute_names(&result.final_attributes()), vec!["example.id", "example.content", "example.title"]);
 
         let query = dsl::Query::tuple(&[("id", "1"), ("content", "the-content")]).insert_into("example");
-        let wrong_tuple_len = compute_plan(&schema, &query);
+        let wrong_tuple_len = compute_plan(&db, &query);
         assert!(wrong_tuple_len.is_err());
     }
 
@@ -549,29 +569,30 @@ mod tests {
     fn test_compute_finisher() {
         let mut schema = Schema::default();
         schema.create_table("example").column("id", Type::NUMBER).column("content", Type::TEXT).add();
+        let db = Database::with_schema(schema);
 
         let query = dsl::Query::scan("example");
-        let finisher = compute_plan(&schema, &query)
+        let finisher = compute_plan(&db, &query)
             .unwrap().finisher;
-        assert_eq!(finisher, Finisher::Return);
+        assert!(matches!(finisher, Finisher::Return));
 
         let query = dsl::Query::tuple(&[("id", "1"), ("content", "the content")]).insert_into("example");
-        let finisher = compute_plan(&schema, &query)
+        let finisher = compute_plan(&db, &query)
             .unwrap().finisher;
         assert!(matches!(finisher, Finisher::Insert{..}));
 
         let query = dsl::Query::scan("example").count();
-        let finisher = compute_plan(&schema, &query)
+        let finisher = compute_plan(&db, &query)
             .unwrap().finisher;
-        assert_eq!(finisher, Finisher::Count);
+        assert!(matches!(finisher, Finisher::Count));
 
         let query = dsl::Query::scan("example").apply("sum", &["example.id"]);
-        let finisher = compute_plan(&schema, &query)
+        let finisher = compute_plan(&db, &query)
             .unwrap().finisher;
         assert!(matches!(finisher, Finisher::Apply(ApplyFn::Sum, _)));
 
         let query = dsl::Query::tuple(&[("id", "1")]).insert_into("not-a-table");
-        let failure = compute_plan(&schema, &query);
+        let failure = compute_plan(&db, &query);
         assert!(failure.is_err());
     }
 
@@ -579,9 +600,10 @@ mod tests {
     fn test_match_types_for_insert() {
         let mut schema = Schema::default();
         schema.create_table("example").column("id", Type::NUMBER).column("content", Type::TEXT).add();
+        let db = Database::with_schema(schema);
 
         let query = dsl::Query::tuple(&[("id", "1"), ("content", "aaa")]).insert_into("example");
-        let plan = compute_plan(&schema, &query).unwrap();
+        let plan = compute_plan(&db, &query).unwrap();
 
         assert_eq!(plan.source.attributes[0], Attribute::named(0, "example.id").with_type(Type::NUMBER));
         assert_eq!(plan.source.attributes[1], Attribute::named(1, "example.content").with_type(Type::TEXT));
@@ -591,9 +613,10 @@ mod tests {
     fn test_scan_index() {
         let mut schema = Schema::default();
         schema.create_table("example").indexed_column("id", Type::NUMBER).column("content", Type::TEXT).add();
+        let db = Database::with_schema(schema);
 
         let query = dsl::Query::scan_index("example.id", EQ, "1");
-        let source = compute_plan(&schema, &query).unwrap().source;
+        let source = compute_plan(&db, &query).unwrap().source;
         assert_eq!(source.attributes[0], Attribute::named(0, "example.id").with_type(Type::NUMBER));
         assert_eq!(source.attributes[1], Attribute::named(1, "example.content").with_type(Type::TEXT));
         if let Contents::IndexScan(_, val) = source.contents {

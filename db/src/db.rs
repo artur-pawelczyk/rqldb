@@ -10,7 +10,8 @@ use crate::{schema::Schema, QueryResults, plan::compute_plan};
 use crate::{dsl, Cell, RawObjectView};
 
 type Result<T> = std::result::Result<T, String>;
-type SharedObject = Rc<RefCell<IndexedObject>>;
+
+pub(crate) type SharedObject = Rc<RefCell<IndexedObject>>;
 
 #[derive(Default)]
 pub struct Database {
@@ -44,13 +45,13 @@ impl Database {
     }
 
     pub fn execute_query(&self, query: &dsl::Query) -> Result<QueryResults> {
-        self.execute_plan(compute_plan(&self.schema, query)?)
+        self.execute_plan(compute_plan(&self, query)?)
     }
 
     fn execute_plan(&self, plan: Plan) -> Result<QueryResults> {
-        let source: ObjectView = match plan.source.contents {
-            Contents::TableScan(rel) => {
-                ObjectView::Ref(self.objects.get(rel.id).expect("Already checked by the planner").borrow())
+        let source: ObjectView = match &plan.source.contents {
+            Contents::TableScan(obj) => {
+                ObjectView::Ref(obj.borrow())
             },
             Contents::Tuple(ref values) => {
                 let mut temp_object = TempObject::with_attrs(&plan.source.attributes);
@@ -67,8 +68,8 @@ impl Database {
                 }
                 ObjectView::Val(tuple.build())
             },
-            Contents::IndexScan(ref col, ref val) => {
-                let object = self.objects.get(col.table().id).expect("Already checked by the planner").borrow();
+            Contents::IndexScan(ref index, ref val) => {
+                let object = self.objects.get(index.rel_id).expect("Already checked by the planner").borrow();
                 if let Some(tuple_id) = object.find_in_index(val.as_bytes()) {
                     ObjectView::TupleRef(object, tuple_id)
                 } else {
@@ -110,7 +111,7 @@ impl Database {
         Ok(sink.into_results())
     }
 
-    fn create_sink<'a>(&'a self, plan: &Plan) -> Sink<'a> {
+    fn create_sink<'a>(&'a self, plan: &'a Plan) -> Sink<'a> {
         match &plan.finisher {
             Finisher::Return => Sink::Return(plan.final_attributes(), vec![]),
             Finisher::Apply(f, attr) => match f {
@@ -119,10 +120,15 @@ impl Database {
                 _ => Sink::NoOp,
             }
             Finisher::Count => Sink::Count(0),
-            Finisher::Insert(rel) => Sink::Insert(self.objects.get(rel.id).unwrap().borrow_mut()),
+            Finisher::Insert(obj) => Sink::Insert(obj.borrow_mut()),
             Finisher::Delete(_) => Sink::Delete(vec![]),
             Finisher::Nil => Sink::NoOp,
         }
+    }
+
+    pub(crate) fn object(&self, name: &str) -> Option<SharedObject> {
+        let rel = self.schema.find_relation(name)?;
+        self.objects.get(rel.id).map(Rc::clone)
     }
 
     pub fn raw_object<'a>(&'a self, name: &str) -> Option<RawObjectView<'a>> {
@@ -446,12 +452,12 @@ mod tests {
     fn update() {
         let mut db = Database::default();
         db.execute_create(&Command::create_table("document").indexed_column("id", Type::NUMBER).column("content", Type::TEXT));
-        let table = db.schema.find_relation("document").unwrap();
+        let obj = db.object("document").unwrap();
 
-        db.execute_plan(Plan::insert(table, &["1", "orig content"])).unwrap();
-        db.execute_plan(Plan::insert(table, &["1", "new content"])).unwrap();
+        db.execute_plan(Plan::insert(&obj, &["1", "orig content"])).unwrap();
+        db.execute_plan(Plan::insert(&obj, &["1", "new content"])).unwrap();
 
-        let result = db.execute_plan(Plan::scan(table)).unwrap();
+        let result = db.execute_plan(Plan::scan(&obj)).unwrap();
         assert_eq!(result.tuples().next().unwrap().cell_by_name("document.content").unwrap().as_string(), "new content");
         assert!(result.tuples().next().is_none());
     }
@@ -460,21 +466,22 @@ mod tests {
     fn recover_object() {
         let mut source_db = Database::default();
         source_db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT));
-        let source_table = source_db.schema.find_relation("document").unwrap().clone();
+        let source_obj = source_db.object("document").unwrap();
 
         let mut target_db = Database::default();
         target_db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT));
-        let target_table = target_db.schema.find_relation("document").unwrap().clone();
+        let target_obj = target_db.object("document").unwrap();
 
-        source_db.execute_plan(Plan::insert(&source_table, &["1", "one"])).unwrap();
+        source_db.execute_plan(Plan::insert(&source_obj, &["1", "one"])).unwrap();
         let raw_object = source_db.raw_object("document").unwrap();
-        let mut temp_object = TempObject::from_relation(&target_table);
+        let mut temp_object = TempObject::from_object(&target_obj.borrow());
         for tuple in raw_object.raw_tuples() {
             temp_object.push(tuple.as_bytes().to_vec());
         }
 
         target_db.recover_object(0, temp_object);
-        let all = target_db.execute_plan(Plan::scan(&target_table)).unwrap();
+        let target_obj = target_db.object("document").unwrap();
+        let all = target_db.execute_plan(Plan::scan(&target_obj)).unwrap();
         assert_eq!(all.tuples().count(), 1);
     }
 

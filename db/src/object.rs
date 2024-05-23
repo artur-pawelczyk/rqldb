@@ -86,7 +86,7 @@ impl IndexedObject {
             let key = Attribute::from(key_col);
             let index = Index::Attr(key);
 
-            let mut obj = Self{
+            let mut obj = Self {
                 tuples: snapshot.values,
                 attrs: table.attributes().map(|attr| Attribute::from(attr)).collect(),
                 index,
@@ -97,7 +97,7 @@ impl IndexedObject {
             obj.reindex();
             obj
         } else {
-            Self{
+            Self {
                 tuples: snapshot.values,
                 attrs: table.attributes().map(Attribute::from).collect(),
                 index: Default::default(),
@@ -125,6 +125,10 @@ impl IndexedObject {
             .collect();
 
         self.removed_ids.clear();
+    }
+
+    pub(crate) fn attributes(&self) -> impl Iterator<Item = &Attribute> {
+        self.attrs.iter()
     }
 }
 
@@ -156,6 +160,10 @@ impl TempObject {
     pub fn from_relation(rel: &Relation) -> Self {
         let attrs = rel.attributes().map(Attribute::from).collect();
         Self { values: vec![], attrs }
+    }
+
+    pub fn from_object(obj: &IndexedObject) -> Self {
+        Self { values: vec![], attrs: obj.attrs.clone() }
     }
 
     pub(crate) fn build_tuple(self) -> TupleBuilder {
