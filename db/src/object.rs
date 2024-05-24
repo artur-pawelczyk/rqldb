@@ -162,7 +162,7 @@ impl TempObject {
         Self { values: vec![], attrs }
     }
 
-    pub fn from_object(obj: &IndexedObject) -> Self {
+    pub(crate) fn from_object(obj: &IndexedObject) -> Self {
         Self { values: vec![], attrs: obj.attrs.clone() }
     }
 

@@ -4,7 +4,7 @@ use std::rc::Rc;
 use crate::dump::{dump_values, dump_create};
 use crate::object::{IndexedObject, TempObject, Attribute, NamedAttribute as _};
 use crate::plan::{Contents, Filter, Plan, Finisher, ApplyFn};
-use crate::schema::AttributeRef;
+use crate::schema::{AttributeRef, TableId};
 use crate::tuple::Tuple;
 use crate::{schema::Schema, QueryResults, plan::compute_plan};
 use crate::{dsl, Cell, RawObjectView};
@@ -58,10 +58,8 @@ impl Database {
                 temp_object.push_str(values);
                 ObjectView::Val(temp_object)
             },
-            Contents::ReferencedTuple(ref map) => {
-                let first_attribute = map.iter().next().map(|(k, _)| k).ok_or("Cannot insert empty tuple")?;
-                let target = self.schema.find_relation(first_attribute).expect("Already verified by the planner");
-                let temp_object = TempObject::from_relation(target);
+            Contents::ReferencedTuple(obj, ref map) => {
+                let temp_object = TempObject::from_object(&obj.borrow());
                 let mut tuple = temp_object.build_tuple();
                 for (k, v) in map {
                     tuple.add(k, v);
@@ -126,8 +124,8 @@ impl Database {
         }
     }
 
-    pub(crate) fn object(&self, name: &str) -> Option<SharedObject> {
-        let rel = self.schema.find_relation(name)?;
+    pub(crate) fn object(&self, id: impl TableId) -> Option<SharedObject> {
+        let rel = self.schema.find_relation(id)?;
         self.objects.get(rel.id).map(Rc::clone)
     }
 

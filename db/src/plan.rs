@@ -133,7 +133,7 @@ impl<'q> QuerySource<'q> {
 pub(crate) enum Contents {
     TableScan(SharedObject),
     Tuple(Vec<String>),
-    ReferencedTuple(HashMap<AttributeRef, String>),
+    ReferencedTuple(SharedObject, HashMap<AttributeRef, String>),
     IndexScan(AttributeRef, Cell),
     Nil,
 }
@@ -275,7 +275,7 @@ fn compute_finisher<'query, 'schema>(source: QuerySource<'query>, db: &'schema D
         dsl::Finisher::Insert(name) => {
             if let QuerySource::Tuple(input_map) = source {
                 let relation = db.schema().find_relation(*name).ok_or("No such target table")?;
-                let obj = db.object(name).ok_or_else(|| format!("Target relation {name} not found"))?;
+                let obj = db.object(*name).ok_or_else(|| format!("Target relation {name} not found"))?;
                 let finisher = Finisher::Insert(Rc::clone(&obj));
                 let attributes: Vec<_> = relation.attributes().enumerate()
                     .map(|(pos, attr)| Attribute::named(pos, attr.name()).with_type(attr.kind())).collect();
@@ -288,8 +288,9 @@ fn compute_finisher<'query, 'schema>(source: QuerySource<'query>, db: &'schema D
                     } else {
                         return Err(format!("Missing attribute in source {}", attr.name()));
                     }
+
                 }
-                let source = Source{ attributes, contents: Contents::ReferencedTuple(values) };
+                let source = Source{ attributes, contents: Contents::ReferencedTuple(Rc::clone(&obj), values) };
                 Ok(Plan{ source, finisher, ..Default::default() })
             } else {
                 panic!()
