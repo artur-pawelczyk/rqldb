@@ -1,8 +1,11 @@
-use crate::object::{Attribute, NamedAttribute as _};
+use crate::object::{Attribute, IndexedObject, NamedAttribute as _};
 use crate::schema::Type;
 
 pub(crate) trait PositionalAttribute {
     fn pos(&self) -> usize;
+    fn object_id(&self) -> usize {
+        0
+    }
 }
 
 impl PositionalAttribute for usize {
@@ -15,12 +18,17 @@ impl PositionalAttribute for usize {
 pub struct Tuple<'a> {
     raw: &'a [u8],
     attrs: &'a [Attribute],
+    source_id: usize,
     rest: Option<Box<Tuple<'a>>>,
 }
 
 impl<'a> Tuple<'a> {
     pub fn from_bytes(raw: &'a [u8], attrs: &'a [Attribute]) -> Self {
-        Self{ raw, attrs, rest: None }
+        Self { raw, attrs, rest: None, source_id: 0 }
+    }
+
+    pub(crate) fn with_object(raw: &'a [u8], obj: &'a IndexedObject) -> Self {
+        Self { raw, attrs: &obj.attrs, source_id: obj.id(), rest: None }
     }
 
     #[cfg(test)]
@@ -34,6 +42,12 @@ impl<'a> Tuple<'a> {
 
     pub(crate) fn element(&self, attr: &impl PositionalAttribute) -> Option<Element> {
         let pos = attr.pos();
+        if attr.object_id() != self.source_id {
+            if let Some(rest) = &self.rest {
+                return rest.element(attr);
+            }
+        }
+
         if pos < self.attrs.len() {
             let attr = self.attrs.get(pos)?;
             let start = self.offset(pos);
@@ -60,7 +74,7 @@ impl<'a> Tuple<'a> {
     }
 
     pub(crate) fn iter(&self) -> ElementIter {
-        ElementIter{ inner: Tuple{ raw: self.raw, attrs: self.attrs, rest: None } }
+        ElementIter{ inner: Tuple { raw: self.raw, attrs: self.attrs, rest: None, source_id: 0 } }
     }
 
     pub fn serialize(&self) -> TupleIter {
@@ -138,7 +152,7 @@ impl<'a> Iterator for ElementIter<'a> {
         if let Some(attr) = self.inner.attrs.first() {
             let len = element_len(attr.kind(), self.inner.raw);
             let elem = Element { raw: &self.inner.raw[..len], name: attr.name(), kind: attr.kind() };
-            self.inner = Tuple{ attrs: &self.inner.attrs[1..], raw: &self.inner.raw[len..], rest: None };
+            self.inner = Tuple{ attrs: &self.inner.attrs[1..], raw: &self.inner.raw[len..], rest: None, source_id: 0 };
             Some(elem)
         } else {
             None

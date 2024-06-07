@@ -250,7 +250,6 @@ fn tuple_to_cells(attrs: &[Attribute], tuple: &Tuple) -> Vec<Cell> {
     }).collect()
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -11,6 +11,7 @@ type ByteTuple = Vec<u8>;
 
 #[derive(Default)]
 pub(crate) struct IndexedObject {
+    id: usize,
     pub(crate) tuples: Vec<ByteTuple>,
     pub(crate) attrs: Vec<Attribute>,
     index: Index,
@@ -22,13 +23,18 @@ impl IndexedObject {
     pub(crate) fn from_table(table: &Relation) -> Self {
         let key = table.indexed_column().map(|col| Attribute::from(col));
 
-        Self{
+        Self {
+            id: table.id,
             tuples: Vec::new(),
             attrs: table.attributes().map(|attr| Attribute::from(attr)).collect(),
             index: key.map(Index::Attr).unwrap_or(Index::Uniq),
             hash: Default::default(),
             removed_ids: Default::default(),
         }
+    }
+
+    pub(crate) fn id(&self) -> usize {
+        self.id
     }
 
     pub(crate) fn add_tuple(&mut self, tuple: &Tuple) -> bool {
@@ -66,14 +72,14 @@ impl IndexedObject {
     }
 
     pub(crate) fn get(&self, id: usize) -> Option<Tuple> {
-        self.tuples.get(id).map(|bytes| Tuple::from_bytes(bytes, &self.attrs))
+        self.tuples.get(id).map(|bytes| Tuple::with_object(bytes, &self))
     }
 
     pub(crate) fn iter<'b>(&'b self) -> Box<dyn Iterator<Item = Tuple<'b>> + 'b> {
         Box::new(
             self.tuples.iter().enumerate()
                 .filter(|(id, _)| !self.removed_ids.contains(id))
-                .map(|(_, bytes)| Tuple::from_bytes(bytes, &self.attrs))
+                .map(move |(_, bytes)| Tuple::with_object(bytes, &self))
         )
     }
 
@@ -87,6 +93,7 @@ impl IndexedObject {
             let index = Index::Attr(key);
 
             let mut obj = Self {
+                id: table.id,
                 tuples: snapshot.values,
                 attrs: table.attributes().map(|attr| Attribute::from(attr)).collect(),
                 index,
@@ -98,6 +105,7 @@ impl IndexedObject {
             obj
         } else {
             Self {
+                id: table.id,
                 tuples: snapshot.values,
                 attrs: table.attributes().map(Attribute::from).collect(),
                 index: Default::default(),
@@ -271,6 +279,10 @@ pub struct Attribute {
 impl PositionalAttribute for Attribute {
     fn pos(&self) -> usize {
         self.pos
+    }
+
+    fn object_id(&self) -> usize {
+        self.reference.as_ref().map(|r| r.rel_id).unwrap_or(0)
     }
 }
 

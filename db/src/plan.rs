@@ -47,7 +47,7 @@ impl<'schema> Plan<'schema> {
 
     pub fn final_attributes(&self) -> Vec<Attribute> {
         if let Some(last_join) = self.joins.iter().last() {
-            last_join.attributes_after()
+            last_join.attributes_after().collect()
         } else {
             self.source.attributes.to_vec()
         }
@@ -69,32 +69,29 @@ impl Filter {
 }
 
 pub(crate) struct Join<'a> {
-    table: &'a Relation,
-    joinee_attributes: Vec<Attribute>,
-    joiner_attributes: Vec<Attribute>,
-    joinee_key: usize,
-    joiner_key: usize,
+    joinee: &'a Relation,
+    joiner: &'a Relation,
+    joinee_key: AttributeRef,
+    joiner_key: AttributeRef,
 }
 
 impl<'a> Join<'a> {
     pub fn source_table(&self) -> &Relation {
-        self.table
+        self.joiner
     }
 
-    pub fn joinee_key(&self) -> &Attribute {
-        self.joinee_attributes.get(self.joinee_key).unwrap()
+    pub fn joinee_key(&self) -> &AttributeRef {
+        &self.joinee_key
     }
 
-    pub fn joiner_key(&self) -> &Attribute {
-        self.joiner_attributes.get(self.joiner_key).unwrap()
+    pub fn joiner_key(&self) -> &AttributeRef {
+        &self.joiner_key
     }
 
-    pub fn attributes_after(&self) -> Vec<Attribute> {
-        self.joinee_attributes.iter()
-            .chain(self.joiner_attributes.iter())
-            .enumerate()
-            .map(|(pos, attr)| Attribute { pos, name: Box::from(attr.name()), kind: attr.kind(), reference: attr.reference.clone() })
-            .collect()
+    pub fn attributes_after(&'a self) -> impl Iterator<Item = Attribute> + 'a {
+        self.joinee.attributes()
+            .chain(self.joiner.attributes())
+            .map(Attribute::from)
     }
 }
 
@@ -360,13 +357,11 @@ fn compute_joins<'a>(plan: Plan<'a>, schema: &'a Schema, query: &dsl::Query) -> 
             None => return Err(format!("{} relation not found", join_source.table))
         };
 
-        let joinee_attributes = table_attributes(joinee_table);
-        let joiner_attributes = table_attributes(joiner_table);
-        if let Some(joinee_key) = joinee_attributes.iter().enumerate().find(|(_, a)| a == &join_source.left).map(|(i,_)| i) {
-            if let Some(joiner_key) = joiner_attributes.iter().enumerate().find(|(_, a)| a == &join_source.right).map(|(i,_)| i) {
-                joins.push(Join{
-                    table: joiner_table,
-                    joinee_attributes, joiner_attributes,
+        if let Some(joinee_key) = joinee_table.lookup(join_source.left).map(|c| c.reference()) {
+            if let Some(joiner_key) = joiner_table.lookup(join_source.right).map(|c| c.reference()) {
+                joins.push(Join {
+                    joiner: joiner_table,
+                    joinee: joinee_table,
                     joinee_key, joiner_key
                 })
             } else {
@@ -378,12 +373,6 @@ fn compute_joins<'a>(plan: Plan<'a>, schema: &'a Schema, query: &dsl::Query) -> 
     }
 
     Ok(Plan{ joins, ..plan })
-}
-
-fn table_attributes(table: &Relation) -> Vec<Attribute> {
-    table.attributes()
-        .map(|col| Attribute::from(col))
-        .collect()
 }
 
 #[cfg(test)]
@@ -467,7 +456,7 @@ mod tests {
         let query = dsl::Query::scan("document").join("type", "document.type_id", "type.id");
         let joins = expect_join(compute_plan(&db, &query));
         assert_eq!(joins.source_table().name.as_ref(), "type");
-        assert_eq!(attribute_names(&joins.attributes_after()), vec!["document.name", "document.type_id", "type.id", "type.name"]);
+        assert_eq!(attribute_names(&joins.attributes_after().collect::<Vec<_>>()), vec!["document.name", "document.type_id", "type.id", "type.name"]);
 
         let query = dsl::Query::scan("nothing").join("type", "a", "b");
         let missing_source_table = compute_plan(&db, &query);
@@ -494,8 +483,8 @@ mod tests {
             .join("type", "document.type_id", "type.id")
             .join("author", "document.author", "author.username");
         let joins = expect_joins(compute_plan(&db, &query), 2);
-        assert_eq!(joins[0].table.name.as_ref(), "type");
-        assert_eq!(joins[1].table.name.as_ref(), "author");
+        assert_eq!(joins[0].joiner.name.as_ref(), "type");
+        assert_eq!(joins[1].joiner.name.as_ref(), "author");
     }
 
     #[test]
@@ -506,7 +495,7 @@ mod tests {
         let db = Database::with_schema(schema);
 
         let filter = expect_filter(compute_plan(&db, &dsl::Query::scan("document").join("type", "document.type_id", "type.id").filter("type.name", EQ, "b")));
-        assert_eq!(filter.attribute.pos(), 3);
+        assert_eq!(filter.attribute.name(), "type.name");
     }
 
     fn expect_joins<'a>(result: Result<Plan<'a>>, n: usize) -> Vec<Join<'a>> {

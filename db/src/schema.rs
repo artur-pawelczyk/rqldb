@@ -55,12 +55,37 @@ impl TableId for &AttributeRef {
 }
 
 pub trait AttributeIdentifier {
-    fn find_in<'a>(self, schema: &'a Schema) -> Option<Column<'a>>;
+    fn find_in_schema<'a>(self, schema: &'a Schema) -> Option<Column<'a>>;
+    fn find_in_relation<'a>(self, rel: &'a Relation) -> Option<Column<'a>>;
 }
 
 impl AttributeIdentifier for &str {
-    fn find_in<'a>(self, schema: &'a Schema) -> Option<Column<'a>> {
+    fn find_in_schema<'a>(self, schema: &'a Schema) -> Option<Column<'a>> {
         schema.find_column(self)
+    }
+
+    fn find_in_relation<'a>(self, rel: &'a Relation) -> Option<Column<'a>> {
+        let (rel_name, _) = split_name(self)?;
+        if rel_name == rel.name.as_ref() {
+            rel.find_column(self)
+        } else {
+            None
+        }
+    }
+}
+
+impl AttributeIdentifier for &AttributeRef {
+    fn find_in_schema<'a>(self, schema: &'a Schema) -> Option<Column<'a>> {
+        let rel = schema.relations.get(self.rel_id)?;
+        rel.attribute_by_id(self.attr_id)
+    }
+
+    fn find_in_relation<'a>(self, rel: &'a Relation) -> Option<Column<'a>> {
+        if self.rel_id == rel.id {
+            rel.attribute_by_id(self.attr_id)
+        } else {
+            None
+        }
     }
 }
 
@@ -72,7 +97,7 @@ pub struct AttributeRef {
 
 impl PositionalAttribute for AttributeRef {
     fn pos(&self) -> usize {
-        self.rel_id
+        self.attr_id
     }
 }
 
@@ -222,7 +247,7 @@ impl Schema {
     }
 
     pub fn lookup_attribute(&self, id: impl AttributeIdentifier) -> Option<Column<'_>> {
-        id.find_in(self)
+        id.find_in_schema(self)
     }
 
     /// # Examples
@@ -309,7 +334,7 @@ impl Relation {
     }
 
     pub fn attributes(&self) -> ColumnIter {
-        ColumnIter{ table: self, pos: 0, rel_id: self.id }
+        ColumnIter { table: self, pos: 0, rel_id: self.id }
     }
 
 
@@ -371,8 +396,41 @@ impl Relation {
             })
     }
 
+    fn attribute_by_id(&self, attr_id: usize) -> Option<Column> {
+        let rel = self.columns.get(attr_id)?;
+        Some(Column {
+            table: self,
+            inner: rel,
+            id: attr_id,
+            rel_id: self.id,
+        })
+    }
+
+    pub fn lookup(&self, attr: impl AttributeIdentifier) -> Option<Column<'_>> {
+        attr.find_in_relation(self)
+    }
+
     pub fn types(&self) -> Vec<Type> {
         self.columns.iter().map(|col| col.kind).collect()
     }
 }
 
+fn split_name(name: &str) -> Option<(&str, &str)> {
+    if let Some(i) = name.find('.') {
+        Some((&name[..i], &name[i+1..]))
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_split_name() {
+        assert_eq!(split_name("document.id"), Some(("document", "id")));
+        assert_eq!(split_name("document"), None);
+        assert_eq!(split_name("id"), None);
+    }
+}

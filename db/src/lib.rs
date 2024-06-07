@@ -201,6 +201,9 @@ impl<'a> Iterator for Tuples<'a> {
     type Item = Tuple<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.contents.next().map(|cells| Tuple{ attributes: self.attributes, contents: cells })
+        self.contents.next().map(|cells| {
+            debug_assert!(self.attributes.len() == cells.len());
+            Tuple { attributes: self.attributes, contents: cells }
+        })
     }
 }
