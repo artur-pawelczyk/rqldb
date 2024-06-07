@@ -160,7 +160,7 @@ pub struct TempObject {
 }
 
 impl TempObject {
-    pub fn with_attrs(attrs: &[impl NamedAttribute]) -> Self {
+    pub fn from_attrs(attrs: &[impl NamedAttribute]) -> Self {
         let attrs = attrs.iter().enumerate().map(|(pos, a)| Attribute { pos, name: Box::from(a.name()), kind: a.kind(), reference: None }).collect();
         Self{ values: vec![], attrs }
     }
@@ -266,7 +266,7 @@ pub trait NamedAttribute {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Attribute {
     // TODO: position should be internal to the object (but not schema
     // because the element ordering should be private for the object)
@@ -311,6 +311,18 @@ impl Attribute {
             kind,
             ..self
         }
+    }
+}
+
+impl PartialOrd for Attribute {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.pos.partial_cmp(&other.pos)
+    }
+}
+
+impl Ord for Attribute {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.pos.cmp(&other.pos)
     }
 }
 

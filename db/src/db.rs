@@ -53,9 +53,12 @@ impl Database {
             Contents::TableScan(obj) => {
                 ObjectView::Ref(obj.borrow())
             },
-            Contents::Tuple(ref values) => {
-                let mut temp_object = TempObject::with_attrs(&plan.source.attributes);
-                temp_object.push_str(values);
+            Contents::Tuple(values_map) => {
+                // TODO: Remove this 'clone'.
+                let attrs = plan.source.attributes();
+                let mut temp_object = TempObject::from_attrs(&attrs);
+                let values: Vec<_> = values_map.values().collect();
+                temp_object.push_str(&values);
                 ObjectView::Val(temp_object)
             },
             Contents::ReferencedTuple(obj, ref map) => {
@@ -66,10 +69,9 @@ impl Database {
                 }
                 ObjectView::Val(tuple.build())
             },
-            Contents::IndexScan(ref index, ref val) => {
-                let object = self.objects.get(index.rel_id).expect("Already checked by the planner").borrow();
-                if let Some(tuple_id) = object.find_in_index(val.as_bytes()) {
-                    ObjectView::TupleRef(object, tuple_id)
+            Contents::IndexScan(obj, val) => {
+                if let Some(tuple_id) = obj.borrow().find_in_index(val.as_bytes()) {
+                    ObjectView::TupleRef(obj.borrow(), tuple_id)
                 } else {
                     ObjectView::Empty
                 }

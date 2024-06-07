@@ -10,6 +10,7 @@ use crate::schema::Column;
 use crate::schema::{Schema, Relation, Type};
 use crate::tuple::Tuple;
 
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -26,11 +27,13 @@ pub(crate) struct Plan<'schema> {
 impl<'schema> Plan<'schema> {
     #[cfg(test)]
     pub fn insert(obj: &SharedObject, values: &[&str]) -> Self {
-        let attributes = obj.borrow().attributes().cloned().collect();
-        let contents = Contents::Tuple(values.iter().map(|s|String::from(*s)).collect());
+        let attributes: Vec<_> = obj.borrow().attributes().cloned().collect();
+        let contents = std::iter::zip(attributes.iter(), values.iter())
+            .map(|(a, s)| (a.clone(), String::from(*s)))
+            .collect();
 
         Self{
-            source: Source { attributes, contents },
+            source: Source { contents: Contents::Tuple(contents) },
             finisher: Finisher::Insert(Rc::clone(obj)),
             ..Plan::default()
         }
@@ -49,7 +52,7 @@ impl<'schema> Plan<'schema> {
         if let Some(last_join) = self.joins.iter().last() {
             last_join.attributes_after().collect()
         } else {
-            self.source.attributes.to_vec()
+            self.source.attributes()
         }
     }
 }
@@ -97,8 +100,19 @@ impl<'a> Join<'a> {
 
 #[derive(Default)]
 pub(crate) struct Source {
-    pub attributes: Vec<Attribute>,
     pub contents: Contents,
+}
+
+impl Source {
+    pub fn attributes(&self) -> Vec<Attribute> {
+        match &self.contents {
+            Contents::Tuple(values) => values.keys().cloned().collect(),
+            Contents::ReferencedTuple(obj, _) => obj.borrow().attributes().cloned().collect(),
+            Contents::TableScan(obj) => obj.borrow().attributes().cloned().collect(),
+            Contents::IndexScan(obj, _) => obj.borrow().attributes().cloned().collect(),
+            _ => vec![]
+        }
+    }
 }
 
 enum QuerySource<'q> {
@@ -117,8 +131,9 @@ impl<'q> QuerySource<'q> {
             },
             Self::IndexScan(attr_name, cell) => {
                 let attr = db.schema().find_column(attr_name).ok_or_else(|| format!("No such attribute {attr_name}"))?;
+                let obj = db.object(&attr.reference()).expect("Attribute found so the object must exist");
                 if attr.indexed() {
-                    Ok(Source::scan_index(db.schema(), attr.reference(), cell))
+                    Ok(Source::scan_index(&obj, cell))
                 } else {
                     Err(format!("Attribute {attr_name} is not an index"))
                 }
@@ -129,9 +144,9 @@ impl<'q> QuerySource<'q> {
 
 pub(crate) enum Contents {
     TableScan(SharedObject),
-    Tuple(Vec<String>),
+    Tuple(BTreeMap<Attribute, String>),
     ReferencedTuple(SharedObject, HashMap<AttributeRef, String>),
-    IndexScan(AttributeRef, Cell),
+    IndexScan(SharedObject, Cell),
     Nil,
 }
 
@@ -143,29 +158,25 @@ impl Default for Contents {
 
 impl Source {
     fn scan_table(obj: &SharedObject) -> Self {
-        let attributes = obj.borrow().attributes().cloned().collect();
-        Source{ attributes, contents: Contents::TableScan(Rc::clone(obj)) }
+        Source{ contents: Contents::TableScan(Rc::clone(obj)) }
     }
 
     fn from_map(map: &HashMap<&str, (Type, &str)>) -> Self {
         let mut attributes = Vec::new();
-        let mut values = Vec::new();
+        let mut values = BTreeMap::new();
 
         for (pos, (k, v)) in map.iter().enumerate() {
-            attributes.push(Attribute { pos, name: Box::from(*k), kind: v.0, reference: None });
-            values.push(v.1.to_string());
+            let attr = Attribute { pos, name: Box::from(*k), kind: v.0, reference: None };
+            attributes.push(attr.clone());
+            values.insert(attr, v.1.to_string());
         }
 
-        Self { attributes, contents: Contents::Tuple(values) }
+        Self { contents: Contents::Tuple(values) }
     }
 
-    fn scan_index(schema: &Schema, index: AttributeRef, val: Cell) -> Self {
-        let attributes = schema.find_relation(&index).unwrap().attributes().enumerate()
-            .map(|(i, attr)| Attribute::named(i, attr.name()).with_type(attr.kind())).collect();
-
-        Self{
-            attributes,
-            contents: Contents::IndexScan(index, val),
+    fn scan_index(obj: &SharedObject, val: Cell) -> Self {
+        Self {
+            contents: Contents::IndexScan(Rc::clone(obj), val),
         }
     }
 }
@@ -274,8 +285,6 @@ fn compute_finisher<'query, 'schema>(source: QuerySource<'query>, db: &'schema D
                 let relation = db.schema().find_relation(*name).ok_or("No such target table")?;
                 let obj = db.object(*name).ok_or_else(|| format!("Target relation {name} not found"))?;
                 let finisher = Finisher::Insert(Rc::clone(&obj));
-                let attributes: Vec<_> = relation.attributes().enumerate()
-                    .map(|(pos, attr)| Attribute::named(pos, attr.name()).with_type(attr.kind())).collect();
                 let mut values = HashMap::new();
                 for attr in relation.attributes() {
                     if let Some((_, val)) = input_map.get(attr.name()) {
@@ -287,7 +296,7 @@ fn compute_finisher<'query, 'schema>(source: QuerySource<'query>, db: &'schema D
                     }
 
                 }
-                let source = Source{ attributes, contents: Contents::ReferencedTuple(Rc::clone(&obj), values) };
+                let source = Source{ contents: Contents::ReferencedTuple(Rc::clone(&obj), values) };
                 Ok(Plan{ source, finisher, ..Default::default() })
             } else {
                 panic!()
@@ -595,8 +604,8 @@ mod tests {
         let query = dsl::Query::tuple(&[("id", "1"), ("content", "aaa")]).insert_into("example");
         let plan = compute_plan(&db, &query).unwrap();
 
-        assert_eq!(plan.source.attributes[0], Attribute::named(0, "example.id").with_type(Type::NUMBER));
-        assert_eq!(plan.source.attributes[1], Attribute::named(1, "example.content").with_type(Type::TEXT));
+        assert!(matches!(plan.source.attributes()[0], Attribute { kind: Type::NUMBER, .. }));
+        assert!(matches!(plan.source.attributes()[1], Attribute { kind: Type::TEXT, .. }));
     }
 
     #[test]
@@ -607,8 +616,18 @@ mod tests {
 
         let query = dsl::Query::scan_index("example.id", EQ, "1");
         let source = compute_plan(&db, &query).unwrap().source;
-        assert_eq!(source.attributes[0], Attribute::named(0, "example.id").with_type(Type::NUMBER));
-        assert_eq!(source.attributes[1], Attribute::named(1, "example.content").with_type(Type::TEXT));
+        {
+            let attr = &source.attributes()[0];
+            assert_eq!(attr.name(), "example.id");
+            assert_eq!(attr.kind(), Type::NUMBER);
+        }
+
+        {
+            let attr = &source.attributes()[1];
+            assert_eq!(attr.name(), "example.content");
+            assert_eq!(attr.kind(), Type::TEXT);
+        }
+
         if let Contents::IndexScan(_, val) = source.contents {
             assert_eq!(val, Cell::from_i32(1));
         } else {
@@ -617,7 +636,7 @@ mod tests {
     }
 
     fn source_attributes(source: &Source) -> Vec<Type> {
-        source.attributes.iter().map(|attr| attr.kind()).collect()
+        source.attributes().iter().map(|attr| attr.kind()).collect()
     }
 
     fn attribute_names(attrs: &[Attribute]) -> Vec<&str> {
