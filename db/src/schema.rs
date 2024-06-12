@@ -55,16 +55,16 @@ impl TableId for &AttributeRef {
 }
 
 pub trait AttributeIdentifier {
-    fn find_in_schema<'a>(self, schema: &'a Schema) -> Option<Column<'a>>;
-    fn find_in_relation<'a>(self, rel: &'a Relation) -> Option<Column<'a>>;
+    fn find_in_schema(self, schema: &Schema) -> Option<Column>;
+    fn find_in_relation(self, rel: &Relation) -> Option<Column>;
 }
 
 impl AttributeIdentifier for &str {
-    fn find_in_schema<'a>(self, schema: &'a Schema) -> Option<Column<'a>> {
+    fn find_in_schema(self, schema: &Schema) -> Option<Column> {
         schema.find_column(self)
     }
 
-    fn find_in_relation<'a>(self, rel: &'a Relation) -> Option<Column<'a>> {
+    fn find_in_relation(self, rel: &Relation) -> Option<Column> {
         let (rel_name, _) = split_name(self)?;
         if rel_name == rel.name.as_ref() {
             rel.find_column(self)
@@ -75,12 +75,12 @@ impl AttributeIdentifier for &str {
 }
 
 impl AttributeIdentifier for &AttributeRef {
-    fn find_in_schema<'a>(self, schema: &'a Schema) -> Option<Column<'a>> {
+    fn find_in_schema(self, schema: &Schema) -> Option<Column> {
         let rel = schema.relations.get(self.rel_id)?;
         rel.attribute_by_id(self.attr_id)
     }
 
-    fn find_in_relation<'a>(self, rel: &'a Relation) -> Option<Column<'a>> {
+    fn find_in_relation(self, rel: &Relation) -> Option<Column> {
         if self.rel_id == rel.id {
             rel.attribute_by_id(self.attr_id)
         } else {
@@ -416,11 +416,7 @@ impl Relation {
 }
 
 fn split_name(name: &str) -> Option<(&str, &str)> {
-    if let Some(i) = name.find('.') {
-        Some((&name[..i], &name[i+1..]))
-    } else {
-        None
-    }
+    name.find('.').map(|i| (&name[..i], &name[i+1..]))
 }
 
 #[cfg(test)]

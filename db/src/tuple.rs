@@ -244,7 +244,7 @@ mod tests {
 
     #[test]
     fn test_tuple() {
-        let object = vec![tuple(&ATTRIBUTES_1, &["1", "example"])];
+        let object = [tuple(&ATTRIBUTES_1, &["1", "example"])];
         let tuple = Tuple::from_bytes(object.get(0).unwrap(), &ATTRIBUTES_1);
         assert_eq!(tuple.element(&0).unwrap().to_string(), "1");
         assert_eq!(tuple.element(&1).unwrap().to_string(), "example");
@@ -252,7 +252,7 @@ mod tests {
 
     #[test]
     fn test_filter() {
-        let object = vec![
+        let object = [
             tuple(&ATTRIBUTES_1, &["1", "foo"]),
             tuple(&ATTRIBUTES_1, &["2", "bar"]),
         ];
@@ -266,11 +266,11 @@ mod tests {
 
     #[test]
     fn test_add_cells()  {
-        let object_1 = vec![
+        let object_1 = [
             tuple(&ATTRIBUTES_1, &["1", "foo"]),
             tuple(&ATTRIBUTES_1, &["2", "bar"]),
         ];
-        let object_2 = vec![
+        let object_2 = [
             tuple(&ATTRIBUTES_2, &["fizz"]),
         ];
 

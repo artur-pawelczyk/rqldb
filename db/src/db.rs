@@ -45,7 +45,7 @@ impl Database {
     }
 
     pub fn execute_query(&self, query: &dsl::Query) -> Result<QueryResults> {
-        self.execute_plan(compute_plan(&self, query)?)
+        self.execute_plan(compute_plan(self, query)?)
     }
 
     fn execute_plan(&self, plan: Plan) -> Result<QueryResults> {
@@ -54,7 +54,6 @@ impl Database {
                 ObjectView::Ref(obj.borrow())
             },
             Source::Tuple(values_map) => {
-                // TODO: Remove this 'clone'.
                 let attrs = plan.source.attributes();
                 let mut temp_object = TempObject::from_attrs(&attrs);
                 let values: Vec<_> = values_map.values().collect();
@@ -126,9 +125,9 @@ impl Database {
         }
     }
 
-    pub(crate) fn object(&self, id: impl TableId) -> Option<SharedObject> {
+    pub(crate) fn object(&self, id: impl TableId) -> Option<&SharedObject> {
         let rel = self.schema.find_relation(id)?;
-        self.objects.get(rel.id).map(Rc::clone)
+        self.objects.get(rel.id)
     }
 
     pub fn raw_object<'a>(&'a self, name: &str) -> Option<RawObjectView<'a>> {
@@ -453,10 +452,10 @@ mod tests {
         db.execute_create(&Command::create_table("document").indexed_column("id", Type::NUMBER).column("content", Type::TEXT));
         let obj = db.object("document").unwrap();
 
-        db.execute_plan(Plan::insert(&obj, &["1", "orig content"])).unwrap();
-        db.execute_plan(Plan::insert(&obj, &["1", "new content"])).unwrap();
+        db.execute_plan(Plan::insert(obj, &["1", "orig content"])).unwrap();
+        db.execute_plan(Plan::insert(obj, &["1", "new content"])).unwrap();
 
-        let result = db.execute_plan(Plan::scan(&obj)).unwrap();
+        let result = db.execute_plan(Plan::scan(obj)).unwrap();
         assert_eq!(result.tuples().next().unwrap().cell_by_name("document.content").unwrap().as_string(), "new content");
         assert!(result.tuples().next().is_none());
     }
@@ -471,7 +470,7 @@ mod tests {
         target_db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT));
         let target_obj = target_db.object("document").unwrap();
 
-        source_db.execute_plan(Plan::insert(&source_obj, &["1", "one"])).unwrap();
+        source_db.execute_plan(Plan::insert(source_obj, &["1", "one"])).unwrap();
         let raw_object = source_db.raw_object("document").unwrap();
         let mut temp_object = TempObject::from_object(&target_obj.borrow());
         for tuple in raw_object.raw_tuples() {
@@ -480,7 +479,7 @@ mod tests {
 
         target_db.recover_object(0, temp_object);
         let target_obj = target_db.object("document").unwrap();
-        let all = target_db.execute_plan(Plan::scan(&target_obj)).unwrap();
+        let all = target_db.execute_plan(Plan::scan(target_obj)).unwrap();
         assert_eq!(all.tuples().count(), 1);
     }
 

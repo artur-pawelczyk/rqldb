@@ -132,13 +132,13 @@ impl<'q> QuerySource<'q> {
             Self::Tuple(values) => Ok(Source::from_map(&values)),
             Self::Scan(name) => {
                 let obj = db.object(name).ok_or_else(|| format!("No such relation {name}"))?;
-                Ok(Source::scan_table(&obj))
+                Ok(Source::scan_table(obj))
             },
             Self::IndexScan(attr_name, cell) => {
                 let attr = db.schema().find_column(attr_name).ok_or_else(|| format!("No such attribute {attr_name}"))?;
                 let obj = db.object(&attr.reference()).expect("Attribute found so the object must exist");
                 if attr.indexed() {
-                    Ok(Source::scan_index(&obj, cell))
+                    Ok(Source::scan_index(obj, cell))
                 } else {
                     Err(format!("Attribute {attr_name} is not an index"))
                 }
@@ -273,7 +273,7 @@ fn compute_finisher<'query, 'schema>(source: QuerySource<'query>, db: &'schema D
             if let QuerySource::Tuple(input_map) = source {
                 let relation = db.schema().find_relation(*name).ok_or("No such target table")?;
                 let obj = db.object(*name).ok_or_else(|| format!("Target relation {name} not found"))?;
-                let finisher = Finisher::Insert(Rc::clone(&obj));
+                let finisher = Finisher::Insert(Rc::clone(obj));
                 let mut values = HashMap::new();
                 for attr in relation.attributes() {
                     if let Some((_, val)) = input_map.get(attr.name()) {
@@ -285,7 +285,7 @@ fn compute_finisher<'query, 'schema>(source: QuerySource<'query>, db: &'schema D
                     }
 
                 }
-                let source = Source::ReferencedTuple(Rc::clone(&obj), values);
+                let source = Source::ReferencedTuple(Rc::clone(obj), values);
                 Ok(Plan { source, finisher, ..Default::default() })
             } else {
                 panic!()

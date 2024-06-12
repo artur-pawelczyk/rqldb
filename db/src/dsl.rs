@@ -150,12 +150,12 @@ impl FromStr for AttrKind {
     }
 }
 
-impl Into<Type> for AttrKind {
-    fn into(self) -> Type {
-        match self {
-            Self::Number => Type::NUMBER,
-            Self::Text => Type::TEXT,
-            _ => Type::NONE,
+impl From<AttrKind> for Type {
+    fn from(kind: AttrKind) -> Self {
+        match kind {
+            AttrKind::Number => Self::NUMBER,
+            AttrKind::Text => Self::TEXT,
+            _ => Self::NONE,
         }
     }
 }
