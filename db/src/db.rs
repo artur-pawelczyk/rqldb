@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use crate::dump::{dump_values, dump_create};
 use crate::object::{IndexedObject, TempObject, Attribute, NamedAttribute as _};
-use crate::plan::{Contents, Filter, Plan, Finisher, ApplyFn};
+use crate::plan::{Source, Filter, Plan, Finisher, ApplyFn};
 use crate::schema::{AttributeRef, TableId};
 use crate::tuple::Tuple;
 use crate::{schema::Schema, QueryResults, plan::compute_plan};
@@ -49,11 +49,11 @@ impl Database {
     }
 
     fn execute_plan(&self, plan: Plan) -> Result<QueryResults> {
-        let source: ObjectView = match &plan.source.contents {
-            Contents::TableScan(obj) => {
+        let source: ObjectView = match &plan.source {
+            Source::TableScan(obj) => {
                 ObjectView::Ref(obj.borrow())
             },
-            Contents::Tuple(values_map) => {
+            Source::Tuple(values_map) => {
                 // TODO: Remove this 'clone'.
                 let attrs = plan.source.attributes();
                 let mut temp_object = TempObject::from_attrs(&attrs);
@@ -61,7 +61,7 @@ impl Database {
                 temp_object.push_str(&values);
                 ObjectView::Val(temp_object)
             },
-            Contents::ReferencedTuple(obj, ref map) => {
+            Source::ReferencedTuple(obj, ref map) => {
                 let temp_object = TempObject::from_object(&obj.borrow());
                 let mut tuple = temp_object.build_tuple();
                 for (k, v) in map {
@@ -69,7 +69,7 @@ impl Database {
                 }
                 ObjectView::Val(tuple.build())
             },
-            Contents::IndexScan(obj, val) => {
+            Source::IndexScan(obj, val) => {
                 if let Some(tuple_id) = obj.borrow().find_in_index(val.as_bytes()) {
                     ObjectView::TupleRef(obj.borrow(), tuple_id)
                 } else {

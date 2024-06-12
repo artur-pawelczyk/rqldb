@@ -33,7 +33,7 @@ impl<'schema> Plan<'schema> {
             .collect();
 
         Self{
-            source: Source { contents: Contents::Tuple(contents) },
+            source: Source::Tuple(contents),
             finisher: Finisher::Insert(Rc::clone(obj)),
             ..Plan::default()
         }
@@ -99,17 +99,22 @@ impl<'a> Join<'a> {
 }
 
 #[derive(Default)]
-pub(crate) struct Source {
-    pub contents: Contents,
+pub(crate) enum Source {
+    TableScan(SharedObject),
+    Tuple(BTreeMap<Attribute, String>),
+    ReferencedTuple(SharedObject, HashMap<AttributeRef, String>),
+    IndexScan(SharedObject, Cell),
+    #[default]
+    Nil,
 }
 
 impl Source {
     pub fn attributes(&self) -> Vec<Attribute> {
-        match &self.contents {
-            Contents::Tuple(values) => values.keys().cloned().collect(),
-            Contents::ReferencedTuple(obj, _) => obj.borrow().attributes().cloned().collect(),
-            Contents::TableScan(obj) => obj.borrow().attributes().cloned().collect(),
-            Contents::IndexScan(obj, _) => obj.borrow().attributes().cloned().collect(),
+        match &self {
+            Self::Tuple(values) => values.keys().cloned().collect(),
+            Self::ReferencedTuple(obj, _) => obj.borrow().attributes().cloned().collect(),
+            Self::TableScan(obj) => obj.borrow().attributes().cloned().collect(),
+            Self::IndexScan(obj, _) => obj.borrow().attributes().cloned().collect(),
             _ => vec![]
         }
     }
@@ -142,23 +147,9 @@ impl<'q> QuerySource<'q> {
     }
 }
 
-pub(crate) enum Contents {
-    TableScan(SharedObject),
-    Tuple(BTreeMap<Attribute, String>),
-    ReferencedTuple(SharedObject, HashMap<AttributeRef, String>),
-    IndexScan(SharedObject, Cell),
-    Nil,
-}
-
-impl Default for Contents {
-    fn default() -> Self {
-        Self::Nil
-    }
-}
-
 impl Source {
     fn scan_table(obj: &SharedObject) -> Self {
-        Source{ contents: Contents::TableScan(Rc::clone(obj)) }
+        Source::TableScan(Rc::clone(obj))
     }
 
     fn from_map(map: &HashMap<&str, (Type, &str)>) -> Self {
@@ -171,13 +162,11 @@ impl Source {
             values.insert(attr, v.1.to_string());
         }
 
-        Self { contents: Contents::Tuple(values) }
+        Self::Tuple(values)
     }
 
     fn scan_index(obj: &SharedObject, val: Cell) -> Self {
-        Self {
-            contents: Contents::IndexScan(Rc::clone(obj), val),
-        }
+        Self::IndexScan(Rc::clone(obj), val)
     }
 }
 
@@ -296,8 +285,8 @@ fn compute_finisher<'query, 'schema>(source: QuerySource<'query>, db: &'schema D
                     }
 
                 }
-                let source = Source{ contents: Contents::ReferencedTuple(Rc::clone(&obj), values) };
-                Ok(Plan{ source, finisher, ..Default::default() })
+                let source = Source::ReferencedTuple(Rc::clone(&obj), values);
+                Ok(Plan { source, finisher, ..Default::default() })
             } else {
                 panic!()
             }
@@ -628,7 +617,7 @@ mod tests {
             assert_eq!(attr.kind(), Type::TEXT);
         }
 
-        if let Contents::IndexScan(_, val) = source.contents {
+        if let Source::IndexScan(_, val) = source {
             assert_eq!(val, Cell::from_i32(1));
         } else {
             panic!()
