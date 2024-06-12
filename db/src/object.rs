@@ -281,8 +281,8 @@ impl PositionalAttribute for Attribute {
         self.pos
     }
 
-    fn object_id(&self) -> usize {
-        self.reference.as_ref().map(|r| r.rel_id).unwrap_or(0)
+    fn object_id(&self) -> Option<usize> {
+        self.reference.as_ref().and_then(|r| r.rel_id)
     }
 }
 

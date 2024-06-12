@@ -3,8 +3,8 @@ use crate::schema::Type;
 
 pub(crate) trait PositionalAttribute {
     fn pos(&self) -> usize;
-    fn object_id(&self) -> usize {
-        0
+    fn object_id(&self) -> Option<usize> {
+        None
     }
 }
 
@@ -42,12 +42,13 @@ impl<'a> Tuple<'a> {
 
     pub(crate) fn element(&self, attr: &impl PositionalAttribute) -> Option<Element> {
         let pos = attr.pos();
-        if attr.object_id() != self.source_id {
+        if attr.object_id().map(|id| id != self.source_id).unwrap_or(false) {
             if let Some(rest) = &self.rest {
                 return rest.element(attr);
             }
         }
 
+        // TODO: Remove those if else branches; position should be relative to the source object
         if pos < self.attrs.len() {
             let attr = self.attrs.get(pos)?;
             let start = self.offset(pos);

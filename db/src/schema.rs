@@ -50,7 +50,7 @@ impl TableId for &String {
 
 impl TableId for &AttributeRef {
     fn find_in(self, schema: &Schema) -> Option<&Relation> {
-        schema.relations.get(self.rel_id)
+        schema.relations.get(self.rel_id?)
     }
 }
 
@@ -76,12 +76,12 @@ impl AttributeIdentifier for &str {
 
 impl AttributeIdentifier for &AttributeRef {
     fn find_in_schema(self, schema: &Schema) -> Option<Column> {
-        let rel = schema.relations.get(self.rel_id)?;
+        let rel = schema.relations.get(self.rel_id?)?;
         rel.attribute_by_id(self.attr_id)
     }
 
     fn find_in_relation(self, rel: &Relation) -> Option<Column> {
-        if self.rel_id == rel.id {
+        if self.rel_id? == rel.id {
             rel.attribute_by_id(self.attr_id)
         } else {
             None
@@ -91,7 +91,8 @@ impl AttributeIdentifier for &AttributeRef {
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct AttributeRef {
-    pub(crate) rel_id: usize,
+    // TODO: make this field a u32 so the whole struct can fit in 16 bytes
+    pub(crate) rel_id: Option<usize>,
     attr_id: usize,
 }
 
@@ -162,7 +163,7 @@ impl<'a> Column<'a> {
 
     pub fn reference(&self) -> AttributeRef {
         AttributeRef {
-            rel_id: self.rel_id,
+            rel_id: Some(self.rel_id),
             attr_id: self.id
         }
     }
