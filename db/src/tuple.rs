@@ -48,20 +48,10 @@ impl<'a> Tuple<'a> {
             }
         }
 
-        // TODO: Remove those if else branches; position should be relative to the source object
-        if pos < self.attrs.len() {
-            let attr = self.attrs.get(pos)?;
-            let start = self.offset(pos);
-            let end = start + element_len(attr.kind(), &self.raw[start..]);
-            Some(Element{ raw: &self.raw[start..end], name: attr.name(), kind: attr.kind() })
-        } else if let Some(rest) = &self.rest {
-            let rest_pos = pos - self.attrs.len();
-            rest.element(&rest_pos)
-        } else {
-            let rest_pos = pos - self.raw.len();
-            let rest = self.rest.as_ref().unwrap();
-            Some(rest.element(&rest_pos).unwrap())
-        }
+        let attr = self.attrs.get(pos)?;
+        let start = self.offset(pos);
+        let end = start + element_len(attr.kind(), &self.raw[start..]);
+        Some(Element{ raw: &self.raw[start..end], name: attr.name(), kind: attr.kind() })
     }
 
     fn offset(&self, pos: usize) -> usize {
@@ -231,16 +221,30 @@ mod tests {
     use std::iter::zip;
     use lazy_static::lazy_static;
 
+    use crate::schema::Schema;
+
     use super::*;
 
     lazy_static! {
-        static ref ATTRIBUTES_1: Vec<Attribute> = vec![
-            Attribute { pos: 0, name: Box::from("id"), kind: Type::NUMBER, reference: None },
-            Attribute { pos: 1, name: Box::from("content"), kind: Type::TEXT, reference: None }
-        ];
-        static ref ATTRIBUTES_2: Vec<Attribute> = vec![
-            Attribute { pos: 0, name: Box::from("id"), kind: Type::TEXT, reference: None }
-        ];
+        static ref SCHEMA: Schema = {
+            let mut schema = Schema::default();
+            schema.create_table("first")
+                .column("id", Type::NUMBER)
+                .column("content", Type::TEXT)
+                .add();
+            schema.create_table("second")
+                .column("content", Type::TEXT)
+                .add();
+            schema
+        };
+
+        static ref ATTRIBUTES_1: Vec<Attribute> = {
+            SCHEMA.find_relation("first").unwrap().attributes().map(Into::into).collect()
+        };
+
+        static ref ATTRIBUTES_2: Vec<Attribute> = {
+            SCHEMA.find_relation("second").unwrap().attributes().map(Into::into).collect()
+        };
     }
 
     #[test]
@@ -265,7 +269,7 @@ mod tests {
         assert_eq!(result.get(0).unwrap().element(&1).unwrap().to_string(), "foo");
     }
 
-    #[test]
+    #[test]            
     fn test_add_cells()  {
         let object_1 = [
             tuple(&ATTRIBUTES_1, &["1", "foo"]),
@@ -280,8 +284,8 @@ mod tests {
                 object_2.get(0).map(|joiner_tuple| tuple.extend(Tuple::from_bytes(joiner_tuple, &ATTRIBUTES_2)))
             }).collect();
         let first = result.get(0).unwrap();
-        assert_eq!(i32::try_from(first.element(&0).unwrap()), Ok(1));
-        assert_eq!(first.element(&2).unwrap().to_string(), "fizz");
+        assert_eq!(i32::try_from(first.element(&ATTRIBUTES_1[0]).unwrap()), Ok(1));
+        assert_eq!(first.element(&ATTRIBUTES_2[0]).unwrap().to_string(), "fizz");
     }
 
     fn tuple(attrs: &[Attribute], values: &[&str]) -> Vec<u8> {
