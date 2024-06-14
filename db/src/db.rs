@@ -474,7 +474,7 @@ mod tests {
         let raw_object = source_db.raw_object("document").unwrap();
         let mut temp_object = TempObject::from_object(&target_obj.borrow());
         for tuple in raw_object.raw_tuples() {
-            temp_object.push(tuple.as_bytes().to_vec());
+            temp_object.push(tuple);
         }
 
         target_db.recover_object(0, temp_object);

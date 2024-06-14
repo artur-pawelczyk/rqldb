@@ -31,11 +31,6 @@ impl<'a> Tuple<'a> {
         Self { raw, attrs: &obj.attrs, source_id: obj.id(), rest: None }
     }
 
-    #[cfg(test)]
-    pub(crate) fn as_bytes(&self) -> Vec<Vec<u8>> { 
-        self.iter().map(|e| e.bytes().to_vec()).collect()
-    }
-
     pub(crate) fn raw_bytes(&self) -> &[u8] {
         self.raw
     }

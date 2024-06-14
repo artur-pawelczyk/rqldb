@@ -7,31 +7,9 @@ use crate::{ByteReader, Error};
 pub(crate) fn write_object<W: Write>(writer: &mut W, object: &RawObjectView) -> Result<(), Error> {
     writer.write_all(&size(object.count()))?;
     for tuple in object.raw_tuples() {
-        consume_chunks(tuple.serialize(), &mut |bytes| {
-            writer.write_all(bytes).unwrap();
-            Ok(())
-        })?;
+        writer.write_all(&size(tuple.len()))?;
+        writer.write_all(tuple)?;
    }
-
-    Ok(())
-}
-
-fn consume_chunks(iter: impl Iterator<Item = u8>, consumer: &mut impl FnMut(&[u8]) -> Result<(), Error>) -> Result<(), Error> {
-    let mut buf = [0u8; 1000];
-    let mut i = 0usize;
-    for byte in iter {
-        if i >= buf.len() {
-            consumer(&buf)?;
-            i = 0;
-        }
-
-        buf[i] = byte;
-        i += 1;
-    }
-
-    if i > 0 {
-        consumer(&buf[..i])?;
-    }
 
     Ok(())
 }
@@ -43,15 +21,10 @@ fn size(val: usize) -> [u8; 4] {
 pub(crate) fn read_object<R: Read>(reader: &mut ByteReader<R>, obj: &mut TempObject) -> Result<(), Error> {
     let n_tuples = reader.read_u32()? as usize;
     for _ in 0..n_tuples {
-        let n_cells = reader.read_u32()? as usize;
-        let mut tuple = Vec::with_capacity(n_cells);
-        for _ in 0..n_cells {
-            let n_bytes = reader.read_u32()? as usize;
-            let cell = reader.read_bytes(n_bytes)?;
-            tuple.push(cell);
-        }
-
-        obj.push(tuple);
+        let len = reader.read_u32()? as usize;
+        let mut tuple = Vec::with_capacity(len);
+        tuple.extend(reader.read_bytes(len)?);
+        obj.push(&tuple);
     }
 
     Ok(())

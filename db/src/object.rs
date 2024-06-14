@@ -182,17 +182,8 @@ impl TempObject {
         }
     }
 
-    pub fn push(&mut self, input_tuple: Vec<Vec<u8>>) {
-        let mut raw_tuple = Vec::new();
-        for (val, attr) in zip(input_tuple.iter(), self.attrs.iter()) {
-            if attr.kind() == Type::TEXT {
-                raw_tuple.push(val.len() as u8);
-            }
-
-            val.iter().for_each(|b| raw_tuple.push(*b));
-        }
-
-        self.values.push(raw_tuple);
+    pub fn push(&mut self, raw_tuple: &[u8]) {
+        self.values.push(raw_tuple.to_vec());
     }
 
     pub(crate) fn push_str(&mut self, vals: &[impl AsRef<str>]) {
@@ -348,8 +339,8 @@ impl<'a> RawObjectView<'a> {
         self.object.tuples.len()
     }
 
-    pub fn raw_tuples(&'a self) -> Box<dyn Iterator<Item = Tuple<'a>> + 'a> {
-        Box::new(self.object.tuples.iter().map(|t| Tuple::from_bytes(t, &self.object.attrs)))
+    pub fn raw_tuples(&'a self) -> impl Iterator<Item = &[u8]> {
+        self.object.tuples.iter().map(|v| v.as_slice())
     }
 
     pub fn name(&self) -> &str {
