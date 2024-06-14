@@ -7,6 +7,7 @@ use crate::table::Table;
 use rustyline::Editor;
 use clap::Parser;
 
+use core::fmt;
 use std::error::Error;
 use std::io::prelude::*;
 use std::fs::File;
@@ -116,16 +117,14 @@ impl Shell {
     }
 
     fn dump_relation(&self, name: &str) {
-        match self.db.dump(name) {
-            Ok(s) => println!("{s}"),
-            Err(e) => println!("{e}"),
+        if let Err(e) = self.db.dump(name, &mut StandardOut) {
+            println!("{e}");
         }
     }
 
     fn dump_all_relations(&self) {
-        match self.db.dump_all() {
-            Ok(s) => println!("{s}"),
-            Err(e) => println!("{e}"),
+        if let Err(e) = self.db.dump_all(&mut StandardOut) {
+            println!("{e}");
         }
     }
 }
@@ -156,4 +155,12 @@ fn print_result(result: &QueryResults) {
     }
 
     println!("{}", table);
+}
+
+struct StandardOut;
+impl fmt::Write for StandardOut {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        println!("{}", s);
+        Ok(())
+    }
 }

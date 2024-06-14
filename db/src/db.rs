@@ -1,3 +1,4 @@
+use core::fmt;
 use std::cell::{RefCell, Ref, RefMut};
 use std::rc::Rc;
 
@@ -151,26 +152,21 @@ impl Database {
         let _ = std::mem::replace(&mut self.objects[id], Rc::new(RefCell::new(new_obj)));
     }
 
-    pub fn dump(&self, name: &str) -> Result<String> {
-        let mut out = String::new();
+    pub fn dump(&self, name: &str, writer: &mut impl fmt::Write) -> Result<()> {
         let rel = self.schema.find_relation(name).unwrap();
-        out.push_str(&dump_create(rel).to_string());
-        out.push('\n');
-        // TODO: Use fmt::Write instead of returning String
+        write!(writer, "{}\n", dump_create(rel)).map_err(|_| "Stdio error")?;
         let result = self.execute_query(&Query::scan(name)).unwrap();
-        out += &dump_values(&name, result);
+        dump_values(&name, result, writer);
 
-        Ok(out)
+        Ok(())
     }
 
-    pub fn dump_all(&self) -> Result<String> {
-        let mut out = String::new();
+    pub fn dump_all(&self, writer: &mut impl fmt::Write) -> Result<()> {
         for rel in &self.schema.relations {
-            out += &self.dump(rel.name())?;
+            self.dump(rel.name(), writer)?;
         }
-        out.pop();
 
-        Ok(out)
+        Ok(())
     }
 }
 
@@ -522,9 +518,11 @@ mod tests {
         let expected = concat!(
             "create_table first id::NUMBER::KEY content::TEXT\n",
             "tuple first.content = one first.id = 1 | insert_into first\n",
-            "create_table second num::NUMBER",
+            "create_table second num::NUMBER\n",
         );
 
-        assert_eq!(db.dump_all().unwrap(), expected);
+        let mut out = String::new();
+        db.dump_all(&mut out).unwrap();
+        assert_eq!(out, expected);
     }
 }

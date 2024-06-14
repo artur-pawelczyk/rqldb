@@ -1,3 +1,4 @@
+use core::fmt;
 use std::collections::BTreeMap;
 
 use crate::{schema::Relation, Command, Query, QueryResults};
@@ -12,8 +13,7 @@ pub(crate) fn dump_create(rel: &Relation) -> Command {
     })
 }
 
-pub(crate) fn dump_values<'a>(rel: &str, values: QueryResults) -> String {
-    let mut out = String::new();
+pub(crate) fn dump_values<'a>(rel: &str, values: QueryResults, writer: &mut impl fmt::Write) {
     let attributes = values.attributes();
     for tuple in values.tuples() {
         let mut map = BTreeMap::new();
@@ -22,11 +22,8 @@ pub(crate) fn dump_values<'a>(rel: &str, values: QueryResults) -> String {
         }
 
         let insert_query = Query::tuple(&map).insert_into(rel);
-        out += &insert_query.to_string();
-        out.push('\n');
+        write!(writer, "{}\n", insert_query).unwrap();
     }
-
-    out
 }
 
 #[cfg(test)]
@@ -63,7 +60,8 @@ mod tests {
         let creation_query = Query::tuple(&expected_tuple).insert_into("example");
         db.execute_query(&creation_query).unwrap();
 
-        let dump = dump_values("example", db.execute_query(&Query::scan("example")).unwrap());
+        let mut dump = String::new();
+        dump_values("example", db.execute_query(&Query::scan("example")).unwrap(), &mut dump);
         assert_eq!(dump.trim(), creation_query.to_string());
     }
 }
