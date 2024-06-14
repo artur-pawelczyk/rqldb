@@ -635,7 +635,7 @@ mod tests {
     fn tuple(cells: &[(Type, &str)]) -> Vec<u8> {
         let mut tuple = Vec::new();
         for (kind, value) in cells.iter() {
-            let cell = crate::tuple::Element{ name: "", raw: &bytes(*kind, value), kind: *kind };
+            let cell = crate::tuple::Element{ raw: &bytes(*kind, value), kind: *kind };
             let mut serialized = cell.serialize();
             tuple.append(&mut serialized);
         }

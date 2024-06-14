@@ -15,7 +15,7 @@ impl PositionalAttribute for usize {
 }
 
 #[derive(Debug)]
-pub struct Tuple<'a> {
+pub(crate) struct Tuple<'a> {
     raw: &'a [u8],
     attrs: &'a [Attribute],
     source_id: usize,
@@ -23,7 +23,7 @@ pub struct Tuple<'a> {
 }
 
 impl<'a> Tuple<'a> {
-    pub fn from_bytes(raw: &'a [u8], attrs: &'a [Attribute]) -> Self {
+    pub(crate) fn from_bytes(raw: &'a [u8], attrs: &'a [Attribute]) -> Self {
         Self { raw, attrs, rest: None, source_id: 0 }
     }
 
@@ -46,36 +46,17 @@ impl<'a> Tuple<'a> {
         let attr = self.attrs.get(pos)?;
         let start = self.offset(pos);
         let end = start + element_len(attr.kind(), &self.raw[start..]);
-        Some(Element{ raw: &self.raw[start..end], name: attr.name(), kind: attr.kind() })
+        Some(Element { raw: &self.raw[start..end], kind: attr.kind() })
     }
 
     fn offset(&self, pos: usize) -> usize {
         let mut offset = 0usize;
         for attr in self.attrs.iter().take(pos) {
-            let len = Element{ raw: &self.raw[offset..], name: attr.name(), kind: attr.kind() }.len();
+            let len = Element{ raw: &self.raw[offset..], kind: attr.kind() }.len();
             offset += len;
         }
 
         offset
-    }
-
-    pub(crate) fn iter(&self) -> ElementIter {
-        ElementIter{ inner: Tuple { raw: self.raw, attrs: self.attrs, rest: None, source_id: 0 } }
-    }
-
-    pub fn serialize(&self) -> TupleIter {
-        fn size(val: usize) -> [u8; 4] {
-            (val as u32).to_le_bytes()
-        }
-
-        let mut v: Vec<u8> = Vec::new();
-        size(self.iter().count()).iter().for_each(|b| v.push(*b));
-        for elem in self.iter() {
-            size(elem.bytes().len()).iter().for_each(|b| v.push(*b));
-            elem.bytes().iter().for_each(|b| v.push(*b));
-        }
-
-        TupleIter{ contents: v, pos: 0 }
     }
 
     pub(crate) fn extend(mut self, other: Tuple<'a>) -> Self {
@@ -87,7 +68,6 @@ impl<'a> Tuple<'a> {
 #[derive(Debug)]
 pub(crate) struct Element<'a> {
     pub(crate) raw: &'a [u8],
-    pub(crate) name: &'a str,
     pub(crate) kind: Type,
 }
 
@@ -124,25 +104,6 @@ impl<'a> Element<'a> {
     #[cfg(test)]
     pub(crate) fn serialize(&self) -> Vec<u8> {
         self.raw.to_vec()
-    }
-}
-
-pub(crate) struct ElementIter<'a> {
-    inner: Tuple<'a>,
-}
-
-impl<'a> Iterator for ElementIter<'a> {
-    type Item = Element<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(attr) = self.inner.attrs.first() {
-            let len = element_len(attr.kind(), self.inner.raw);
-            let elem = Element { raw: &self.inner.raw[..len], name: attr.name(), kind: attr.kind() };
-            self.inner = Tuple{ attrs: &self.inner.attrs[1..], raw: &self.inner.raw[len..], rest: None, source_id: 0 };
-            Some(elem)
-        } else {
-            None
-        }
     }
 }
 
@@ -286,7 +247,7 @@ mod tests {
     fn tuple(attrs: &[Attribute], values: &[&str]) -> Vec<u8> {
         let mut tuple = Vec::new();
         for (attr, value) in zip(attrs, values) {
-            let cell = Element{ raw: &cell(value), kind: attr.kind, name: attr.name() };
+            let cell = Element{ raw: &cell(value), kind: attr.kind };
             tuple.append(&mut cell.serialize());
         }
 
