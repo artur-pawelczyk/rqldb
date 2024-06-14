@@ -90,8 +90,8 @@ impl Shell {
             self.db.execute_create(&command);
         } else if cmd.starts_with("dump") {
             match cmd.split_ascii_whitespace().collect::<Vec<&str>>()[..] {
-                ["dump"] => println!("{}", self.db.dump_all()),
-                ["dump", name] => println!("{}", self.db.dump(name)),
+                ["dump"] => self.dump_all_relations(),
+                ["dump", name] => self.dump_relation(name),
                 _ => println!("Wrong command"),
             }
         } else {
@@ -113,6 +113,20 @@ impl Shell {
             db: new_db,
             persist: self.persist,
         })
+    }
+
+    fn dump_relation(&self, name: &str) {
+        match self.db.dump(name) {
+            Ok(s) => println!("{s}"),
+            Err(e) => println!("{e}"),
+        }
+    }
+
+    fn dump_all_relations(&self) {
+        match self.db.dump_all() {
+            Ok(s) => println!("{s}"),
+            Err(e) => println!("{e}"),
+        }
     }
 }
 

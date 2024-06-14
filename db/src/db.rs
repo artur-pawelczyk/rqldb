@@ -151,8 +151,7 @@ impl Database {
         let _ = std::mem::replace(&mut self.objects[id], Rc::new(RefCell::new(new_obj)));
     }
 
-    // TODO: Return Result
-    pub fn dump(&self, name: &str) -> String {
+    pub fn dump(&self, name: &str) -> Result<String> {
         let mut out = String::new();
         let rel = self.schema.find_relation(name).unwrap();
         out.push_str(&dump_create(rel).to_string());
@@ -161,17 +160,17 @@ impl Database {
         let result = self.execute_query(&Query::scan(name)).unwrap();
         out += &dump_values(&name, result);
 
-        out
+        Ok(out)
     }
 
-    pub fn dump_all(&self) -> String {
+    pub fn dump_all(&self) -> Result<String> {
         let mut out = String::new();
         for rel in &self.schema.relations {
-            out += &self.dump(rel.name());
+            out += &self.dump(rel.name())?;
         }
-
         out.pop();
-        out
+
+        Ok(out)
     }
 }
 
@@ -526,6 +525,6 @@ mod tests {
             "create_table second num::NUMBER",
         );
 
-        assert_eq!(db.dump_all(), expected);
+        assert_eq!(db.dump_all().unwrap(), expected);
     }
 }
