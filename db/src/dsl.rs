@@ -418,7 +418,7 @@ mod tests {
 
     #[test]
     fn select_all() {
-         let query = Query::scan("example").select_all();
+        let query = Query::scan("example").select_all();
         assert_eq!(query.to_string(), "scan example | select_all")
     }
 

@@ -18,7 +18,7 @@ pub(crate) fn dump_values<'a>(rel: &str, values: QueryResults, writer: &mut impl
     for tuple in values.tuples() {
         let mut map = BTreeMap::new();
         for attr in attributes {
-            map.insert(attr.as_str(), tuple.cell_by_name(attr).unwrap().as_string());
+            map.insert(attr.as_str(), tuple.cell_by_name(attr).unwrap().to_string());
         }
 
         let insert_query = Query::tuple(&map).insert_into(rel);

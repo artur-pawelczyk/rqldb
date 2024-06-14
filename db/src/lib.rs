@@ -8,8 +8,8 @@ pub mod tuple;
 pub mod object;
 pub mod dump;
 
+use core::fmt;
 use std::cell::{RefCell, RefMut};
-use std::fmt;
 use std::cmp::Ordering;
 
 pub use crate::schema::Type;
@@ -86,17 +86,6 @@ impl Cell {
         Self{ contents: Vec::from(n.to_be_bytes()), kind: Type::NUMBER }
     }
 
-    // TODO: Implement Display
-    pub fn as_string(&self) -> String {
-        match self.kind {
-            Type::NUMBER => {
-                self.as_number().unwrap().to_string()
-            },
-            Type::TEXT => String::from_utf8(self.contents.clone()).unwrap(),
-            _ => todo!(),
-        }
-    }
-
     pub fn into_bytes(self) -> Vec<u8> {
         self.contents
     }
@@ -127,6 +116,21 @@ impl Cell {
     }
 }
 
+impl fmt::Display for Cell {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.kind {
+            Type::NUMBER => {
+                write!(f, "{}", self.as_number().ok_or(fmt::Error)?)
+            },
+            Type::TEXT => {
+                let s = String::from_utf8(self.contents.clone()).map_err(|_| fmt::Error)?;
+                write!(f, "{s}")
+            },
+            _ => todo!(),
+        }
+    }
+}
+
 impl<T: Into<i32>> From<T> for Cell {
     fn from(num: T) -> Self {
         Self::from_i32(num.into())
@@ -151,7 +155,7 @@ impl PartialOrd for Cell {
 
 impl fmt::Debug for Cell {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.as_string())
+        write!(f, "{self}")
     }
 }
 

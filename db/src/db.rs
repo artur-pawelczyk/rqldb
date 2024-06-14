@@ -295,7 +295,7 @@ mod tests {
         assert_eq!(tuples.len(), 1);
         let tuple = tuples.first().expect("fail");
         assert_eq!(tuple.contents[0].as_number(), Some(1i32));
-        assert_eq!(&tuple.contents[1].as_string(), "something");
+        assert_eq!(&tuple.contents[1].to_string(), "something");
     }
 
     #[test]
@@ -348,8 +348,8 @@ mod tests {
         let result = db.execute_query(&Query::scan("document").join("type", "document.type_id", "type.id")).unwrap();
         assert_eq!(*result.attributes, ["document.id", "document.content", "document.type_id", "type.id", "type.name"]);
         let tuple = result.tuples().next().unwrap();
-        let document_id = tuple.cell_by_name("document.id").unwrap().as_string();
-        let type_name = tuple.cell_by_name("type.name").unwrap().as_string();
+        let document_id = tuple.cell_by_name("document.id").unwrap().to_string();
+        let type_name = tuple.cell_by_name("type.name").unwrap().to_string();
         assert_eq!(document_id, "1");
         assert_eq!(type_name, "type_b");
     }
@@ -451,7 +451,7 @@ mod tests {
         db.execute_plan(Plan::insert(obj, &["1", "new content"])).unwrap();
 
         let result = db.execute_plan(Plan::scan(obj)).unwrap();
-        assert_eq!(result.tuples().next().unwrap().cell_by_name("document.content").unwrap().as_string(), "new content");
+        assert_eq!(result.tuples().next().unwrap().cell_by_name("document.content").unwrap().to_string(), "new content");
         assert!(result.tuples().next().is_none());
     }
 

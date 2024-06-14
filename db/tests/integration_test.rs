@@ -37,7 +37,7 @@ fn test_basic_queries() {
     let query = parse_query("scan document | filter document.id = 2").unwrap();
     let result = db.execute_query(&query).unwrap();
     let mut tuples = result.tuples();
-    assert_eq!(tuples.next().unwrap().cell_by_name("document.title").unwrap().as_string(), "title2");
+    assert_eq!(tuples.next().unwrap().cell_by_name("document.title").unwrap().to_string(), "title2");
     assert!(tuples.next().is_none());
 
     let query = parse_query("scan document | filter document.id > 0 | filter document.id < 10").unwrap();
@@ -84,7 +84,7 @@ fn test_update() {
 
     let query = parse_query("scan document | filter document.id = 1").unwrap();
     let result = db.execute_query(&query).unwrap();
-    assert_eq!(result.tuples().next().unwrap().cell_by_name("document.title").unwrap().as_string(), "updated_title");
+    assert_eq!(result.tuples().next().unwrap().cell_by_name("document.title").unwrap().to_string(), "updated_title");
 }
 
 #[test]
