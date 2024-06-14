@@ -1,4 +1,6 @@
-use crate::{schema::Relation, Command, Query, RawObjectView, tuple::Tuple};
+use std::collections::BTreeMap;
+
+use crate::{schema::Relation, Command, Query, QueryResults};
 
 pub(crate) fn dump_create(rel: &Relation) -> Command {
     rel.attributes().fold(Command::create_table(rel.name()), |acc, col| {
@@ -10,28 +12,21 @@ pub(crate) fn dump_create(rel: &Relation) -> Command {
     })
 }
 
-pub(crate) fn dump_values<'a>(obj: &'a RawObjectView<'a>) -> QueryIter<'a> {
-    QueryIter{ name: obj.name().to_string(),
-               inner: obj.raw_tuples(),
+pub(crate) fn dump_values<'a>(rel: &str, values: QueryResults) -> String {
+    let mut out = String::new();
+    let attributes = values.attributes();
+    for tuple in values.tuples() {
+        let mut map = BTreeMap::new();
+        for attr in attributes {
+            map.insert(attr.as_str(), tuple.cell_by_name(attr).unwrap().as_string());
+        }
+
+        let insert_query = Query::tuple(&map).insert_into(rel);
+        out += &insert_query.to_string();
+        out.push('\n');
     }
-}
 
-pub(crate) struct QueryIter<'a> {
-    name: String,
-    inner: Box<dyn Iterator<Item = Tuple<'a>> + 'a>,
-}
-
-impl<'a> Iterator for QueryIter<'a> {
-    type Item = String;
-
-    fn next(&mut self) -> Option<String> {
-        self.inner.next().map(|byte_tuple| {
-            let key_values: Vec<_> = byte_tuple.iter().map(|cell| (cell.name, cell.to_string())).collect();
-            Query::tuple(key_values.as_slice())
-                .insert_into(&self.name)
-                .to_string()
-        })
-    }
+    out
 }
 
 #[cfg(test)]
@@ -62,11 +57,13 @@ mod tests {
                           .indexed_column("id", Type::NUMBER)
                           .column("content", Type::TEXT));
 
-        let creation_query = Query::tuple(&[("example.id", "1"), ("example.content", "first")]).insert_into("example");
+        let mut expected_tuple = BTreeMap::new();
+        expected_tuple.insert("example.id", "1");
+        expected_tuple.insert("example.content", "first");
+        let creation_query = Query::tuple(&expected_tuple).insert_into("example");
         db.execute_query(&creation_query).unwrap();
 
-        let object = db.raw_object("example").unwrap();
-        let first = dump_values(&object).next().unwrap();
-        assert_eq!(first, creation_query.to_string());
+        let dump = dump_values("example", db.execute_query(&Query::scan("example")).unwrap());
+        assert_eq!(dump.trim(), creation_query.to_string());
     }
 }

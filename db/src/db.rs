@@ -7,7 +7,7 @@ use crate::plan::{Source, Filter, Plan, Finisher, ApplyFn};
 use crate::schema::{AttributeRef, TableId};
 use crate::tuple::Tuple;
 use crate::{schema::Schema, QueryResults, plan::compute_plan};
-use crate::{dsl, Cell, RawObjectView};
+use crate::{dsl, Cell, Query, RawObjectView};
 
 type Result<T> = std::result::Result<T, String>;
 
@@ -151,15 +151,15 @@ impl Database {
         let _ = std::mem::replace(&mut self.objects[id], Rc::new(RefCell::new(new_obj)));
     }
 
+    // TODO: Return Result
     pub fn dump(&self, name: &str) -> String {
         let mut out = String::new();
         let rel = self.schema.find_relation(name).unwrap();
         out.push_str(&dump_create(rel).to_string());
         out.push('\n');
-        for tuple in dump_values(&self.raw_object(name).unwrap()) {
-            out += &tuple;
-            out.push('\n');
-        }
+        // TODO: Use fmt::Write instead of returning String
+        let result = self.execute_query(&Query::scan(name)).unwrap();
+        out += &dump_values(&name, result);
 
         out
     }
@@ -278,7 +278,7 @@ mod tests {
 
         assert_eq!(result.tuples().count(), 0);
         let attrs = result.attributes();
-        assert_eq!(attrs.as_slice(), ["document.id".to_string(), "document.content".to_string()]);
+        assert_eq!(attrs, ["document.id".to_string(), "document.content".to_string()]);
     }
 
     #[test]
@@ -522,7 +522,7 @@ mod tests {
 
         let expected = concat!(
             "create_table first id::NUMBER::KEY content::TEXT\n",
-            "tuple first.id = 1 first.content = one | insert_into first\n",
+            "tuple first.content = one first.id = 1 | insert_into first\n",
             "create_table second num::NUMBER",
         );
 

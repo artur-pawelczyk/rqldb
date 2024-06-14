@@ -1,4 +1,4 @@
-use std::{fmt, str::FromStr};
+use std::{collections::BTreeMap, fmt, str::FromStr};
 
 use crate::{schema::Type, parse::ParseError};
 
@@ -214,6 +214,18 @@ impl<'a> IntoTuple<'a> for Vec<TupleAttr<'a>> {
 impl<'a> IntoTuple<'a> for &Vec<TupleAttr<'a>> {
     fn into_tuple(self) -> Vec<TupleAttr<'a>> {
         self.to_vec()
+    }
+}
+
+impl<'a> IntoTuple<'a> for &'a BTreeMap<&str, String> {
+    fn into_tuple(self) -> Vec<TupleAttr<'a>> {
+        self.iter().fold(TupleBuilder::new(), |b, (k, v)| b.inferred(k, v)).into_tuple()
+    }
+}
+
+impl<'a> IntoTuple<'a> for &'a BTreeMap<&str, &str> {
+    fn into_tuple(self) -> Vec<TupleAttr<'a>> {
+        self.iter().fold(TupleBuilder::new(), |b, (k, v)| b.inferred(k, v)).into_tuple()
     }
 }
 

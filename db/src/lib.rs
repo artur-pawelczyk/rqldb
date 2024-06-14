@@ -86,6 +86,7 @@ impl Cell {
         Self{ contents: Vec::from(n.to_be_bytes()), kind: Type::NUMBER }
     }
 
+    // TODO: Implement Display
     pub fn as_string(&self) -> String {
         match self.kind {
             Type::NUMBER => {
@@ -164,12 +165,12 @@ impl QueryResults {
         Self{ attributes: vec![], results: RefCell::new(Box::new(std::iter::empty())) }
     }
 
-    pub fn attributes(&self) -> &Vec<String> {
+    pub fn attributes(&self) -> &[String] {
         &self.attributes
     }
 
     pub fn tuples(&self) -> Tuples {
-        Tuples{
+        Tuples {
             attributes: &self.attributes,
             contents: self.results.borrow_mut(),
         }
