@@ -107,6 +107,14 @@ impl Cell {
         }
     }
 
+    pub fn as_bool(&self) -> Option<bool> {
+        if self.kind == Type::BOOLEAN {
+            self.contents.first().map(|i| *i != 0)
+        } else {
+            None
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.contents.len()
     }
@@ -126,7 +134,14 @@ impl fmt::Display for Cell {
                 let s = String::from_utf8(self.contents.clone()).map_err(|_| fmt::Error)?;
                 write!(f, "{s}")
             },
-            _ => todo!(),
+            Type::BOOLEAN => {
+                if let Some(b) = self.as_bool() {
+                    write!(f, "{b}")
+                } else {
+                    Err(fmt::Error)
+                }
+            },
+            _ => write!(f, "no-display")
         }
     }
 }

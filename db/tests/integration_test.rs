@@ -97,3 +97,17 @@ fn test_delete() {
     let after_delete = db.execute_query(&parse_query("scan document").unwrap()).unwrap();
     assert_eq!(after_delete.tuples().count(), 1);
 }
+
+#[test]
+fn test_data_types() -> Result<(), Box<dyn std::error::Error>> {
+    let db = prepare_db();
+
+    let results = db.execute_query(&parse_query("scan document | filter document.id = 1")?)?;
+
+    let tuple = results.tuples().next().unwrap();
+    let attr = tuple.cell_by_name("document.published").unwrap();
+    assert_eq!(attr.as_bool(), Some(true));
+    assert_eq!(format!("{attr}"), "true");
+
+    Ok(())
+}
