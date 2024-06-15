@@ -1,3 +1,5 @@
+use core::fmt;
+
 use crate::object::{Attribute, IndexedObject, NamedAttribute as _};
 use crate::schema::Type;
 
@@ -107,17 +109,23 @@ impl<'a> Element<'a> {
     }
 }
 
-impl<'a> ToString for Element<'a> {
-    fn to_string(&self) -> String {
+impl fmt::Display for Element<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.kind {
             Type::NUMBER => {
                 match <[u8; 4]>::try_from(self.raw) {
-                    Ok(bytes) => i32::from_be_bytes(bytes).to_string(),
-                    _ => panic!("Error parsing number: {:?}", self.raw)
+                    Ok(bytes) => write!(f, "{}", i32::from_be_bytes(bytes)),
+                    _ => Err(fmt::Error),
                 }
             },
-            Type::TEXT => std::str::from_utf8(&self.raw[1..]).unwrap().to_string(),
-            _ => todo!()
+            Type::TEXT => {
+                if let Ok(s) = std::str::from_utf8(&self.raw[1..]) {
+                    write!(f, "{s}")
+                } else {
+                    Err(fmt::Error)
+                }
+            },
+            _ => Err(fmt::Error)
         }
     }
 }

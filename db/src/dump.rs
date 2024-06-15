@@ -22,7 +22,7 @@ pub(crate) fn dump_values<'a>(rel: &str, values: QueryResults, writer: &mut impl
         }
 
         let insert_query = Query::tuple(&map).insert_into(rel);
-        write!(writer, "{}\n", insert_query).unwrap();
+        writeln!(writer, "{}", insert_query).unwrap();
     }
 }
 

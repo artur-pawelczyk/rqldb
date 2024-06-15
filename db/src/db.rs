@@ -154,9 +154,9 @@ impl Database {
 
     pub fn dump(&self, name: &str, writer: &mut impl fmt::Write) -> Result<()> {
         let rel = self.schema.find_relation(name).unwrap();
-        write!(writer, "{}\n", dump_create(rel)).map_err(|_| "Stdio error")?;
+        writeln!(writer, "{}", dump_create(rel)).map_err(|_| "Stdio error")?;
         let result = self.execute_query(&Query::scan(name)).unwrap();
-        dump_values(&name, result, writer);
+        dump_values(name, result, writer);
 
         Ok(())
     }
