@@ -374,14 +374,14 @@ mod tests {
 
         let sum_result = db.execute_query(&Query::scan("document").apply("sum", &["document.size"])).unwrap();
         let first = sum_result.tuples().next().unwrap();
-        let sum = first.cell_at(0)
+        let sum = first.cell_by_name("sum")
             .and_then(|c| c.as_number())
             .unwrap();
         assert_eq!(sum, 55);
 
         let max_result = db.execute_query(&Query::scan("document").apply("max", &["document.size"])).unwrap();
         let first = max_result.tuples().next().unwrap();
-        let max = first.cell_at(0)
+        let max = first.cell_by_name("max")
             .and_then(|c| c.as_number())
             .unwrap();
         assert_eq!(max, 10);
@@ -403,7 +403,7 @@ mod tests {
 
         let result = db.execute_query(&Query::scan("document").count()).unwrap();
         let first = result.tuples().next().unwrap();
-        let count = first.cell_at(0)
+        let count = first.cell_by_name("count")
             .and_then(|c| c.as_number())
             .unwrap();
         assert_eq!(count, 20);
@@ -495,8 +495,8 @@ mod tests {
 
         let result = db.execute_query(&Query::scan_index("document.id", Operator::EQ, "5")).unwrap();
         let tuple_found = result.tuples().next().unwrap();
-        assert_eq!(tuple_found.cell_at(0), Some(&Cell::from_i32(5)));
-        assert_eq!(tuple_found.cell_at(1), Some(&Cell::from_string("example5")));
+        assert_eq!(tuple_found.cell_by_name("document.id"), Some(&Cell::from_i32(5)));
+        assert_eq!(tuple_found.cell_by_name("document.content"), Some(&Cell::from_string("example5")));
 
         let tuple_not_found = db.execute_query(&Query::scan_index("document.id", Operator::EQ, "500")).unwrap();
         assert_eq!(tuple_not_found.tuples().count(), 0);

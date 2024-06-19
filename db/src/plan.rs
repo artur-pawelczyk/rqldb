@@ -378,6 +378,7 @@ mod tests {
     use super::*;
     use crate::dsl::{AttrKind, TupleBuilder};
     use crate::dsl::Operator::{EQ, GT};
+    use crate::object::TempObject;
     use crate::schema::Type;
     use crate::tuple::PositionalAttribute as _;
     use crate::Command;
@@ -409,21 +410,23 @@ mod tests {
                           .column("content", Type::TEXT)
                           .column("type", Type::NUMBER));
 
-        let attributes: Vec<Attribute> = db.object("example").unwrap().borrow().attributes().cloned().collect();
-        let tuple_1 = tuple(&[(Type::NUMBER, "1"), (Type::TEXT, "content1"), (Type::NUMBER, "11")]);
-        let tuple_2 = tuple(&[(Type::NUMBER, "2"), (Type::TEXT, "content2"), (Type::NUMBER, "12")]);
+        let mut object = TempObject::from_relation(db.schema().find_relation("example").unwrap());
+        object.push_str(&["1", "content1", "11"]);
+        object.push_str(&["2", "content2", "12"]);
+        let tuple_1 = object.iter().next().unwrap();
+        let tuple_2 = object.iter().nth(1).unwrap();
 
         let id_filter = expect_filter(compute_plan(&db, &dsl::Query::scan("example").filter("example.id", EQ, "1")));
-        assert!(id_filter.matches_tuple(&Tuple::from_bytes(&tuple_1, &attributes)));
-        assert!(!id_filter.matches_tuple(&Tuple::from_bytes(&tuple_2, &attributes)));
+        assert!(id_filter.matches_tuple(&tuple_1));
+        assert!(!id_filter.matches_tuple(&tuple_2));
 
         let content_filter = expect_filter(compute_plan(&db, &dsl::Query::scan("example").filter("example.content", EQ, "content1")));
-        assert!(content_filter.matches_tuple(&Tuple::from_bytes(&tuple_1, &attributes)));
-        assert!(!content_filter.matches_tuple(&Tuple::from_bytes(&tuple_2, &attributes)));
+        assert!(content_filter.matches_tuple(&tuple_1));
+        assert!(!content_filter.matches_tuple(&tuple_2));
 
         let comp_filter = expect_filter(compute_plan(&db, &dsl::Query::scan("example").filter("example.id", GT, "1")));
-        assert!(!comp_filter.matches_tuple(&Tuple::from_bytes(&tuple_1, &attributes)));
-        assert!(comp_filter.matches_tuple(&Tuple::from_bytes(&tuple_2, &attributes)));
+        assert!(!comp_filter.matches_tuple(&tuple_1));
+        assert!(comp_filter.matches_tuple(&tuple_2));
     }
 
     fn expect_filters(result: Result<Plan>, n: usize) -> Vec<Filter> {
@@ -630,28 +633,5 @@ mod tests {
 
     fn attribute_names(attrs: &[Attribute]) -> Vec<&str> {
         attrs.iter().map(|attr| attr.name()).collect()
-    }
-
-    fn tuple(cells: &[(Type, &str)]) -> Vec<u8> {
-        let mut tuple = Vec::new();
-        for (kind, value) in cells.iter() {
-            let cell = crate::tuple::Element{ raw: &bytes(*kind, value), kind: *kind };
-            let mut serialized = cell.serialize();
-            tuple.append(&mut serialized);
-        }
-
-        tuple
-    }
-
-    fn bytes(t: Type, s: &str) -> Vec<u8> {
-        match t {
-            Type::NUMBER => Vec::from(s.parse::<i32>().unwrap().to_be_bytes()),
-            Type::TEXT => {
-                let mut v = vec![s.len() as u8];
-                s.as_bytes().iter().for_each(|c| v.push(*c));
-                v
-            },
-            _ => panic!(),
-        }
     }
 }

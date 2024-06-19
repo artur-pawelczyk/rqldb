@@ -102,11 +102,6 @@ impl<'a> Element<'a> {
             0
         }
     }
-
-    #[cfg(test)]
-    pub(crate) fn serialize(&self) -> Vec<u8> {
-        self.raw.to_vec()
-    }
 }
 
 impl fmt::Display for Element<'_> {
@@ -182,10 +177,9 @@ fn element_len(kind: Type, elem: &[u8]) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use std::iter::zip;
     use lazy_static::lazy_static;
 
-    use crate::schema::Schema;
+    use crate::{object::TempObject, schema::Schema};
 
     use super::*;
 
@@ -213,20 +207,21 @@ mod tests {
 
     #[test]
     fn test_tuple() {
-        let object = [tuple(&ATTRIBUTES_1, &["1", "example"])];
-        let tuple = Tuple::from_bytes(object.get(0).unwrap(), &ATTRIBUTES_1);
+        let mut object = TempObject::from_attrs(&ATTRIBUTES_1);
+        object.push_str(&["1", "example"]);
+
+        let tuple = object.iter().next().unwrap();
         assert_eq!(tuple.element(&0).unwrap().to_string(), "1");
         assert_eq!(tuple.element(&1).unwrap().to_string(), "example");
     }
 
     #[test]
     fn test_filter() {
-        let object = [
-            tuple(&ATTRIBUTES_1, &["1", "foo"]),
-            tuple(&ATTRIBUTES_1, &["2", "bar"]),
-        ];
+        let mut object = TempObject::from_attrs(&ATTRIBUTES_1);
+        object.push_str(&["1", "foo"]);
+        object.push_str(&["2", "bar"]);
 
-        let result: Vec<Tuple> = object.iter().map(|bytes| Tuple::from_bytes(bytes, &ATTRIBUTES_1))
+        let result: Vec<Tuple> = object.iter()
             .filter(|tuple| tuple.element(&0).map(|cell| i32::try_from(cell).unwrap() == 1).unwrap_or(false))
             .collect();
 
@@ -235,40 +230,19 @@ mod tests {
 
     #[test]            
     fn test_add_cells()  {
-        let object_1 = [
-            tuple(&ATTRIBUTES_1, &["1", "foo"]),
-            tuple(&ATTRIBUTES_1, &["2", "bar"]),
-        ];
-        let object_2 = [
-            tuple(&ATTRIBUTES_2, &["fizz"]),
-        ];
+        let mut object_1 = TempObject::from_attrs(&ATTRIBUTES_1);
+        object_1.push_str(&["1", "foo"]);
+        object_1.push_str(&["2", "bar"]);
 
-        let result: Vec<Tuple> = object_1.iter().map(|bytes| Tuple::from_bytes(bytes, &ATTRIBUTES_1))
+        let mut object_2 = TempObject::from_attrs(&ATTRIBUTES_2);
+        object_2.push_str(&["fizz"]);
+
+        let result: Vec<Tuple> = object_1.iter()
             .filter_map(|tuple| {
-                object_2.get(0).map(|joiner_tuple| tuple.extend(Tuple::from_bytes(joiner_tuple, &ATTRIBUTES_2)))
+                object_2.iter().next().map(|joiner_tuple| tuple.extend(joiner_tuple))
             }).collect();
         let first = result.get(0).unwrap();
         assert_eq!(i32::try_from(first.element(&ATTRIBUTES_1[0]).unwrap()), Ok(1));
         assert_eq!(first.element(&ATTRIBUTES_2[0]).unwrap().to_string(), "fizz");
-    }
-
-    fn tuple(attrs: &[Attribute], values: &[&str]) -> Vec<u8> {
-        let mut tuple = Vec::new();
-        for (attr, value) in zip(attrs, values) {
-            let cell = Element{ raw: &cell(value), kind: attr.kind };
-            tuple.append(&mut cell.serialize());
-        }
-
-        tuple
-    }
-
-    fn cell(s: &str) -> Vec<u8> {
-        if let Result::Ok(num) = s.parse::<i32>() {
-            Vec::from(num.to_be_bytes())
-        } else {
-            let mut v = vec![s.len() as u8];
-            s.as_bytes().iter().for_each(|c| v.push(*c));
-            v
-        }
     }
 }

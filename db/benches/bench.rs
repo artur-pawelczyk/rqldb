@@ -12,10 +12,10 @@ fn create_database() -> Database {
     db
 }
 
-fn query_single_number(db: &Database, query: &Query) -> Option<i32> {
+fn query_single_number(db: &Database, query: &Query, elem: &str) -> Option<i32> {
     let result = db.execute_query(query).unwrap();
     let first = result.tuples().next().expect("Expecting one result");
-    first.cell_at(0).and_then(|c| c.as_number())
+    first.cell_by_name(elem).and_then(|c| c.as_number())
 }
 
 fn benchmark_insert(c: &mut Criterion) {
@@ -86,7 +86,7 @@ fn benchmark_count(c: &mut Criterion) {
     }
 
     let count_query = Query::scan("document").count();
-    c.bench_function("count", |b| b.iter(|| query_single_number(&db, &count_query)));
+    c.bench_function("count", |b| b.iter(|| query_single_number(&db, &count_query, "count")));
 }
 
 fn benchmark_read_results(c: &mut Criterion) {
