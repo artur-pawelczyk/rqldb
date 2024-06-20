@@ -1,5 +1,5 @@
 use crate::db::SharedObject;
-use crate::Cell;
+use crate::Element;
 use crate::Database;
 use crate::Operator;
 use crate::dsl;
@@ -103,7 +103,7 @@ pub(crate) enum Source {
     TableScan(SharedObject),
     Tuple(BTreeMap<Attribute, String>),
     ReferencedTuple(SharedObject, HashMap<AttributeRef, String>),
-    IndexScan(SharedObject, Cell),
+    IndexScan(SharedObject, Element),
     #[default]
     Nil,
 }
@@ -123,7 +123,7 @@ impl Source {
 enum QuerySource<'q> {
     Tuple(HashMap<&'q str, (Type, &'q str)>),
     Scan(&'q str),
-    IndexScan(&'q str, Cell),
+    IndexScan(&'q str, Element),
 }
 
 impl<'q> QuerySource<'q> {
@@ -165,7 +165,7 @@ impl Source {
         Self::Tuple(values)
     }
 
-    fn scan_index(obj: &SharedObject, val: Cell) -> Self {
+    fn scan_index(obj: &SharedObject, val: Element) -> Self {
         Self::IndexScan(Rc::clone(obj), val)
     }
 }
@@ -228,7 +228,7 @@ fn compute_source<'query>(dsl_source: &'query dsl::Source) -> Result<QuerySource
             Ok(QuerySource::Scan(relation_name))
         },
         dsl::Source::IndexScan(index, Operator::EQ, val) => {
-            Ok(QuerySource::IndexScan(index, Cell::from_string(val)))
+            Ok(QuerySource::IndexScan(index, Element::from_string(val)))
         },
         _ => Err(String::from("Source not supported"))
     }
@@ -621,7 +621,7 @@ mod tests {
         }
 
         if let Source::IndexScan(_, val) = source {
-            assert_eq!(val, Cell::from_i32(1));
+            assert_eq!(val, Element::from_i32(1));
         } else {
             panic!()
         }

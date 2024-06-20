@@ -20,13 +20,13 @@ pub use crate::object::RawObjectView;
 
 pub struct QueryResults {
     attributes: Vec<String>,
-    results: RefCell<Box<dyn Iterator<Item = Vec<Cell>>>>,
+    results: RefCell<Box<dyn Iterator<Item = Vec<Element>>>>,
 }
 
 #[derive(Debug)]
 pub struct Tuple<'a> {
     attributes: &'a [String],
-    contents: Vec<Cell>,
+    contents: Vec<Element>,
 }
 
 impl<'a> Tuple<'a> {
@@ -38,11 +38,7 @@ impl<'a> Tuple<'a> {
         self.contents.is_empty()
     }
 
-    pub fn cell_at(&self, i: u32) -> Option<&Cell> {
-        self.contents.get(i as usize)
-    }
-
-    pub fn cell_by_name(&self, name: &str) -> Option<&Cell> {
+    pub fn element(&self, name: &str) -> Option<&Element> {
         if let Some((i, _)) = self.attributes.iter().enumerate().find(|(_, n)| n == &name) {
             self.contents.get(i)
         } else {
@@ -50,40 +46,40 @@ impl<'a> Tuple<'a> {
         }
     }
 
-    pub fn contents(&self) -> &[Cell] {
+    pub fn contents(&self) -> &[Element] {
         &self.contents
     }
 }
 
 #[derive(Clone, Eq, PartialEq)]
-pub struct Cell {
+pub struct Element {
     contents: Vec<u8>,
     kind: Type
 }
 
-impl Cell {
-    fn from_bytes(kind: Type, bytes: &[u8]) -> Cell {
+impl Element {
+    fn from_bytes(kind: Type, bytes: &[u8]) -> Element {
         if let Some(first) = bytes.first() {
             let firstchar = *first as char;
             if let Some(num) = firstchar.to_digit(8) {
-                return Cell{contents: vec![num as u8], kind}
+                return Element{contents: vec![num as u8], kind}
             }
         }
 
-        Cell{contents: Vec::from(bytes), kind}
+        Element { contents: Vec::from(bytes), kind }
     }
 
-    fn from_string(source: &str) -> Cell {
+    fn from_string(source: &str) -> Element {
         if let Result::Ok(number) = source.parse::<i32>() {
-            Cell{contents: Vec::from(number.to_be_bytes()), kind: Type::NUMBER}
+            Element { contents: Vec::from(number.to_be_bytes()), kind: Type::NUMBER }
         } else {
-            Cell{contents: Vec::from(source.as_bytes()), kind: Type::TEXT}
+            Element { contents: Vec::from(source.as_bytes()), kind: Type::TEXT }
         }
     }
 
     
     fn from_i32(n: i32) -> Self {
-        Self{ contents: Vec::from(n.to_be_bytes()), kind: Type::NUMBER }
+        Self { contents: Vec::from(n.to_be_bytes()), kind: Type::NUMBER }
     }
 
     pub fn into_bytes(self) -> Vec<u8> {
@@ -94,6 +90,7 @@ impl Cell {
         &self.contents
     }
 
+    // TODO: Implement From<Element> for i32 and bool
     pub fn as_number(&self) -> Option<i32> {
         match self.kind {
             Type::NUMBER => {
@@ -124,7 +121,7 @@ impl Cell {
     }
 }
 
-impl fmt::Display for Cell {
+impl fmt::Display for Element {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.kind {
             Type::NUMBER => {
@@ -146,13 +143,13 @@ impl fmt::Display for Cell {
     }
 }
 
-impl<T: Into<i32>> From<T> for Cell {
+impl<T: Into<i32>> From<T> for Element {
     fn from(num: T) -> Self {
         Self::from_i32(num.into())
     }
 }
 
-impl PartialOrd for Cell {
+impl PartialOrd for Element {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         if self.kind == other.kind {
             if self.contents > other.contents {
@@ -168,7 +165,7 @@ impl PartialOrd for Cell {
     }
 }
 
-impl fmt::Debug for Cell {
+impl fmt::Debug for Element {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{self}")
     }
@@ -176,7 +173,7 @@ impl fmt::Debug for Cell {
 
 impl QueryResults {
     pub(crate) fn single_number<T: Into<i32>>(name: &str, val: T) -> Self {
-        let tuple = vec![Cell::from(val)];
+        let tuple = vec![Element::from(val)];
         Self{ attributes: vec![name.to_string()], results: RefCell::new(Box::new(std::iter::once(tuple))) }
     }
 
@@ -198,12 +195,12 @@ impl QueryResults {
 
 pub struct Column<'a> {
     col_pos: usize,
-    results: &'a [Vec<Cell>],
+    results: &'a [Vec<Element>],
     pos: usize,
 }
 
 impl<'a> Iterator for Column<'a> {
-    type Item = &'a Cell;
+    type Item = &'a Element;
 
     fn next(&mut self) -> Option<Self::Item> {
         let next = self.results.get(self.pos).and_then(|tuple| tuple.get(self.col_pos));
@@ -214,7 +211,7 @@ impl<'a> Iterator for Column<'a> {
 
 pub struct Tuples<'a> {
     attributes: &'a [String],
-    contents: RefMut<'a, Box<dyn Iterator<Item = Vec<Cell>>>>,
+    contents: RefMut<'a, Box<dyn Iterator<Item = Vec<Element>>>>,
 }
 
 impl<'a> Iterator for Tuples<'a> {

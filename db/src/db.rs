@@ -8,7 +8,7 @@ use crate::plan::{Source, Filter, Plan, Finisher, ApplyFn};
 use crate::schema::{AttributeRef, TableId};
 use crate::tuple::Tuple;
 use crate::{schema::Schema, QueryResults, plan::compute_plan};
-use crate::{dsl, Cell, Query, RawObjectView};
+use crate::{dsl, Element, Query, RawObjectView};
 
 type Result<T> = std::result::Result<T, String>;
 
@@ -197,7 +197,7 @@ enum Sink<'a> {
     Count(usize),
     Sum(AttributeRef, i32),
     Max(AttributeRef, i32),
-    Return(Vec<Attribute>, Vec<Vec<Cell>>),
+    Return(Vec<Attribute>, Vec<Vec<Element>>),
     Insert(RefMut<'a, IndexedObject>),
     Delete(Vec<usize>),
     NoOp,
@@ -240,9 +240,9 @@ impl<'a> Sink<'a> {
     }
 }
 
-fn tuple_to_cells(attrs: &[Attribute], tuple: &Tuple) -> Vec<Cell> {
+fn tuple_to_cells(attrs: &[Attribute], tuple: &Tuple) -> Vec<Element> {
     attrs.iter().flat_map(|attr| {
-        tuple.element(attr).map(|elem| Cell::from_bytes(attr.kind(), elem.bytes()))
+        tuple.element(attr).map(|elem| Element::from_bytes(attr.kind(), elem.bytes()))
     }).collect()
 }
 
@@ -348,8 +348,8 @@ mod tests {
         let result = db.execute_query(&Query::scan("document").join("type", "document.type_id", "type.id")).unwrap();
         assert_eq!(*result.attributes, ["document.id", "document.content", "document.type_id", "type.id", "type.name"]);
         let tuple = result.tuples().next().unwrap();
-        let document_id = tuple.cell_by_name("document.id").unwrap().to_string();
-        let type_name = tuple.cell_by_name("type.name").unwrap().to_string();
+        let document_id = tuple.element("document.id").unwrap().to_string();
+        let type_name = tuple.element("type.name").unwrap().to_string();
         assert_eq!(document_id, "1");
         assert_eq!(type_name, "type_b");
     }
@@ -374,14 +374,14 @@ mod tests {
 
         let sum_result = db.execute_query(&Query::scan("document").apply("sum", &["document.size"])).unwrap();
         let first = sum_result.tuples().next().unwrap();
-        let sum = first.cell_by_name("sum")
+        let sum = first.element("sum")
             .and_then(|c| c.as_number())
             .unwrap();
         assert_eq!(sum, 55);
 
         let max_result = db.execute_query(&Query::scan("document").apply("max", &["document.size"])).unwrap();
         let first = max_result.tuples().next().unwrap();
-        let max = first.cell_by_name("max")
+        let max = first.element("max")
             .and_then(|c| c.as_number())
             .unwrap();
         assert_eq!(max, 10);
@@ -403,7 +403,7 @@ mod tests {
 
         let result = db.execute_query(&Query::scan("document").count()).unwrap();
         let first = result.tuples().next().unwrap();
-        let count = first.cell_by_name("count")
+        let count = first.element("count")
             .and_then(|c| c.as_number())
             .unwrap();
         assert_eq!(count, 20);
@@ -438,7 +438,7 @@ mod tests {
 
         let count_query = Query::scan("document").count();
         let result = db.execute_query(&count_query).unwrap();
-        assert_eq!(result.tuples().next().unwrap().cell_by_name("count").unwrap().as_number(), Some(1));
+        assert_eq!(result.tuples().next().unwrap().element("count").unwrap().as_number(), Some(1));
     }
 
     #[test]
@@ -451,7 +451,7 @@ mod tests {
         db.execute_plan(Plan::insert(obj, &["1", "new content"])).unwrap();
 
         let result = db.execute_plan(Plan::scan(obj)).unwrap();
-        assert_eq!(result.tuples().next().unwrap().cell_by_name("document.content").unwrap().to_string(), "new content");
+        assert_eq!(result.tuples().next().unwrap().element("document.content").unwrap().to_string(), "new content");
         assert!(result.tuples().next().is_none());
     }
 
@@ -495,8 +495,8 @@ mod tests {
 
         let result = db.execute_query(&Query::scan_index("document.id", Operator::EQ, "5")).unwrap();
         let tuple_found = result.tuples().next().unwrap();
-        assert_eq!(tuple_found.cell_by_name("document.id"), Some(&Cell::from_i32(5)));
-        assert_eq!(tuple_found.cell_by_name("document.content"), Some(&Cell::from_string("example5")));
+        assert_eq!(tuple_found.element("document.id"), Some(&Element::from_i32(5)));
+        assert_eq!(tuple_found.element("document.content"), Some(&Element::from_string("example5")));
 
         let tuple_not_found = db.execute_query(&Query::scan_index("document.id", Operator::EQ, "500")).unwrap();
         assert_eq!(tuple_not_found.tuples().count(), 0);
