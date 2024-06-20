@@ -621,7 +621,7 @@ mod tests {
         }
 
         if let Source::IndexScan(_, val) = source {
-            assert_eq!(val, Element::from_i32(1));
+            assert_eq!(val, Element::from(1));
         } else {
             panic!()
         }

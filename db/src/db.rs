@@ -495,7 +495,7 @@ mod tests {
 
         let result = db.execute_query(&Query::scan_index("document.id", Operator::EQ, "5")).unwrap();
         let tuple_found = result.tuples().next().unwrap();
-        assert_eq!(tuple_found.element("document.id"), Some(&Element::from_i32(5)));
+        assert_eq!(tuple_found.element("document.id"), Some(&Element::from(5)));
         assert_eq!(tuple_found.element("document.content"), Some(&Element::from_string("example5")));
 
         let tuple_not_found = db.execute_query(&Query::scan_index("document.id", Operator::EQ, "500")).unwrap();

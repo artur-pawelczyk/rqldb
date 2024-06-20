@@ -53,7 +53,7 @@ impl<'a> Tuple<'a> {
 
 #[derive(Clone, Eq, PartialEq)]
 pub struct Element {
-    contents: Vec<u8>,
+    contents: Vec<u8>, // TODO: Borrow from the tuple or implement From<...> for &Element
     kind: Type
 }
 
@@ -77,20 +77,10 @@ impl Element {
         }
     }
 
-    
-    fn from_i32(n: i32) -> Self {
-        Self { contents: Vec::from(n.to_be_bytes()), kind: Type::NUMBER }
-    }
-
-    pub fn into_bytes(self) -> Vec<u8> {
-        self.contents
-    }
-
     pub fn as_bytes(&self) -> &[u8] {
         &self.contents
     }
 
-    // TODO: Implement From<Element> for i32 and bool
     pub fn as_number(&self) -> Option<i32> {
         match self.kind {
             Type::NUMBER => {
@@ -143,9 +133,37 @@ impl fmt::Display for Element {
     }
 }
 
-impl<T: Into<i32>> From<T> for Element {
-    fn from(num: T) -> Self {
-        Self::from_i32(num.into())
+impl TryFrom<Element> for i32 {
+    type Error = ();
+
+    fn try_from(value: Element) -> Result<Self, Self::Error> {
+        if value.kind == Type::NUMBER {
+            <[u8; 4]>::try_from(value.contents)
+                .map(i32::from_be_bytes)
+                .map_err(|_| ())
+        } else {
+            Err(())
+        }
+    }
+}
+
+impl TryFrom<Element> for bool {
+    type Error = ();
+
+    fn try_from(value: Element) -> Result<Self, Self::Error> {
+        if value.kind == Type::BOOLEAN {
+            value.contents.first()
+                .map(|i| *i != 0)
+                .ok_or(())
+        } else {
+            Err(())
+        }
+    }
+}
+
+impl From<i32> for Element {
+    fn from(value: i32) -> Self {
+        Self { contents: value.to_be_bytes().to_vec(), kind: Type::NUMBER }
     }
 }
 
@@ -173,7 +191,7 @@ impl fmt::Debug for Element {
 
 impl QueryResults {
     pub(crate) fn single_number<T: Into<i32>>(name: &str, val: T) -> Self {
-        let tuple = vec![Element::from(val)];
+        let tuple = vec![Element::from(val.into())];
         Self{ attributes: vec![name.to_string()], results: RefCell::new(Box::new(std::iter::once(tuple))) }
     }
 
