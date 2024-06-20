@@ -294,7 +294,7 @@ mod tests {
         let tuples: Vec<_> = result.tuples().collect();
         assert_eq!(tuples.len(), 1);
         let tuple = tuples.first().expect("fail");
-        assert_eq!(tuple.contents[0].as_number(), Some(1i32));
+        assert_eq!(<i32>::try_from(&tuple.contents[0]), Ok(1));
         assert_eq!(&tuple.contents[1].to_string(), "something");
     }
 
@@ -375,14 +375,14 @@ mod tests {
         let sum_result = db.execute_query(&Query::scan("document").apply("sum", &["document.size"])).unwrap();
         let first = sum_result.tuples().next().unwrap();
         let sum = first.element("sum")
-            .and_then(|c| c.as_number())
+            .and_then(|e| <i32>::try_from(e).ok())
             .unwrap();
         assert_eq!(sum, 55);
 
         let max_result = db.execute_query(&Query::scan("document").apply("max", &["document.size"])).unwrap();
         let first = max_result.tuples().next().unwrap();
         let max = first.element("max")
-            .and_then(|c| c.as_number())
+            .and_then(|e| <i32>::try_from(e).ok())
             .unwrap();
         assert_eq!(max, 10);
     }
@@ -404,7 +404,7 @@ mod tests {
         let result = db.execute_query(&Query::scan("document").count()).unwrap();
         let first = result.tuples().next().unwrap();
         let count = first.element("count")
-            .and_then(|c| c.as_number())
+            .and_then(|e| <i32>::try_from(e).ok())
             .unwrap();
         assert_eq!(count, 20);
     }
@@ -438,7 +438,9 @@ mod tests {
 
         let count_query = Query::scan("document").count();
         let result = db.execute_query(&count_query).unwrap();
-        assert_eq!(result.tuples().next().unwrap().element("count").unwrap().as_number(), Some(1));
+        let first = result.tuples().next().unwrap();
+        let count = first.element("count").unwrap();
+        assert_eq!(count.try_into(), Ok(1));
     }
 
     #[test]

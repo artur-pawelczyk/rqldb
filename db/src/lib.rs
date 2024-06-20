@@ -81,27 +81,6 @@ impl Element {
         &self.contents
     }
 
-    pub fn as_number(&self) -> Option<i32> {
-        match self.kind {
-            Type::NUMBER => {
-                let bytes: Result<[u8; 4], _> = self.contents.clone().try_into();
-                match bytes {
-                    Ok(x) => Some(i32::from_be_bytes(x)),
-                    _ => None
-                }
-            },
-            _ => None
-        }
-    }
-
-    pub fn as_bool(&self) -> Option<bool> {
-        if self.kind == Type::BOOLEAN {
-            self.contents.first().map(|i| *i != 0)
-        } else {
-            None
-        }
-    }
-
     pub fn len(&self) -> usize {
         self.contents.len()
     }
@@ -115,14 +94,18 @@ impl fmt::Display for Element {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.kind {
             Type::NUMBER => {
-                write!(f, "{}", self.as_number().ok_or(fmt::Error)?)
+                if let Ok(i) = <i32>::try_from(self) {
+                    write!(f, "{i}")
+                } else {
+                    Err(fmt::Error)
+                }
             },
             Type::TEXT => {
                 let s = String::from_utf8(self.contents.clone()).map_err(|_| fmt::Error)?;
                 write!(f, "{s}")
             },
             Type::BOOLEAN => {
-                if let Some(b) = self.as_bool() {
+                if let Ok(b) = <bool>::try_from(self) {
                     write!(f, "{b}")
                 } else {
                     Err(fmt::Error)

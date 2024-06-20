@@ -105,9 +105,9 @@ fn test_data_types() -> Result<(), Box<dyn std::error::Error>> {
     let results = db.execute_query(&parse_query("scan document | filter document.id = 1")?)?;
 
     let tuple = results.tuples().next().unwrap();
-    let attr = tuple.element("document.published").unwrap();
-    assert_eq!(attr.as_bool(), Some(true));
-    assert_eq!(format!("{attr}"), "true");
+    let elem = tuple.element("document.published").unwrap();
+    assert_eq!(elem.try_into(), Ok(true));
+    assert_eq!(format!("{elem}"), "true");
 
     Ok(())
 }
