@@ -11,6 +11,7 @@ pub mod dump;
 use core::fmt;
 use std::cell::{RefCell, RefMut};
 use std::cmp::Ordering;
+use std::iter::zip;
 
 pub use crate::schema::Type;
 pub use crate::db::Database;
@@ -153,8 +154,8 @@ impl TryFrom<&Element> for i32 {
 
 fn slice_to_array<T: Default + Copy, const N: usize>(slice: &[T]) -> Result<[T; N], ()> {
     let mut arr = [T::default(); N];
-    for i in 0..N {
-        arr[i] = *slice.get(i).ok_or(())?;
+    for (o, i) in zip(arr.iter_mut(), slice.iter()) {
+        *o = *i;
     }
 
     Ok(arr)
