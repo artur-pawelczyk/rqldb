@@ -53,7 +53,7 @@ impl<'a> Tuple<'a> {
 
 #[derive(Clone, Eq, PartialEq)]
 pub struct Element {
-    contents: Vec<u8>, // TODO: Borrow from the tuple or implement From<...> for &Element
+    contents: Vec<u8>, // TODO: Borrow from the tuple
     kind: Type
 }
 
@@ -151,6 +151,36 @@ impl TryFrom<Element> for bool {
     type Error = ();
 
     fn try_from(value: Element) -> Result<Self, Self::Error> {
+        (&value).try_into()
+    }
+}
+
+impl TryFrom<&Element> for i32 {
+    type Error = ();
+
+    fn try_from(value: &Element) -> Result<Self, Self::Error> {
+        if value.kind == Type::NUMBER {
+            let bytes: [u8; 4] = slice_to_array(&value.contents)?;
+            Ok(i32::from_be_bytes(bytes))
+        } else {
+            Err(())
+        }
+    }
+}
+
+fn slice_to_array<T: Default + Copy, const N: usize>(slice: &[T]) -> Result<[T; N], ()> {
+    let mut arr = [T::default(); N];
+    for i in 0..N {
+        arr[i] = *slice.get(i).ok_or(())?;
+    }
+
+    Ok(arr)
+}
+
+impl TryFrom<&Element> for bool {
+    type Error = ();
+
+    fn try_from(value: &Element) -> Result<Self, Self::Error> {
         if value.kind == Type::BOOLEAN {
             value.contents.first()
                 .map(|i| *i != 0)
