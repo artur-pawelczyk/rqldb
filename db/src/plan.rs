@@ -251,7 +251,7 @@ fn compute_filters<'a>(plan: Plan<'a>, query: &dsl::Query) -> Result<Plan<'a>> {
             let op = filter_operator(dsl_filter);
             filters.push(Filter{
                 attribute: attr.clone(),
-                right: right_as_cell(attr.kind(), dsl_filter),
+                right: right_as_bytes(attr.kind(), dsl_filter),
                 comp: match op {
                     dsl::Operator::EQ => &|a, b| a == b,
                     dsl::Operator::GT => &|a, b| a > b,
@@ -313,18 +313,13 @@ fn compute_finisher<'query, 'schema>(source: QuerySource<'query>, db: &'schema D
     }
 }
 
-fn right_as_cell(kind: Type, dsl_filter: &dsl::Filter) -> Vec<u8> {
+fn right_as_bytes(kind: Type, dsl_filter: &dsl::Filter) -> Vec<u8> {
     let right = match dsl_filter {
         dsl::Filter::Condition(_, _, right) => right
     };
 
-    match kind {
-        Type::NUMBER => right.parse::<i32>().map(|n| n.to_be_bytes().to_vec()).unwrap(),
-        Type::TEXT => right.as_bytes().to_vec(),
-        Type::BOOLEAN => if right == &"true" { vec![1] } else if right == &"false" { vec![0] } else { panic!() },
-        Type::NONE => vec![],
-        _ => panic!("unknown type: {}", kind),
-    }
+    // TODO: Handle this error (don't unwrap)
+    into_bytes(kind, right).unwrap()
 }
 
 fn filter_operator(filter: &dsl::Filter) -> dsl::Operator {

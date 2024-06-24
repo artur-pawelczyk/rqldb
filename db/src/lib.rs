@@ -25,7 +25,7 @@ pub use crate::object::RawObjectView;
 
 pub struct QueryResults {
     attributes: Vec<ResultAttribute>,
-    results: RefCell<Box<dyn Iterator<Item = Vec<Vec<u8>>>>>,
+    results: RefCell<Box<dyn Iterator<Item = Vec<u8>>>>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -58,7 +58,7 @@ impl PartialEq<str> for ResultAttribute {
 #[derive(Debug)]
 pub struct Tuple<'a> {
     attributes: &'a [ResultAttribute],
-    contents: Vec<Vec<u8>>, // TODO: Use Vec<u8>
+    contents: Vec<u8>,
 }
 
 impl<'a> Tuple<'a> {
@@ -71,8 +71,21 @@ impl<'a> Tuple<'a> {
     }
 
     pub fn element(&self, name: &str) -> Option<Element> {
-        if let Some((i, attr)) = self.attributes.iter().enumerate().find(|(_, n)| *n == name) {
-            self.contents.get(i).map(|bytes| Element { contents: bytes, kind: attr.kind })
+        let mut found_attr = None;
+        let mut offset = 0usize;
+
+        for attr in self.attributes {
+            if attr == name {
+                found_attr = Some(attr);
+                break;
+            } else {
+                offset += attr.kind.size(&self.contents[offset..]);
+            }
+        }
+
+        if let Some(attr) = found_attr {
+            let size = attr.kind.size(&self.contents[offset..]);
+            Some(Element { contents: &self.contents[offset..offset+size], kind: attr.kind })
         } else {
             None
         }
@@ -110,7 +123,7 @@ impl fmt::Display for Element<'_> {
                 }
             },
             Type::TEXT => {
-                let s = String::from_utf8(self.contents.to_vec()).map_err(|_| fmt::Error)?;
+                let s = String::from_utf8(self.contents[1..].to_vec()).map_err(|_| fmt::Error)?;
                 write!(f, "{s}")
             },
             Type::BOOLEAN => {
@@ -207,7 +220,7 @@ impl fmt::Debug for Element<'_> {
 
 impl QueryResults {
     pub(crate) fn single_number<T: Into<i32>>(name: &str, val: T) -> Self {
-        let tuple = vec![val.into().to_byte_vec()];
+        let tuple = val.into().to_byte_vec();
         Self {
             attributes: vec![ResultAttribute { name: Box::from(name), kind: Type::NUMBER }],
             results: RefCell::new(Box::new(std::iter::once(tuple)))
@@ -232,7 +245,7 @@ impl QueryResults {
 
 pub struct Tuples<'a> {
     attributes: &'a [ResultAttribute],
-    contents: RefMut<'a, Box<dyn Iterator<Item = Vec<Vec<u8>>>>>,
+    contents: RefMut<'a, Box<dyn Iterator<Item = Vec<u8>>>>,
 }
 
 impl<'a> Iterator for Tuples<'a> {
@@ -240,7 +253,6 @@ impl<'a> Iterator for Tuples<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.contents.next().map(|cells| {
-            debug_assert!(self.attributes.len() == cells.len());
             Tuple { attributes: self.attributes, contents: cells }
         })
     }

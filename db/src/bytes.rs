@@ -83,6 +83,7 @@ impl Type {
         match self {
             Type::NUMBER => 4,
             Type::TEXT => bytes[0] as usize + 1,
+            Type::BOOLEAN => 1,
             _ => todo!("Not implemented for {self}")
         }
     }

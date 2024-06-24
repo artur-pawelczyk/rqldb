@@ -75,7 +75,7 @@ pub(crate) struct Element<'a> {
 
 impl<'a> Element<'a> {
     pub fn bytes(&self) -> &[u8] {
-        &self.raw[self.offset()..self.len()]
+        &self.raw[..self.len()]
     }
 
     pub fn as_number(&self) -> Option<i32> {
@@ -162,6 +162,7 @@ impl Iterator for TupleIter {
     }
 }
 
+// TODO: Replace with Type::size
 fn element_len(kind: Type, elem: &[u8]) -> usize {
     if elem.is_empty() {
         panic!()

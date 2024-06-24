@@ -197,7 +197,7 @@ enum Sink<'a> {
     Count(usize),
     Sum(AttributeRef, i32),
     Max(AttributeRef, i32),
-    Return(Vec<Attribute>, Vec<Vec<Vec<u8>>>),
+    Return(Vec<Attribute>, Vec<Vec<u8>>),
     Insert(RefMut<'a, IndexedObject>),
     Delete(Vec<usize>),
     NoOp,
@@ -240,10 +240,14 @@ impl<'a> Sink<'a> {
     }
 }
 
-fn tuple_to_cells(attrs: &[Attribute], tuple: &Tuple) -> Vec<Vec<u8>> {
-    attrs.iter().flat_map(|attr| {
-        tuple.element(attr).map(|elem| elem.bytes().to_vec())
-    }).collect()
+fn tuple_to_cells(attrs: &[Attribute], tuple: &Tuple) -> Vec<u8> {
+    attrs.iter().fold(Vec::new(), |mut bytes, attr| {
+        if let Some(elem) = tuple.element(attr) {
+            bytes.extend(elem.bytes());
+        }
+
+        bytes
+    })
 }
 
 #[cfg(test)]
@@ -504,7 +508,7 @@ mod tests {
         let result = db.execute_query(&Query::scan_index("document.id", Operator::EQ, "5")).unwrap();
         let tuple_found = result.tuples().next().unwrap();
         assert_eq!(tuple_found.element("document.id").unwrap().try_into(), Ok(5i32));
-        assert_eq!(tuple_found.element("document.content").unwrap().as_bytes(), &"example5".to_byte_vec()[1..]);
+        assert_eq!(tuple_found.element("document.content").unwrap().as_bytes(), &"example5".to_byte_vec());
 
         let tuple_not_found = db.execute_query(&Query::scan_index("document.id", Operator::EQ, "500")).unwrap();
         assert_eq!(tuple_not_found.tuples().count(), 0);
