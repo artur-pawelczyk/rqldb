@@ -72,7 +72,7 @@ impl<'a> Tuple<'a> {
 
     pub fn element(&self, name: &str) -> Option<Element> {
         if let Some((i, attr)) = self.attributes.iter().enumerate().find(|(_, n)| *n == name) {
-            self.contents.get(i).map(|bytes| Element { contents: bytes.to_vec(), kind: attr.kind })
+            self.contents.get(i).map(|bytes| Element { contents: bytes, kind: attr.kind })
         } else {
             None
         }
@@ -80,12 +80,12 @@ impl<'a> Tuple<'a> {
 }
 
 #[derive(Clone, Eq, PartialEq)]
-pub struct Element {
-    contents: Vec<u8>, // TODO: Borrow from the tuple
+pub struct Element<'a> {
+    contents: &'a [u8],
     kind: Type
 }
 
-impl Element {
+impl<'a> Element<'a> {
     pub fn as_bytes(&self) -> &[u8] {
         &self.contents
     }
@@ -99,7 +99,7 @@ impl Element {
     }
 }
 
-impl fmt::Display for Element {
+impl fmt::Display for Element<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.kind {
             Type::NUMBER => {
@@ -110,7 +110,7 @@ impl fmt::Display for Element {
                 }
             },
             Type::TEXT => {
-                let s = String::from_utf8(self.contents.clone()).map_err(|_| fmt::Error)?;
+                let s = String::from_utf8(self.contents.to_vec()).map_err(|_| fmt::Error)?;
                 write!(f, "{s}")
             },
             Type::BOOLEAN => {
@@ -125,7 +125,7 @@ impl fmt::Display for Element {
     }
 }
 
-impl TryFrom<Element> for i32 {
+impl TryFrom<Element<'_>> for i32 {
     type Error = ();
 
     fn try_from(value: Element) -> Result<Self, Self::Error> {
@@ -139,7 +139,7 @@ impl TryFrom<Element> for i32 {
     }
 }
 
-impl TryFrom<Element> for bool {
+impl TryFrom<Element<'_>> for bool {
     type Error = ();
 
     fn try_from(value: Element) -> Result<Self, Self::Error> {
@@ -147,7 +147,7 @@ impl TryFrom<Element> for bool {
     }
 }
 
-impl TryFrom<&Element> for i32 {
+impl TryFrom<&Element<'_>> for i32 {
     type Error = ();
 
     fn try_from(value: &Element) -> Result<Self, Self::Error> {
@@ -169,7 +169,7 @@ fn slice_to_array<T: Default + Copy, const N: usize>(slice: &[T]) -> Result<[T; 
     Ok(arr)
 }
 
-impl TryFrom<&Element> for bool {
+impl TryFrom<&Element<'_>> for bool {
     type Error = ();
 
     fn try_from(value: &Element) -> Result<Self, Self::Error> {
@@ -183,7 +183,7 @@ impl TryFrom<&Element> for bool {
     }
 }
 
-impl PartialOrd for Element {
+impl PartialOrd for Element<'_> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         if self.kind == other.kind {
             if self.contents > other.contents {
@@ -199,7 +199,7 @@ impl PartialOrd for Element {
     }
 }
 
-impl fmt::Debug for Element {
+impl fmt::Debug for Element<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{self}")
     }
