@@ -70,14 +70,6 @@ impl Element {
         Element { contents: Vec::from(bytes), kind }
     }
 
-    fn from_string(source: &str) -> Element {
-        if let Result::Ok(number) = source.parse::<i32>() {
-            Element { contents: Vec::from(number.to_be_bytes()), kind: Type::NUMBER }
-        } else {
-            Element { contents: Vec::from(source.as_bytes()), kind: Type::TEXT }
-        }
-    }
-
     pub fn as_bytes(&self) -> &[u8] {
         &self.contents
     }

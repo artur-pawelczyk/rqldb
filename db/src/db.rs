@@ -70,7 +70,7 @@ impl Database {
                 ObjectView::Val(tuple.build())
             },
             Source::IndexScan(obj, val) => {
-                if let Some(tuple_id) = obj.borrow().find_in_index(val.as_bytes()) {
+                if let Some(tuple_id) = obj.borrow().find_in_index(val) {
                     ObjectView::TupleRef(obj.borrow(), tuple_id)
                 } else {
                     ObjectView::Empty
@@ -249,7 +249,7 @@ fn tuple_to_cells(attrs: &[Attribute], tuple: &Tuple) -> Vec<Element> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{dsl::{Command, Operator, Query, TupleBuilder}, Type};
+    use crate::{dsl::{Command, Operator, Query, TupleBuilder}, tuple::IntoBytes as _, Type};
 
     #[test]
     fn query_not_existing_relation() {
@@ -498,7 +498,7 @@ mod tests {
         let result = db.execute_query(&Query::scan_index("document.id", Operator::EQ, "5")).unwrap();
         let tuple_found = result.tuples().next().unwrap();
         assert_eq!(tuple_found.element("document.id").unwrap().try_into(), Ok(5i32));
-        assert_eq!(tuple_found.element("document.content"), Some(&Element::from_string("example5")));
+        assert_eq!(tuple_found.element("document.content").unwrap().as_bytes(), &"example5".into_bytes()[1..]);
 
         let tuple_not_found = db.execute_query(&Query::scan_index("document.id", Operator::EQ, "500")).unwrap();
         assert_eq!(tuple_not_found.tuples().count(), 0);

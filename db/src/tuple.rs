@@ -162,6 +162,42 @@ impl Iterator for TupleIter {
     }
 }
 
+pub(crate) trait IntoBytes {
+    fn kind() -> Type;
+    fn into_bytes(&self) -> Vec<u8>;
+}
+
+impl IntoBytes for i32 {
+    fn kind() -> Type {
+        Type::NUMBER
+    }
+
+    fn into_bytes(&self) -> Vec<u8> {
+        self.to_be_bytes().to_vec()
+    }
+}
+
+impl IntoBytes for &str {
+    fn kind() -> Type {
+        Type::TEXT
+    }
+
+    fn into_bytes(&self) -> Vec<u8> {
+        let mut v = vec![self.len() as u8];
+        v.extend(self.bytes());
+        v
+    }
+}
+
+// TODO: Return Result
+pub(crate) fn into_bytes(kind: Type, s: &str) -> Vec<u8> {
+    match kind {
+        Type::NUMBER => s.parse::<i32>().unwrap().into_bytes(),
+        Type::TEXT => s.into_bytes(),
+        _ => todo!(),
+    }
+}
+
 fn element_len(kind: Type, elem: &[u8]) -> usize {
     if elem.is_empty() {
         panic!()

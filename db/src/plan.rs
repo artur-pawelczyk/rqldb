@@ -1,5 +1,5 @@
 use crate::db::SharedObject;
-use crate::Element;
+use crate::tuple::into_bytes;
 use crate::Database;
 use crate::Operator;
 use crate::dsl;
@@ -65,8 +65,8 @@ pub(crate) struct Filter {
 
 impl Filter {
     pub fn matches_tuple(&self, tuple: &Tuple) -> bool {
-        let cell = tuple.element(&self.attribute).unwrap();
-        let left = cell.bytes();
+        let elem = tuple.element(&self.attribute).unwrap();
+        let left = elem.bytes();
         (self.comp)(left, &self.right)
     }
 }
@@ -103,7 +103,7 @@ pub(crate) enum Source {
     TableScan(SharedObject),
     Tuple(BTreeMap<Attribute, String>),
     ReferencedTuple(SharedObject, HashMap<AttributeRef, String>),
-    IndexScan(SharedObject, Element),
+    IndexScan(SharedObject, Vec<u8>),
     #[default]
     Nil,
 }
@@ -123,7 +123,7 @@ impl Source {
 enum QuerySource<'q> {
     Tuple(HashMap<&'q str, (Type, &'q str)>),
     Scan(&'q str),
-    IndexScan(&'q str, Element),
+    IndexScan(&'q str, &'q str),
 }
 
 impl<'q> QuerySource<'q> {
@@ -134,11 +134,11 @@ impl<'q> QuerySource<'q> {
                 let obj = db.object(name).ok_or_else(|| format!("No such relation {name}"))?;
                 Ok(Source::scan_table(obj))
             },
-            Self::IndexScan(attr_name, cell) => {
+            Self::IndexScan(attr_name, val) => {
                 let attr = db.schema().find_column(attr_name).ok_or_else(|| format!("No such attribute {attr_name}"))?;
                 let obj = db.object(&attr.reference()).expect("Attribute found so the object must exist");
                 if attr.indexed() {
-                    Ok(Source::scan_index(obj, cell))
+                    Ok(Source::scan_index(obj, into_bytes(attr.kind(), val)))
                 } else {
                     Err(format!("Attribute {attr_name} is not an index"))
                 }
@@ -165,7 +165,7 @@ impl Source {
         Self::Tuple(values)
     }
 
-    fn scan_index(obj: &SharedObject, val: Element) -> Self {
+    fn scan_index(obj: &SharedObject, val: Vec<u8>) -> Self {
         Self::IndexScan(Rc::clone(obj), val)
     }
 }
@@ -228,7 +228,7 @@ fn compute_source<'query>(dsl_source: &'query dsl::Source) -> Result<QuerySource
             Ok(QuerySource::Scan(relation_name))
         },
         dsl::Source::IndexScan(index, Operator::EQ, val) => {
-            Ok(QuerySource::IndexScan(index, Element::from_string(val)))
+            Ok(QuerySource::IndexScan(index, val))
         },
         _ => Err(String::from("Source not supported"))
     }
@@ -380,7 +380,7 @@ mod tests {
     use crate::dsl::Operator::{EQ, GT};
     use crate::object::TempObject;
     use crate::schema::Type;
-    use crate::tuple::PositionalAttribute as _;
+    use crate::tuple::{IntoBytes as _, PositionalAttribute as _};
     use crate::Command;
 
 
@@ -621,7 +621,7 @@ mod tests {
         }
 
         if let Source::IndexScan(_, val) = source {
-            assert_eq!(val, Element::from(1));
+            assert_eq!(val, 1i32.into_bytes());
         } else {
             panic!()
         }
