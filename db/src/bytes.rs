@@ -78,6 +78,16 @@ pub(crate) fn write_as_bytes<W: Write>(kind: Type, s: &str, w: &mut W) -> Result
     }
 }
 
+impl Type {
+    pub(crate) fn size(&self, bytes: &[u8]) -> usize {
+        match self {
+            Type::NUMBER => 4,
+            Type::TEXT => bytes[0] as usize + 1,
+            _ => todo!("Not implemented for {self}")
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -99,5 +109,16 @@ mod tests {
         assert_eq!(into_bytes(Type::NUMBER, "123").unwrap(), vec![0, 0, 0, 123]);
 
         assert_eq!(into_bytes(Type::NUMBER, "not-number"), Err(()));
+    }
+
+    #[test]
+    fn test_tuple_element_length() {
+        let mut bytes = into_bytes(Type::NUMBER, "123").unwrap();
+        bytes.extend([1, 2, 3, 4]);
+        assert_eq!(Type::NUMBER.size(&bytes), 4);
+
+        let mut bytes = into_bytes(Type::TEXT, "abcd").unwrap();
+        bytes.extend([1, 2, 3, 4]);
+        assert_eq!(Type::TEXT.size(&bytes), 5);
     }
 }
