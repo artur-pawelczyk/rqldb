@@ -2,6 +2,7 @@ use std::fmt;
 use std::iter::zip;
 use std::{collections::{HashSet, HashMap}, cell::Ref};
 
+use crate::bytes::write_as_bytes;
 use crate::schema::AttributeRef;
 use crate::tuple::PositionalAttribute;
 use crate::{tuple::Tuple, schema::Relation, Type};
@@ -187,20 +188,8 @@ impl TempObject {
     }
 
     pub(crate) fn push_str(&mut self, vals: &[impl AsRef<str>]) {
-        fn add_cell(val: &impl AsRef<str>, kind: Type, tuple: &mut Vec<u8>)  {
-            let val = val.as_ref();
-            // TODO: Replace with tuple::into_bytes()
-            match kind {
-                Type::NUMBER => val.parse::<i32>().map(|n| n.to_be_bytes()).unwrap().iter().for_each(|b| tuple.push(*b)),
-                Type::TEXT => { tuple.push(val.len() as u8); val.as_bytes().iter().for_each(|b| tuple.push(*b)); },
-                Type::BOOLEAN => if val == "true" { tuple.push(1) } else if val == "false" { tuple.push(0) } else { panic!() },
-                Type::NONE => {},
-                _ => panic!("unknown type: {}", kind),
-            };
-        }
-
         let tuple = zip(vals.iter(), self.attrs.iter()).fold(Vec::new(), |mut acc, (val, attr)| {
-            add_cell(val, attr.kind(), &mut acc);
+            write_as_bytes(attr.kind(), val.as_ref(), &mut acc).expect("Cannot fail writing to vec");
             acc
         });
 
@@ -228,14 +217,8 @@ pub(crate) struct TupleBuilder {
 impl TupleBuilder {
     pub(crate) fn add(&mut self, attr_ref: &AttributeRef, val: &str) {
         let attr = self.obj.attrs.iter().find(|a| *a == attr_ref).unwrap();
-        let container = &mut self.raw[attr.pos];
-        match attr.kind() {
-            Type::NUMBER => val.parse::<i32>().map(|n| n.to_be_bytes()).unwrap().iter().for_each(|b| container.push(*b)),
-            Type::TEXT => { container.push(val.len() as u8); val.as_bytes().iter().for_each(|b| container.push(*b)); },
-            Type::BOOLEAN => if val == "true" { container.push(1) } else if val == "false" { container.push(0) } else { panic!() },
-            Type::NONE => {},
-            _ => panic!("unknown type: {}", attr.kind()),
-        };
+        let mut container = &mut self.raw[attr.pos];
+        write_as_bytes(attr.kind(), val, &mut container).expect("Cannot fail with vec");
     }
 
     pub(crate) fn build(mut self) -> TempObject {

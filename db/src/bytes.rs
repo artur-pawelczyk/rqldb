@@ -1,11 +1,15 @@
+use std::io::Write;
+
 use crate::Type;
 
 pub(crate) trait IntoBytes {
     fn kind() -> Type;
-    fn iter_bytes(&self) -> impl Iterator<Item = u8>;
+    fn write_bytes<W: Write>(&self, w: &mut W) -> Result<(), ()>;
 
     fn to_byte_vec(&self) -> Vec<u8> {
-        self.iter_bytes().collect()
+        let mut v = Vec::new();
+        self.write_bytes(&mut v).expect("Will never fail for a vec");
+        v
     }
 }
 
@@ -14,8 +18,8 @@ impl IntoBytes for i32 {
         Type::NUMBER
     }
 
-    fn iter_bytes(&self) -> impl Iterator<Item = u8> {
-        self.to_be_bytes().into_iter()
+    fn write_bytes<W: Write>(&self, w: &mut W) -> Result<(), ()> {
+        w.write_all(&self.to_be_bytes()).map_err(|_| ())
     }
 }
 
@@ -24,38 +28,53 @@ impl IntoBytes for &str {
         Type::TEXT
     }
 
+    fn write_bytes<W: Write>(&self, w: &mut W) -> Result<(), ()> {
+        w.write_all(&[self.len() as u8]).map_err(|_| ())?;
+        w.write_all(self.as_bytes()).map_err(|_| ())?;
+        Ok(())
+    }
+
     fn to_byte_vec(&self) -> Vec<u8> {
         let mut v = vec![self.len() as u8];
         v.extend(self.bytes());
         v
     }
-
-    fn iter_bytes(&self) -> impl Iterator<Item = u8> {
-        StrBytes(-1, self)
-    }
 }
 
-struct StrBytes<'a>(i16, &'a str);
-impl<'a> Iterator for StrBytes<'a> {
-    type Item = u8;
+impl IntoBytes for bool {
+    fn kind() -> Type {
+        Type::TEXT
+    }
 
-    fn next(&mut self) -> Option<Self::Item> {
-        let byte = if self.0 < 0 {
-            Some(self.1.len() as u8)
+    fn write_bytes<W: Write>(&self, w: &mut W) -> Result<(), ()> {
+        if *self {
+            w.write_all(&[1]).map_err(|_| ())
         } else {
-            self.1.bytes().nth(self.0 as usize)
-        };
-
-        self.0 += 1;
-        byte
+            w.write_all(&[0]).map_err(|_| ())
+        }
     }
 }
 
 pub(crate) fn into_bytes(kind: Type, s: &str) -> Result<Vec<u8>, ()> {
+    let mut v = Vec::new();
+    write_as_bytes(kind, s, &mut v)?;
+    Ok(v)
+}
+
+pub(crate) fn write_as_bytes<W: Write>(kind: Type, s: &str, w: &mut W) -> Result<(), ()> {
     match kind {
-        Type::NUMBER => s.parse::<i32>().map(|i| i.to_byte_vec()).map_err(|_| ()),
-        Type::TEXT => Ok(s.to_byte_vec()),
-        _ => todo!(),
+        Type::TEXT => {
+            s.write_bytes(w)
+        },
+        Type::NUMBER => {
+            let i =  s.parse::<i32>().map_err(|_| ())?;
+            i.write_bytes(w)
+        },
+        Type::BOOLEAN => {
+            let b = s.parse::<bool>().map_err(|_| ())?;
+            b.write_bytes(w)
+        },
+        _ => todo!("Not implemented for {kind}"),
     }
 }
 

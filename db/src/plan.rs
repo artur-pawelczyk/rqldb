@@ -138,7 +138,7 @@ impl<'q> QuerySource<'q> {
                 let attr = db.schema().find_column(attr_name).ok_or_else(|| format!("No such attribute {attr_name}"))?;
                 let obj = db.object(&attr.reference()).expect("Attribute found so the object must exist");
                 if attr.indexed() {
-                    let bytes = into_bytes(attr.kind(), val).map_err(|_| format!("Cannot parse value {val} as bytes for type {}", attr.kind()))?;
+                    let bytes = into_bytes(attr.kind(), val).map_err(|_| format!("Cannot parse {} as {}", val, attr.kind()))?;
                     Ok(Source::scan_index(obj, bytes))
                 } else {
                     Err(format!("Attribute {attr_name} is not an index"))
