@@ -47,7 +47,7 @@ impl<'a> Tuple<'a> {
 
         let attr = self.attrs.get(pos)?;
         let start = self.offset(pos);
-        let end = start + element_len(attr.kind(), &self.raw[start..]);
+        let end = start + attr.kind().size(&self.raw[start..]);
         Some(Element { raw: &self.raw[start..end], kind: attr.kind() })
     }
 
@@ -92,15 +92,7 @@ impl<'a> Element<'a> {
     }
 
     fn len(&self) -> usize {
-        element_len(self.kind, self.raw)
-    }
-
-    fn offset(&self) -> usize {
-        if self.kind == Type::TEXT {
-            1
-        } else {
-            0
-        }
+        self.kind.size(self.raw)
     }
 }
 
@@ -159,20 +151,6 @@ impl Iterator for TupleIter {
     fn next(&mut self) -> Option<Self::Item> {
         self.pos += 1;
         self.contents.get(self.pos - 1).cloned()
-    }
-}
-
-// TODO: Replace with Type::size
-fn element_len(kind: Type, elem: &[u8]) -> usize {
-    if elem.is_empty() {
-        panic!()
-    }
-
-    match kind {
-        Type::BOOLEAN => 1,
-        Type::NUMBER => 4,
-        Type::TEXT => elem[0] as usize + 1,
-        _ => todo!(),
     }
 }
 
