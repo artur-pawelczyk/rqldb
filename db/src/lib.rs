@@ -14,6 +14,8 @@ use std::cell::{RefCell, RefMut};
 use std::cmp::Ordering;
 use std::iter::zip;
 
+use object::{Attribute, NamedAttribute as _};
+
 pub use crate::schema::Type;
 pub use crate::db::Database;
 pub use crate::dsl::{Query, Operator, Command};
@@ -21,13 +23,40 @@ pub use crate::parse::{parse_command, parse_query};
 pub use crate::object::RawObjectView;
 
 pub struct QueryResults {
-    attributes: Vec<String>,
+    attributes: Vec<ResultAttribute>,
     results: RefCell<Box<dyn Iterator<Item = Vec<Element>>>>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct ResultAttribute {
+    name: Box<str>,
+    kind: Type,
+}
+
+impl ResultAttribute {
+    pub fn name(&self) -> &str {
+        self.name.as_ref()
+    }
+}
+
+impl From<&Attribute> for ResultAttribute {
+    fn from(attr: &Attribute) -> Self {
+        Self {
+            name: Box::from(attr.name()),
+            kind: attr.kind(),
+        }
+    }
+}
+
+impl PartialEq<str> for ResultAttribute {
+    fn eq(&self, s: &str) -> bool {
+        self.name.as_ref() == s
+    }
 }
 
 #[derive(Debug)]
 pub struct Tuple<'a> {
-    attributes: &'a [String],
+    attributes: &'a [ResultAttribute],
     contents: Vec<Element>, // TODO: Use Vec<u8>
 }
 
@@ -41,7 +70,7 @@ impl<'a> Tuple<'a> {
     }
 
     pub fn element(&self, name: &str) -> Option<&Element> {
-        if let Some((i, _)) = self.attributes.iter().enumerate().find(|(_, n)| n == &name) {
+        if let Some((i, _)) = self.attributes.iter().enumerate().find(|(_, n)| *n == name) {
             self.contents.get(i)
         } else {
             None
@@ -195,14 +224,17 @@ impl fmt::Debug for Element {
 impl QueryResults {
     pub(crate) fn single_number<T: Into<i32>>(name: &str, val: T) -> Self {
         let tuple = vec![Element::from(val.into())];
-        Self{ attributes: vec![name.to_string()], results: RefCell::new(Box::new(std::iter::once(tuple))) }
+        Self {
+            attributes: vec![ResultAttribute { name: Box::from(name), kind: Type::NUMBER }],
+            results: RefCell::new(Box::new(std::iter::once(tuple)))
+        }
     }
 
     pub(crate) fn empty() -> Self {
         Self{ attributes: vec![], results: RefCell::new(Box::new(std::iter::empty())) }
     }
 
-    pub fn attributes(&self) -> &[String] {
+    pub fn attributes(&self) -> &[ResultAttribute] {
         &self.attributes
     }
 
@@ -231,7 +263,7 @@ impl<'a> Iterator for Column<'a> {
 }
 
 pub struct Tuples<'a> {
-    attributes: &'a [String],
+    attributes: &'a [ResultAttribute],
     contents: RefMut<'a, Box<dyn Iterator<Item = Vec<Element>>>>,
 }
 

@@ -143,13 +143,13 @@ impl Persist for NoOpPersist {
 fn print_result(result: &QueryResults) {
     let mut table = Table::new();
     for attr in result.attributes() {
-        table.add_title_cell(attr);
+        table.add_title_cell(attr.name());
     }
 
     for res_row in result.tuples() {
         let mut row = table.row();
         for attr in result.attributes() {
-            row = row.cell(res_row.element(attr).unwrap());
+            row = row.cell(res_row.element(attr.name()).unwrap());
         }
         row.add();
     }

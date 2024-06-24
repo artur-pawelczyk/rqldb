@@ -8,7 +8,7 @@ use crate::plan::{Source, Filter, Plan, Finisher, ApplyFn};
 use crate::schema::{AttributeRef, TableId};
 use crate::tuple::Tuple;
 use crate::{schema::Schema, QueryResults, plan::compute_plan};
-use crate::{dsl, Element, Query, RawObjectView};
+use crate::{dsl, Element, Query, RawObjectView, ResultAttribute};
 
 type Result<T> = std::result::Result<T, String>;
 
@@ -229,7 +229,7 @@ impl<'a> Sink<'a> {
             Self::Max(_, n) => QueryResults::single_number("max", n),
             Self::Return(attributes, results) => {
                 QueryResults{
-                    attributes: attributes.into_iter().map(|attr| String::from(attr.name())).collect(),
+                    attributes: attributes.iter().map(ResultAttribute::from).collect(),
                     results: RefCell::new(Box::new(results.into_iter())),
                 }
             }
@@ -273,7 +273,10 @@ mod tests {
 
         assert_eq!(result.tuples().count(), 0);
         let attrs = result.attributes();
-        assert_eq!(attrs, ["document.id".to_string(), "document.content".to_string()]);
+        assert_eq!(
+            attrs.iter().map(ResultAttribute::name).collect::<Vec<_>>(),
+            vec!["document.id", "document.content"]
+        );
     }
 
     #[test]
@@ -346,7 +349,10 @@ mod tests {
         db.execute_query(&Query::tuple(&[("id", "2"), ("name", "type_b")]).insert_into("type")).unwrap();
 
         let result = db.execute_query(&Query::scan("document").join("type", "document.type_id", "type.id")).unwrap();
-        assert_eq!(*result.attributes, ["document.id", "document.content", "document.type_id", "type.id", "type.name"]);
+        assert_eq!(
+            result.attributes.iter().map(ResultAttribute::name).collect::<Vec<_>>(),
+            vec!["document.id", "document.content", "document.type_id", "type.id", "type.name"]
+        );
         let tuple = result.tuples().next().unwrap();
         let document_id = tuple.element("document.id").unwrap().to_string();
         let type_name = tuple.element("type.name").unwrap().to_string();
