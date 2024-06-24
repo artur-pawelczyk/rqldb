@@ -28,7 +28,7 @@ pub struct QueryResults {
 #[derive(Debug)]
 pub struct Tuple<'a> {
     attributes: &'a [String],
-    contents: Vec<Element>,
+    contents: Vec<Element>, // TODO: Use Vec<u8>
 }
 
 impl<'a> Tuple<'a> {
@@ -46,10 +46,6 @@ impl<'a> Tuple<'a> {
         } else {
             None
         }
-    }
-
-    pub fn contents(&self) -> &[Element] {
-        &self.contents
     }
 }
 

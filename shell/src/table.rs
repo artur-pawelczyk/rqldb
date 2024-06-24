@@ -92,8 +92,8 @@ pub(crate) struct TempRow<'a> {
 }
 
 impl<'a> TempRow<'a> {
-    pub(crate) fn cell(mut self, content: String) -> Self {
-        self.row.push(content);
+    pub(crate) fn cell(mut self, content: impl Display) -> Self {
+        self.row.push(content.to_string());
         self
     }
 

@@ -148,8 +148,8 @@ fn print_result(result: &QueryResults) {
 
     for res_row in result.tuples() {
         let mut row = table.row();
-        for cell in res_row.contents() {
-            row = row.cell(cell.to_string());
+        for attr in result.attributes() {
+            row = row.cell(res_row.element(attr).unwrap());
         }
         row.add();
     }
