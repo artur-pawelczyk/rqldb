@@ -1,5 +1,5 @@
+use crate::bytes::into_bytes;
 use crate::db::SharedObject;
-use crate::tuple::into_bytes;
 use crate::Database;
 use crate::Operator;
 use crate::dsl;
@@ -138,7 +138,8 @@ impl<'q> QuerySource<'q> {
                 let attr = db.schema().find_column(attr_name).ok_or_else(|| format!("No such attribute {attr_name}"))?;
                 let obj = db.object(&attr.reference()).expect("Attribute found so the object must exist");
                 if attr.indexed() {
-                    Ok(Source::scan_index(obj, into_bytes(attr.kind(), val)))
+                    let bytes = into_bytes(attr.kind(), val).map_err(|_| format!("Cannot parse value {val} as bytes for type {}", attr.kind()))?;
+                    Ok(Source::scan_index(obj, bytes))
                 } else {
                     Err(format!("Attribute {attr_name} is not an index"))
                 }
@@ -376,11 +377,12 @@ fn compute_joins<'a>(plan: Plan<'a>, schema: &'a Schema, query: &dsl::Query) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bytes::IntoBytes as _;
     use crate::dsl::{AttrKind, TupleBuilder};
     use crate::dsl::Operator::{EQ, GT};
     use crate::object::TempObject;
     use crate::schema::Type;
-    use crate::tuple::{IntoBytes as _, PositionalAttribute as _};
+    use crate::tuple::PositionalAttribute as _;
     use crate::Command;
 
 
@@ -621,7 +623,7 @@ mod tests {
         }
 
         if let Source::IndexScan(_, val) = source {
-            assert_eq!(val, 1i32.into_bytes());
+            assert_eq!(val, 1i32.to_byte_vec());
         } else {
             panic!()
         }
