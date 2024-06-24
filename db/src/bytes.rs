@@ -1,10 +1,11 @@
-use std::io::Write;
+use core::fmt;
+use std::{error::Error, io::{self, Write}};
 
 use crate::Type;
 
 pub(crate) trait IntoBytes {
     fn kind() -> Type;
-    fn write_bytes<W: Write>(&self, w: &mut W) -> Result<(), ()>;
+    fn write_bytes<W: Write>(&self, w: &mut W) -> Result<(), io::Error>;
 
     fn to_byte_vec(&self) -> Vec<u8> {
         let mut v = Vec::new();
@@ -18,8 +19,8 @@ impl IntoBytes for i32 {
         Type::NUMBER
     }
 
-    fn write_bytes<W: Write>(&self, w: &mut W) -> Result<(), ()> {
-        w.write_all(&self.to_be_bytes()).map_err(|_| ())
+    fn write_bytes<W: Write>(&self, w: &mut W) -> Result<(), io::Error> {
+        w.write_all(&self.to_be_bytes())
     }
 }
 
@@ -28,10 +29,9 @@ impl IntoBytes for &str {
         Type::TEXT
     }
 
-    fn write_bytes<W: Write>(&self, w: &mut W) -> Result<(), ()> {
-        w.write_all(&[self.len() as u8]).map_err(|_| ())?;
-        w.write_all(self.as_bytes()).map_err(|_| ())?;
-        Ok(())
+    fn write_bytes<W: Write>(&self, w: &mut W) -> Result<(), io::Error> {
+        w.write_all(&[self.len() as u8])?;
+        w.write_all(self.as_bytes())
     }
 
     fn to_byte_vec(&self) -> Vec<u8> {
@@ -46,37 +46,57 @@ impl IntoBytes for bool {
         Type::TEXT
     }
 
-    fn write_bytes<W: Write>(&self, w: &mut W) -> Result<(), ()> {
+    fn write_bytes<W: Write>(&self, w: &mut W) -> Result<(), io::Error> {
         if *self {
-            w.write_all(&[1]).map_err(|_| ())
+            w.write_all(&[1])
         } else {
-            w.write_all(&[0]).map_err(|_| ())
+            w.write_all(&[0])
         }
     }
 }
 
-pub(crate) fn into_bytes(kind: Type, s: &str) -> Result<Vec<u8>, ()> {
+pub(crate) fn into_bytes(kind: Type, s: &str) -> Result<Vec<u8>, Box<dyn Error>> {
     let mut v = Vec::new();
     write_as_bytes(kind, s, &mut v)?;
     Ok(v)
 }
 
-pub(crate) fn write_as_bytes<W: Write>(kind: Type, s: &str, w: &mut W) -> Result<(), ()> {
+pub(crate) fn write_as_bytes<W: Write>(kind: Type, s: &str, w: &mut W) -> Result<(), Box<dyn Error>> {
     match kind {
         Type::TEXT => {
-            s.write_bytes(w)
+            Ok(s.write_bytes(w)?)
         },
         Type::NUMBER => {
-            let i =  s.parse::<i32>().map_err(|_| ())?;
-            i.write_bytes(w)
+            let i =  s.parse::<i32>()
+                .map_err(|_| EncodingError::ExpectedNumber(Box::from(s)))?;
+            Ok(i.write_bytes(w)?)
         },
         Type::BOOLEAN => {
-            let b = s.parse::<bool>().map_err(|_| ())?;
-            b.write_bytes(w)
+            let b = s.parse::<bool>()
+                .map_err(|_| EncodingError::ExpectedBoolean(Box::from(s)))?;
+            Ok(b.write_bytes(w)?)
         },
         _ => todo!("Not implemented for {kind}"),
     }
 }
+
+
+#[derive(Debug)]
+enum EncodingError {
+    ExpectedNumber(Box<str>),
+    ExpectedBoolean(Box<str>),
+}
+
+impl fmt::Display for EncodingError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ExpectedNumber(s) => write!(f, "Expected a number, got {s}"),
+            Self::ExpectedBoolean(s) => write!(f, "Expected a boolean, got {s}"),
+        }
+    }
+}
+
+impl Error for EncodingError {}
 
 impl Type {
     pub(crate) fn size(&self, bytes: &[u8]) -> usize {
@@ -109,7 +129,7 @@ mod tests {
         assert_eq!(into_bytes(Type::TEXT, "abc").unwrap(), vec![3, 97, 98, 99]);
         assert_eq!(into_bytes(Type::NUMBER, "123").unwrap(), vec![0, 0, 0, 123]);
 
-        assert_eq!(into_bytes(Type::NUMBER, "not-number"), Err(()));
+        assert!(matches!(into_bytes(Type::NUMBER, "not-number"), Err(_)));
     }
 
     #[test]
