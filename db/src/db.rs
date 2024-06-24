@@ -3,12 +3,12 @@ use std::cell::{RefCell, Ref, RefMut};
 use std::rc::Rc;
 
 use crate::dump::{dump_values, dump_create};
-use crate::object::{IndexedObject, TempObject, Attribute, NamedAttribute as _};
+use crate::object::{IndexedObject, TempObject, Attribute};
 use crate::plan::{Source, Filter, Plan, Finisher, ApplyFn};
 use crate::schema::{AttributeRef, TableId};
 use crate::tuple::Tuple;
 use crate::{schema::Schema, QueryResults, plan::compute_plan};
-use crate::{dsl, Element, Query, RawObjectView, ResultAttribute};
+use crate::{dsl, Query, RawObjectView, ResultAttribute};
 
 type Result<T> = std::result::Result<T, String>;
 
@@ -197,7 +197,7 @@ enum Sink<'a> {
     Count(usize),
     Sum(AttributeRef, i32),
     Max(AttributeRef, i32),
-    Return(Vec<Attribute>, Vec<Vec<Element>>),
+    Return(Vec<Attribute>, Vec<Vec<Vec<u8>>>),
     Insert(RefMut<'a, IndexedObject>),
     Delete(Vec<usize>),
     NoOp,
@@ -240,9 +240,9 @@ impl<'a> Sink<'a> {
     }
 }
 
-fn tuple_to_cells(attrs: &[Attribute], tuple: &Tuple) -> Vec<Element> {
+fn tuple_to_cells(attrs: &[Attribute], tuple: &Tuple) -> Vec<Vec<u8>> {
     attrs.iter().flat_map(|attr| {
-        tuple.element(attr).map(|elem| Element::from_bytes(attr.kind(), elem.bytes()))
+        tuple.element(attr).map(|elem| elem.bytes().to_vec())
     }).collect()
 }
 
@@ -297,8 +297,8 @@ mod tests {
         let tuples: Vec<_> = result.tuples().collect();
         assert_eq!(tuples.len(), 1);
         let tuple = tuples.first().expect("fail");
-        assert_eq!(<i32>::try_from(&tuple.contents[0]), Ok(1));
-        assert_eq!(&tuple.contents[1].to_string(), "something");
+        assert_eq!(<i32>::try_from(tuple.element("document.id").unwrap()), Ok(1));
+        assert_eq!(tuple.element("document.content").unwrap().to_string(), "something");
     }
 
     #[test]

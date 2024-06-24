@@ -107,6 +107,8 @@ fn test_data_types() -> Result<(), Box<dyn std::error::Error>> {
     let tuple = results.tuples().next().unwrap();
     let elem = tuple.element("document.published").unwrap();
     assert_eq!(elem.try_into(), Ok(true));
+
+    let elem = tuple.element("document.published").unwrap();
     assert_eq!(format!("{elem}"), "true");
 
     Ok(())

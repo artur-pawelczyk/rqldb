@@ -15,6 +15,7 @@ use std::cmp::Ordering;
 use std::iter::zip;
 
 use object::{Attribute, NamedAttribute as _};
+use bytes::{IntoBytes as _};
 
 pub use crate::schema::Type;
 pub use crate::db::Database;
@@ -24,7 +25,7 @@ pub use crate::object::RawObjectView;
 
 pub struct QueryResults {
     attributes: Vec<ResultAttribute>,
-    results: RefCell<Box<dyn Iterator<Item = Vec<Element>>>>,
+    results: RefCell<Box<dyn Iterator<Item = Vec<Vec<u8>>>>>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -57,7 +58,7 @@ impl PartialEq<str> for ResultAttribute {
 #[derive(Debug)]
 pub struct Tuple<'a> {
     attributes: &'a [ResultAttribute],
-    contents: Vec<Element>, // TODO: Use Vec<u8>
+    contents: Vec<Vec<u8>>, // TODO: Use Vec<u8>
 }
 
 impl<'a> Tuple<'a> {
@@ -69,9 +70,9 @@ impl<'a> Tuple<'a> {
         self.contents.is_empty()
     }
 
-    pub fn element(&self, name: &str) -> Option<&Element> {
-        if let Some((i, _)) = self.attributes.iter().enumerate().find(|(_, n)| *n == name) {
-            self.contents.get(i)
+    pub fn element(&self, name: &str) -> Option<Element> {
+        if let Some((i, attr)) = self.attributes.iter().enumerate().find(|(_, n)| *n == name) {
+            self.contents.get(i).map(|bytes| Element { contents: bytes.to_vec(), kind: attr.kind })
         } else {
             None
         }
@@ -85,17 +86,6 @@ pub struct Element {
 }
 
 impl Element {
-    fn from_bytes(kind: Type, bytes: &[u8]) -> Element {
-        if let Some(first) = bytes.first() {
-            let firstchar = *first as char;
-            if let Some(num) = firstchar.to_digit(8) {
-                return Element{contents: vec![num as u8], kind}
-            }
-        }
-
-        Element { contents: Vec::from(bytes), kind }
-    }
-
     pub fn as_bytes(&self) -> &[u8] {
         &self.contents
     }
@@ -193,12 +183,6 @@ impl TryFrom<&Element> for bool {
     }
 }
 
-impl From<i32> for Element {
-    fn from(value: i32) -> Self {
-        Self { contents: value.to_be_bytes().to_vec(), kind: Type::NUMBER }
-    }
-}
-
 impl PartialOrd for Element {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         if self.kind == other.kind {
@@ -223,7 +207,7 @@ impl fmt::Debug for Element {
 
 impl QueryResults {
     pub(crate) fn single_number<T: Into<i32>>(name: &str, val: T) -> Self {
-        let tuple = vec![Element::from(val.into())];
+        let tuple = vec![val.into().to_byte_vec()];
         Self {
             attributes: vec![ResultAttribute { name: Box::from(name), kind: Type::NUMBER }],
             results: RefCell::new(Box::new(std::iter::once(tuple)))
@@ -264,7 +248,7 @@ impl<'a> Iterator for Column<'a> {
 
 pub struct Tuples<'a> {
     attributes: &'a [ResultAttribute],
-    contents: RefMut<'a, Box<dyn Iterator<Item = Vec<Element>>>>,
+    contents: RefMut<'a, Box<dyn Iterator<Item = Vec<Vec<u8>>>>>,
 }
 
 impl<'a> Iterator for Tuples<'a> {
