@@ -230,22 +230,6 @@ impl QueryResults {
     }
 }
 
-pub struct Column<'a> {
-    col_pos: usize,
-    results: &'a [Vec<Element>],
-    pos: usize,
-}
-
-impl<'a> Iterator for Column<'a> {
-    type Item = &'a Element;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let next = self.results.get(self.pos).and_then(|tuple| tuple.get(self.col_pos));
-        self.pos += 1;
-        next
-    }
-}
-
 pub struct Tuples<'a> {
     attributes: &'a [ResultAttribute],
     contents: RefMut<'a, Box<dyn Iterator<Item = Vec<Vec<u8>>>>>,
