@@ -162,7 +162,13 @@ pub struct TempObject {
 
 impl TempObject {
     pub fn from_attrs(attrs: &[impl NamedAttribute]) -> Self {
-        let attrs = attrs.iter().enumerate().map(|(pos, a)| Attribute { pos, name: Box::from(a.name()), kind: a.kind(), reference: None }).collect();
+        let attrs = attrs.iter().enumerate().map(|(pos, a)| Attribute {
+            pos,
+            name: Box::from(a.name()),
+            kind: a.kind(),
+            reference: AttributeRef::temporary(pos),
+        }).collect();
+
         Self{ values: vec![], attrs }
     }
 
@@ -248,7 +254,7 @@ pub struct Attribute {
     pub pos: usize,
     pub name: Box<str>,
     pub kind: Type,
-    pub reference: Option<AttributeRef>,
+    pub reference: AttributeRef,
 }
 
 impl PositionalAttribute for Attribute {
@@ -257,7 +263,7 @@ impl PositionalAttribute for Attribute {
     }
 
     fn object_id(&self) -> Option<usize> {
-        self.reference.as_ref().and_then(|r| r.rel_id)
+        self.reference.rel_id
     }
 }
 
@@ -268,24 +274,6 @@ impl NamedAttribute for Attribute {
 
     fn kind(&self) -> Type {
         self.kind
-    }
-}
-
-impl Attribute {
-    pub fn named(pos: usize, name: &str) -> Self {
-        Self {
-            pos,
-            name: Box::from(name),
-            kind: Type::default(),
-            reference: None,
-        }
-    }
-
-    pub fn with_type(self, kind: Type) -> Self {
-        Self {
-            kind,
-            ..self
-        }
     }
 }
 
@@ -309,7 +297,7 @@ impl PartialEq<str> for Attribute {
 
 impl PartialEq<AttributeRef> for Attribute {
     fn eq(&self, a: &AttributeRef) -> bool {
-        self.reference.as_ref().map(|r| r == a).unwrap_or(false)
+        &self.reference == a
     }
 }
 

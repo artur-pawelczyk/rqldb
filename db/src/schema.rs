@@ -96,6 +96,12 @@ pub struct AttributeRef {
     attr_id: usize,
 }
 
+impl AttributeRef {
+    pub(crate) fn temporary(attr_id: usize) -> Self {
+        Self { attr_id, rel_id: None }
+    }
+}
+
 impl PositionalAttribute for AttributeRef {
     fn pos(&self) -> usize {
         self.attr_id
@@ -122,7 +128,7 @@ impl From<Column<'_>> for Attribute {
             pos: a.id,
             name: Box::from(a.name()),
             kind: a.kind(),
-            reference: Some(a.reference()),
+            reference: a.reference(),
         }
     }
 }
@@ -133,7 +139,7 @@ impl From<&Column<'_>> for Attribute {
             pos: a.id,
             name: Box::from(a.name()),
             kind: a.kind(),
-            reference: Some(a.reference()),
+            reference: a.reference(),
         }
     }
 }
