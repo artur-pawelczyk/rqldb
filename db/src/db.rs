@@ -104,8 +104,8 @@ impl Database {
         }
 
         drop(source);
-        if let Finisher::Delete(rel) = plan.finisher {
-            sink.accept_object(self.objects.get(rel.id).unwrap().borrow_mut());
+        if let Finisher::Delete(obj) = &plan.finisher {
+            sink.accept_object(obj.borrow_mut());
         }
 
         Ok(sink.into_results())
@@ -115,8 +115,8 @@ impl Database {
         match &plan.finisher {
             Finisher::Return => Sink::Return(plan.final_attributes(), vec![]),
             Finisher::Apply(f, attr) => match f {
-                ApplyFn::Max => Sink::Max(attr.reference(), 0),
-                ApplyFn::Sum => Sink::Sum(attr.reference(), 0),
+                ApplyFn::Max => Sink::Max(*attr, 0),
+                ApplyFn::Sum => Sink::Sum(*attr, 0),
                 _ => Sink::NoOp,
             }
             Finisher::Count => Sink::Count(0),

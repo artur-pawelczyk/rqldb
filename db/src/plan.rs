@@ -12,7 +12,6 @@ use crate::tuple::Tuple;
 
 use std::collections::BTreeMap;
 use std::collections::HashMap;
-use std::error::Error;
 use std::rc::Rc;
 
 type Result<T> = std::result::Result<T, String>;    
@@ -22,7 +21,7 @@ pub(crate) struct Plan<'schema> {
     pub source: Source,
     pub filters: Vec<Filter>,
     pub joins: Vec<Join<'schema>>,
-    pub finisher: Finisher<'schema>,
+    pub finisher: Finisher,
 }
 
 impl<'schema> Plan<'schema> {
@@ -173,19 +172,19 @@ impl Source {
 }
 
 #[derive(Default, Debug)]
-pub(crate) enum Finisher<'a> {
+pub(crate) enum Finisher {
     Return,
     Insert(SharedObject),
+    Delete(SharedObject),
     Count,
-    Apply(ApplyFn, Column<'a>),
-    Delete(&'a Relation),
+    Apply(ApplyFn, AttributeRef),
     #[default]
     Nil,
 }
 
-impl<'a> Finisher<'a> {
-    fn apply(name: &str, attr: Column<'a>) -> Self {
-        Finisher::Apply(ApplyFn::from(name), attr)
+impl Finisher {
+    fn apply(name: &str, attr: Column) -> Self {
+        Finisher::Apply(ApplyFn::from(name), attr.reference())
     }
 }
 
@@ -305,7 +304,9 @@ fn compute_finisher<'query, 'schema>(source: QuerySource<'query>, db: &'schema D
         },
         dsl::Finisher::Delete => {
             let finisher = match &query.source {
-                dsl::Source::TableScan(name) => db.schema().find_relation(*name).map(Finisher::Delete).ok_or("No such relation found for delete operation"),
+                dsl::Source::TableScan(name) => db.object(*name)
+                    .map(|obj| Finisher::Delete(Rc::clone(obj)))
+                    .ok_or("No such relation found for delete operation"),
                 _ => Err("Illegal delete operation"),
             }?;
             Ok(Plan{ finisher, source: source.into_source(db)?, ..Default::default() })
