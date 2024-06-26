@@ -19,7 +19,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                       .attribute("state_id", Type::TEXT));
 
     db.define(&Definition::relation("city")
-                      .indexed_attribute("id", Type::TEXT)
+                      .indexed_attribute("id", Type::NUMBER)
+                      .attribute("name", Type::TEXT)
                       .attribute("state_id", Type::TEXT)
                       .attribute("county_id", Type::NUMBER));
 
@@ -42,7 +43,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         })?;
 
     Import::into_table("city")
-        .column("city_ascii", "id")
+        .column("id", "id")
+        .column("city_ascii", "name")
         .column("state_id", "state_id")
         .column("county_fips", "county_id")
         .import_string(&csv, |query| {
