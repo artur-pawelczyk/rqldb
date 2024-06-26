@@ -7,7 +7,7 @@ use crate::object::Attribute;
 use crate::object::NamedAttribute as _;
 use crate::schema::AttributeRef;
 use crate::schema::Column;
-use crate::schema::{Schema, Relation, Type};
+use crate::schema::Type;
 use crate::tuple::Tuple;
 
 use std::collections::BTreeMap;
@@ -17,14 +17,14 @@ use std::rc::Rc;
 type Result<T> = std::result::Result<T, String>;    
 
 #[derive(Default)]
-pub(crate) struct Plan<'schema> {
+pub(crate) struct Plan {
     pub source: Source,
     pub filters: Vec<Filter>,
-    pub joins: Vec<Join<'schema>>,
+    pub joins: Vec<Join>,
     pub finisher: Finisher,
 }
 
-impl<'schema> Plan<'schema> {
+impl Plan {
     #[cfg(test)]
     pub fn insert(obj: &SharedObject, values: &[&str]) -> Self {
         let attributes: Vec<_> = obj.borrow().attributes().cloned().collect();
@@ -49,11 +49,15 @@ impl<'schema> Plan<'schema> {
     }
 
     pub fn final_attributes(&self) -> Vec<Attribute> {
-        if let Some(last_join) = self.joins.iter().last() {
-            last_join.attributes_after().collect()
-        } else {
-            self.source.attributes()
+        let mut attrs = Vec::new();
+
+        attrs.extend(self.source.attributes());
+
+        for join in &self.joins {
+            attrs.extend(join.joiner.borrow().attributes().cloned());
         }
+
+        attrs
     }
 }
 
@@ -71,16 +75,16 @@ impl Filter {
     }
 }
 
-pub(crate) struct Join<'a> {
-    joinee: &'a Relation,
-    joiner: &'a Relation,
+pub(crate) struct Join {
+    joinee: SharedObject,
+    joiner: SharedObject,
     joinee_key: AttributeRef,
     joiner_key: AttributeRef,
 }
 
-impl<'a> Join<'a> {
-    pub fn source_table(&self) -> &Relation {
-        self.joiner
+impl Join {
+    pub fn source_object(&self) -> &SharedObject {
+        &self.joiner
     }
 
     pub fn joinee_key(&self) -> &AttributeRef {
@@ -89,12 +93,6 @@ impl<'a> Join<'a> {
 
     pub fn joiner_key(&self) -> &AttributeRef {
         &self.joiner_key
-    }
-
-    pub fn attributes_after(&'a self) -> impl Iterator<Item = Attribute> + 'a {
-        self.joinee.attributes()
-            .chain(self.joiner.attributes())
-            .map(Attribute::from)
     }
 }
 
@@ -205,10 +203,10 @@ impl ApplyFn {
     }
 }
 
-pub(crate) fn compute_plan<'schema>(db: &'schema Database, query: &dsl::Query) -> Result<Plan<'schema>> {
+pub(crate) fn compute_plan(db: &Database, query: &dsl::Query) -> Result<Plan> {
     let source = compute_source(&query.source)?;
     let plan = compute_finisher(source, db, query)?;
-    let plan = compute_joins(plan, db.schema(), query)?;
+    let plan = compute_joins(plan, db, query)?;
     let plan = compute_filters(plan, query)?;
 
     Ok(plan)
@@ -235,7 +233,7 @@ fn compute_source<'query>(dsl_source: &'query dsl::Source) -> Result<QuerySource
     }
 }
 
-fn compute_filters<'a>(plan: Plan<'a>, query: &dsl::Query) -> Result<Plan<'a>> {
+fn compute_filters(plan: Plan, query: &dsl::Query) -> Result<Plan> {
     if query.filters.is_empty() {
         return Ok(plan);
     }
@@ -268,7 +266,7 @@ fn compute_filters<'a>(plan: Plan<'a>, query: &dsl::Query) -> Result<Plan<'a>> {
     Ok(Plan{ filters, ..plan })
 }
 
-fn compute_finisher<'query, 'schema>(source: QuerySource<'query>, db: &'schema Database, query: &'query dsl::Query) -> Result<Plan<'schema>> {
+fn compute_finisher<'query>(source: QuerySource<'query>, db: &Database, query: &'query dsl::Query) -> Result<Plan> {
     match &query.finisher {
         dsl::Finisher::Insert(name) => {
             if let QuerySource::Tuple(input_map) = source {
@@ -335,28 +333,26 @@ fn filter_left<'a>(filter: &'a dsl::Filter) -> &'a str {
     }
 }
 
-fn compute_joins<'a>(plan: Plan<'a>, schema: &'a Schema, query: &dsl::Query) -> Result<Plan<'a>> {
+fn compute_joins(plan: Plan, db: &Database, query: &dsl::Query) -> Result<Plan> {
     if query.join_sources.is_empty() {
         return Ok(plan);
     }
 
     let mut joins = Vec::with_capacity(query.join_sources.len());
-    let joinee_table = match &query.source {
+    let joinee = match &query.source {
         dsl::Source::TableScan(name) => Some(name),
         _ => todo!(),
-    }.and_then(|name| schema.find_relation(*name)).ok_or("No such table")?;
+    }.and_then(|name| db.object(*name)).ok_or("Relation {name} not found")?;
 
     for join_source in &query.join_sources {
-        let joiner_table = match schema.find_relation(join_source.table) {
-            Some(table) => table,
-            None => return Err(format!("{} relation not found", join_source.table))
-        };
+        let joiner = db.object(join_source.table)
+            .ok_or_else(|| format!("Relation {} not found", join_source.table))?;
 
-        if let Some(joinee_key) = joinee_table.lookup(join_source.left).map(|c| c.reference()) {
-            if let Some(joiner_key) = joiner_table.lookup(join_source.right).map(|c| c.reference()) {
+        if let Some(joinee_key) = joinee.borrow().attributes().find(|a| a == join_source.left).map(|a| a.reference) {
+            if let Some(joiner_key) = joiner.borrow().attributes().find(|a| a == join_source.right).map(|a| a.reference) {
                 joins.push(Join {
-                    joiner: joiner_table,
-                    joinee: joinee_table,
+                    joiner: Rc::clone(joiner),
+                    joinee: Rc::clone(joinee),
                     joinee_key, joiner_key
                 })
             } else {
@@ -372,12 +368,14 @@ fn compute_joins<'a>(plan: Plan<'a>, schema: &'a Schema, query: &dsl::Query) -> 
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::*;
     use crate::bytes::IntoBytes as _;
     use crate::dsl::{AttrKind, TupleBuilder};
     use crate::dsl::Operator::{EQ, GT};
     use crate::object::TempObject;
-    use crate::schema::Type;
+    use crate::schema::{Schema, Type};
     use crate::tuple::PositionalAttribute as _;
     use crate::Command;
 
@@ -453,9 +451,8 @@ mod tests {
                           .column("name", Type::TEXT));
 
         let query = dsl::Query::scan("document").join("type", "document.type_id", "type.id");
-        let joins = expect_join(compute_plan(&db, &query));
-        assert_eq!(joins.source_table().name.as_ref(), "type");
-        assert_eq!(attribute_names(&joins.attributes_after().collect::<Vec<_>>()), vec!["document.name", "document.type_id", "type.id", "type.name"]);
+        let plan = compute_plan(&db, &query).unwrap();
+        assert_eq!(attribute_names(&plan.final_attributes()), BTreeSet::from(["document.name", "document.type_id", "type.id", "type.name"]));
 
         let query = dsl::Query::scan("nothing").join("type", "a", "b");
         let missing_source_table = compute_plan(&db, &query);
@@ -481,9 +478,12 @@ mod tests {
         let query = dsl::Query::scan("document")
             .join("type", "document.type_id", "type.id")
             .join("author", "document.author", "author.username");
-        let joins = expect_joins(compute_plan(&db, &query), 2);
-        assert_eq!(joins[0].joiner.name.as_ref(), "type");
-        assert_eq!(joins[1].joiner.name.as_ref(), "author");
+        let plan = compute_plan(&db, &query).unwrap();
+
+        assert_eq!(
+            attribute_names(&plan.final_attributes()),
+            BTreeSet::from(["document.type_id", "document.author", "document.name", "type.id", "type.name", "author.username", "author.displayname"])
+        );
     }
 
     #[test]
@@ -495,16 +495,6 @@ mod tests {
 
         let filter = expect_filter(compute_plan(&db, &dsl::Query::scan("document").join("type", "document.type_id", "type.id").filter("type.name", EQ, "b")));
         assert_eq!(filter.attribute.name(), "type.name");
-    }
-
-    fn expect_joins<'a>(result: Result<Plan<'a>>, n: usize) -> Vec<Join<'a>> {
-        let plan = result.unwrap();
-        assert_eq!(plan.joins.len(), n);
-        plan.joins
-    }
-
-    fn expect_join<'a>(result: Result<Plan<'a>>) -> Join<'a> {
-        expect_joins(result, 1).into_iter().next().unwrap()
     }
 
     #[test]
@@ -535,7 +525,7 @@ mod tests {
         let query = dsl::Query::scan("example");
         let result = compute_plan(&db, &query).unwrap();
         assert_eq!(source_attributes(&result.source), vec![Type::NUMBER, Type::TEXT, Type::NUMBER]);
-        assert_eq!(attribute_names(&result.final_attributes()), vec!["example.id", "example.content", "example.type"]);
+        assert_eq!(attribute_names(&result.final_attributes()), BTreeSet::from(["example.id", "example.content", "example.type"]));
     }
 
     #[test]
@@ -547,7 +537,7 @@ mod tests {
         let query = dsl::Query::tuple(&[("id", "1"), ("content", "the-content"), ("title", "title")]).insert_into("example");
         let result = compute_plan(&db, &query).unwrap();
         assert_eq!(source_attributes(&result.source), vec![Type::NUMBER, Type::TEXT, Type::TEXT]);
-        assert_eq!(attribute_names(&result.final_attributes()), vec!["example.id", "example.content", "example.title"]);
+        assert_eq!(attribute_names(&result.final_attributes()), BTreeSet::from(["example.id", "example.content", "example.title"]));
 
         let query = dsl::Query::tuple(&[("id", "1"), ("content", "the-content")]).insert_into("example");
         let wrong_tuple_len = compute_plan(&db, &query);
@@ -629,7 +619,7 @@ mod tests {
         source.attributes().iter().map(|attr| attr.kind()).collect()
     }
 
-    fn attribute_names(attrs: &[Attribute]) -> Vec<&str> {
+    fn attribute_names(attrs: &[Attribute]) -> BTreeSet<&str> {
         attrs.iter().map(|attr| attr.name()).collect()
     }
 }

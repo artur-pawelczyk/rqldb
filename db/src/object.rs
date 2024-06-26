@@ -295,6 +295,12 @@ impl PartialEq<str> for Attribute {
     }
 }
 
+impl PartialEq<str> for &Attribute {
+    fn eq(&self, s: &str) -> bool {
+        self.name.as_ref() == s
+    }
+}
+
 impl PartialEq<AttributeRef> for Attribute {
     fn eq(&self, a: &AttributeRef) -> bool {
         &self.reference == a

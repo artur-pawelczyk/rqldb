@@ -79,7 +79,7 @@ impl Database {
             _ => unimplemented!()
         };
 
-        let join_sources: Vec<Ref<IndexedObject>> = plan.joins.iter().map(|join| self.objects.get(join.source_table().id).unwrap().borrow()).collect();
+        let join_sources: Vec<Ref<IndexedObject>> = plan.joins.iter().map(|join| join.source_object().borrow()).collect();
         let mut sink = self.create_sink(&plan);
 
         for (idx, byte_tuple) in source.iter().enumerate() {
