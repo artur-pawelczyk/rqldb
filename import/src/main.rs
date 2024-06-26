@@ -19,7 +19,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                       .column("state_id", Type::TEXT));
 
     db.execute_create(&Command::create_table("city")
-                      .indexed_column("id", Type::TEXT)
+                      .indexed_column("id", Type::NUMBER)
+                      .column("name", Type::TEXT)
                       .column("state_id", Type::TEXT)
                       .column("county_id", Type::NUMBER));
 
@@ -42,7 +43,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         })?;
 
     Import::into_table("city")
-        .column("city_ascii", "id")
+        .column("id", "id")
+        .column("city_ascii", "name")
         .column("state_id", "state_id")
         .column("county_fips", "county_id")
         .import_string(&csv, |query| {
