@@ -2,6 +2,7 @@ mod table;
 
 use rqldb::*;
 use rqldb_persist::{Persist, Error as PersistError, FilePersist};
+use rustyline::config::Configurer;
 use crate::table::Table;
 
 use rustyline::Editor;
@@ -46,6 +47,8 @@ fn main() {
         shell.handle_command(&command, true);
     } else {
         let mut editor = Editor::<()>::new();
+        editor.set_auto_add_history(true);
+
         loop {
             match editor.readline("query> ") {
                 Ok(line) => shell.handle_command(&line, true),
