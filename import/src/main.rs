@@ -22,7 +22,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                       .indexed_attribute("id", Type::NUMBER)
                       .attribute("name", Type::TEXT)
                       .attribute("state_id", Type::TEXT)
-                      .attribute("county_id", Type::NUMBER));
+                      .attribute("county_id", Type::NUMBER)
+                      .attribute("population", Type::NUMBER));
 
     let mut csv = String::new();
     std::io::stdin().read_to_string(&mut csv).unwrap();
@@ -47,6 +48,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .column("city_ascii", "name")
         .column("state_id", "state_id")
         .column("county_fips", "county_id")
+        .column("population", "population")
         .import_string(&csv, |query| {
             db.insert(&query).unwrap();
         })?;
