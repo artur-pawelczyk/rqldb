@@ -39,19 +39,19 @@ fn main() {
         let mut file = File::open(Path::new(&path)).unwrap();
         file.read_to_string(&mut contents).unwrap();
         for line in contents.split('\n') {
-            shell.handle_command(line.trim(), false);
+            shell.handle_input(line.trim(), false);
         }
     }
 
     if let Some(command) = args.command {
-        shell.handle_command(&command, true);
+        shell.handle_input(&command, true);
     } else {
         let mut editor = Editor::<()>::new();
         editor.set_auto_add_history(true);
 
         loop {
             match editor.readline("query> ") {
-                Ok(line) => shell.handle_command(&line, true),
+                Ok(line) => shell.handle_input(&line, true),
                 Err(e) => { println!("{:?}", e); break; }
             }
         }
@@ -82,32 +82,36 @@ impl Shell {
         instance.restore().unwrap()
     }
 
-    fn handle_command(&mut self, cmd: &str, output: bool) {
-        if cmd.is_empty() {
-        } else if cmd == "save" {
-            self.persist.write(&self.db).unwrap();
-        } else if cmd.starts_with("create") {
-            let command = match parse_command(cmd) {
-                Ok(x) => x,
-                Err(error) => { println!("{}", error); return; }
-            };
-            self.db.execute_create(&command);
-        } else if cmd.starts_with("dump") {
-            match cmd.split_ascii_whitespace().collect::<Vec<&str>>()[..] {
-                ["dump"] => self.dump_all_relations(),
-                ["dump", name] => self.dump_relation(name),
-                _ => println!("Wrong command"),
+    fn handle_input(&mut self, input: &str, output: bool) {
+        if input.is_empty() {
+        } else if let Some((cmd, args)) = maybe_read_command(input) {
+            if cmd == "save" {
+                self.persist.write(&self.db).unwrap();
+            } else if cmd == "define" {
+                let command = match parse_command(args) {
+                    Ok(x) => x,
+                    Err(error) => { println!("{}", error); return; }
+                };
+                self.db.execute_create(&command);
+            } else if cmd == "dump" {
+                if args.is_empty() {
+                    self.dump_all_relations();
+                } else {
+                    self.dump_relation(args);
+                }
+            } else if cmd == "quit" {
+                std::process::exit(0);
             }
         } else {
-            let query = match parse_query(cmd) {
-                Ok(parsed) => parsed,
-                Err(error) => { println!("{}", error); return; }
-            };
+                let query = match parse_query(input) {
+                    Ok(parsed) => parsed,
+                    Err(error) => { println!("{}", error); return; }
+                };
 
-            match self.db.execute_query(&query) {
-                Result::Ok(response) => if output { print_result(&response) },
-                Result::Err(err) => println!("{}", err),
-            }
+                match self.db.execute_query(&query) {
+                    Result::Ok(response) => if output { print_result(&response) },
+                    Result::Err(err) => println!("{}", err),
+                }
         }
     }
 
@@ -140,6 +144,18 @@ impl Persist for NoOpPersist {
 
     fn read(&self, db: Database) -> Result<Database, PersistError> {
         Ok(db)
+    }
+}
+
+fn maybe_read_command(input: &str) -> Option<(&str, &str)> {
+    if input.chars().next() == Some('.') {
+        if let Some(cmd_end) = input.char_indices().find(|(_, c)| c.is_ascii_whitespace()).map(|(i, _)| i) {
+            Some((&input[1..cmd_end], &input[cmd_end..].trim()))
+        } else {
+            Some((&input[1..], ""))
+        }
+    } else {
+        None
     }
 }
 

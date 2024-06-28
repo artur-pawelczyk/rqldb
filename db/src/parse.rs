@@ -319,6 +319,7 @@ mod tests {
 
     #[test]
     fn test_fails_parse_command() {
+        // TODO: "create_table" -> "relation" without "create"
         assert_parse_command_fails("create_someting example");
         assert_parse_command_fails("| create_table example");
         assert_parse_command_fails("create_table int::NUMBER example contents::TEXT");

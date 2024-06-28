@@ -33,6 +33,7 @@ impl Database {
         }
     }
 
+    // TODO: create -> define
     pub fn execute_create(&mut self, command: &dsl::Command) {
         let table = command.columns.iter().fold(self.schema.create_table(&command.name), |acc, col| {
             if col.indexed {
