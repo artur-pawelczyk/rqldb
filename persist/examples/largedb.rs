@@ -5,7 +5,7 @@ use rqldb_persist::{Persist, TempFilePersist};
 
 fn main() {
     let mut db = Database::default();
-    db.execute_create(&Definition::relation("document")
+    db.define(&Definition::relation("document")
                       .indexed_attribute("id", Type::NUMBER)
                       .attribute("title", Type::TEXT)
                       .attribute("content", Type::TEXT));

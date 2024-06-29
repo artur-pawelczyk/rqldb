@@ -231,12 +231,12 @@ mod tests {
     #[test]
     fn test_serialize_db() {
         let mut db = Database::default();
-        db.execute_create(&Definition::relation("example")
+        db.define(&Definition::relation("example")
                           .indexed_attribute("id", Type::NUMBER)
                           .attribute("title", Type::TEXT)
                           .attribute("content", Type::TEXT));
 
-        db.execute_create(&Definition::relation("other")
+        db.define(&Definition::relation("other")
                           .attribute("a", Type::TEXT)
                           .attribute("b", Type::TEXT)
                           .attribute("c", Type::TEXT)
@@ -259,7 +259,7 @@ mod tests {
     #[test]
     fn test_write_to_file() {
         let mut db = Database::default();
-        db.execute_create(&Definition::relation("example").indexed_attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
+        db.define(&Definition::relation("example").indexed_attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
         db.execute_query(&Query::tuple(&[("id", "1"), ("content", "test")]).insert_into("example")).unwrap();
 
         let mut persist = TempFilePersist::new();

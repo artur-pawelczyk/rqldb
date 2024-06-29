@@ -3,7 +3,7 @@ use rqldb::{*, dsl::TupleBuilder};
 
 fn create_database() -> Database {
     let mut db = Database::default();
-    db.execute_create(&Definition::relation("document")
+    db.define(&Definition::relation("document")
                       .indexed_attribute("id", Type::NUMBER)
                       .attribute("type", Type::NUMBER)
                       .attribute("title", Type::TEXT)

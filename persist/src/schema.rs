@@ -79,7 +79,7 @@ mod tests {
     #[test]
     fn test_serialize_schema() {
         let mut db = Database::default();
-        db.execute_create(&Definition::relation("example")
+        db.define(&Definition::relation("example")
                           .indexed_attribute("id", Type::NUMBER)
                           .attribute("content", Type::TEXT));
 

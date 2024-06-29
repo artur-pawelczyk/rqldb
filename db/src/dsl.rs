@@ -381,7 +381,7 @@ impl Definition {
 
 impl fmt::Display for Definition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "create_table {} ", self.name)?;
+        write!(f, "relation {} ", self.name)?;
         let mut i = self.columns.iter().peekable();
         while let Some(col) = i.next() {
             write!(f, "{}", col)?;
@@ -472,12 +472,12 @@ mod tests {
     }
 
     #[test]
-    fn create_table() {
+    fn define_relation() {
         let query = Definition::relation("example")
             .indexed_attribute("id", Type::NUMBER)
             .attribute("contents", Type::TEXT);
 
-        assert_eq!("create_table example id::NUMBER::KEY contents::TEXT", query.to_string());
+        assert_eq!("relation example id::NUMBER::KEY contents::TEXT", query.to_string());
     }
 
     #[test]

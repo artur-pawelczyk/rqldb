@@ -387,7 +387,7 @@ mod tests {
             .attribute("id", Type::NUMBER)
             .attribute("content", Type::TEXT)
             .attribute("type", Type::NUMBER);
-        db.execute_create(&command);
+        db.define(&command);
 
         let filters = expect_filters(compute_plan(&db, &dsl::Query::scan("example").filter("example.id", EQ, "1").filter("example.type", EQ, "2")), 2);
         assert_eq!(filters.get(0).map(|x| x.attribute.pos()), Some(0));
@@ -401,7 +401,7 @@ mod tests {
     #[test]
     fn test_apply_filter() {
         let mut db = Database::default();
-        db.execute_create(&Definition::relation("example")
+        db.define(&Definition::relation("example")
                           .attribute("id", Type::NUMBER)
                           .attribute("content", Type::TEXT)
                           .attribute("type", Type::NUMBER));
@@ -443,10 +443,10 @@ mod tests {
     #[test]
     fn test_compute_join() {
         let mut db = Database::default();
-        db.execute_create(&Definition::relation("document")
+        db.define(&Definition::relation("document")
                           .attribute("name", Type::TEXT)
                           .attribute("type_id", Type::NUMBER));
-        db.execute_create(&Definition::relation("type")
+        db.define(&Definition::relation("type")
                           .attribute("id", Type::NUMBER)
                           .attribute("name", Type::TEXT));
 

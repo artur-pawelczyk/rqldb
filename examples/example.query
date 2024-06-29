@@ -1,5 +1,5 @@
-create_table document id::NUMBER content::TEXT type::NUMBER
-create_table type id::NUMBER name::TEXT
+.define relation document id::NUMBER content::TEXT type::NUMBER
+.define relation type id::NUMBER name::TEXT
 
 tuple id = 1 name = article | insert_into type
 tuple id = 2 name = page | insert_into type

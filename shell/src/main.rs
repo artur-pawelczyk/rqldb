@@ -92,7 +92,7 @@ impl Shell {
                     Ok(x) => x,
                     Err(error) => { println!("{}", error); return; }
                 };
-                self.db.execute_create(&command);
+                self.db.define(&command);
             } else if cmd == "dump" {
                 if args.is_empty() {
                     self.dump_all_relations();

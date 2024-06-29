@@ -4,13 +4,13 @@ use rqldb::db::Database;
 fn prepare_db() -> Database {
     let mut db = Database::default();
 
-    db.execute_create(&parse_definition("create_table document
+    db.define(&parse_definition("relation document
 id::NUMBER::KEY
 title::TEXT
 content::TEXT
 type::NUMBER
 published::BOOLEAN").unwrap());
-    db.execute_create(&parse_definition("create_table type id::NUMBER name::TEXT").unwrap());
+    db.define(&parse_definition("relation type id::NUMBER name::TEXT").unwrap());
 
     let insert = parse_query("tuple id = 1 name = artictle | insert_into type").unwrap();
     db.execute_query(&insert).unwrap();

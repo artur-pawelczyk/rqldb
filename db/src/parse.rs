@@ -220,7 +220,7 @@ pub fn parse_definition(source: &str) -> Result<Definition, ParseError> {
         let token = tokenizer.next()?;
         match token {
             Token::Symbol(name, _) => {
-                if name == "create_table" {
+                if name == "relation" {
                     let name = match tokenizer.next()? {
                         Token::Symbol(name, _) => name,
                         _ => return Err(ParseError::msg("Expected table name"))
@@ -237,7 +237,7 @@ pub fn parse_definition(source: &str) -> Result<Definition, ParseError> {
                         }
                     }
                 } else {
-                    return Err(ParseError::msg("Only create_table is allowed"))
+                    return Err(ParseError::msg("Only relation can be defined"))
                 }
             },
             Token::End(_) => break,
@@ -313,8 +313,8 @@ mod tests {
 
     #[test]
     fn test_parse_definition() {
-        assert_parse_definition("create_table example id::NUMBER content::TEXT");
-        assert_parse_definition("create_table example id::NUMBER::KEY content::TEXT");
+        assert_parse_definition("relation example id::NUMBER content::TEXT");
+        assert_parse_definition("relation example id::NUMBER::KEY content::TEXT");
     }
 
     #[test]

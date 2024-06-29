@@ -33,8 +33,7 @@ impl Database {
         }
     }
 
-    // TODO: create -> define
-    pub fn execute_create(&mut self, command: &dsl::Definition) {
+    pub fn define(&mut self, command: &dsl::Definition) {
         let table = command.columns.iter().fold(self.schema.create_table(&command.name), |acc, col| {
             if col.indexed {
                 acc.indexed_column(&col.name, col.kind)
@@ -155,7 +154,7 @@ impl Database {
 
     pub fn dump(&self, name: &str, writer: &mut impl fmt::Write) -> Result<()> {
         let rel = self.schema.find_relation(name).unwrap();
-        writeln!(writer, "{}", dump_create(rel)).map_err(|_| "Stdio error")?;
+        writeln!(writer, ".define {}", dump_create(rel)).map_err(|_| "Stdio error")?;
         let result = self.execute_query(&Query::scan(name)).unwrap();
         dump_values(name, result, writer);
 
@@ -271,7 +270,7 @@ mod tests {
             .attribute("id", Type::NUMBER)
             .attribute("content", Type::TEXT);
 
-        db.execute_create(&command);
+        db.define(&command);
 
         let query = Query::scan("document").select_all();
         let result = db.execute_query(&query).unwrap();
@@ -291,7 +290,7 @@ mod tests {
         let command = Definition::relation("document")
             .attribute("id", Type::NUMBER)
             .attribute("content", Type::TEXT);
-        db.execute_create(&command);
+        db.define(&command);
 
         let insert_query = Query::tuple(&[("id", "1"), ("content", "something")]).insert_into("document");
         let insert_result = db.execute_query(&insert_query);
@@ -313,7 +312,7 @@ mod tests {
         let command = Definition::relation("document")
             .attribute("id", Type::NUMBER)
             .attribute("content", Type::TEXT);
-        db.execute_create(&command);
+        db.define(&command);
 
         let result = db.execute_query(&Query::tuple(&[("id", "not-a-number"), ("id", "random-text")]).insert_into("document"));
         assert!(result.is_err());
@@ -322,7 +321,7 @@ mod tests {
     #[test]
     pub fn filter() {
         let mut db = Database::default();
-        db.execute_create(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
+        db.define(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
 
         for i in 1..20 {
             let id = i.to_string();
@@ -346,8 +345,8 @@ mod tests {
     #[test]
     pub fn join() {
         let mut db = Database::default();
-        db.execute_create(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT).attribute("type_id", Type::NUMBER));
-        db.execute_create(&Definition::relation("type").attribute("id", Type::NUMBER).attribute("name", Type::TEXT));
+        db.define(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT).attribute("type_id", Type::NUMBER));
+        db.define(&Definition::relation("type").attribute("id", Type::NUMBER).attribute("name", Type::TEXT));
 
         db.execute_query(&Query::tuple(&[("id", "1"), ("content", "example"), ("type_id", "2")]).insert_into("document")).unwrap();
         db.execute_query(&Query::tuple(&[("id", "1"), ("name", "type_a")]).insert_into("type")).unwrap();
@@ -368,7 +367,7 @@ mod tests {
     #[test]
     fn apply() {
         let mut db = Database::default();
-        db.execute_create(&Definition::relation("document")
+        db.define(&Definition::relation("document")
                           .attribute("id", Type::NUMBER)
                           .attribute("content", Type::TEXT)
                           .attribute("size", Type::NUMBER));
@@ -401,7 +400,7 @@ mod tests {
     #[test]
     fn count() {
         let mut db = Database::default();
-        db.execute_create(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
+        db.define(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
 
         for i in 1..21 {
             let s = i.to_string();
@@ -423,7 +422,7 @@ mod tests {
     #[test]
     fn delete() {
         let mut db = Database::default();
-        db.execute_create(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
+        db.define(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
         db.execute_query(&Query::tuple(&[("id", "1"), ("content", "the content")]).insert_into("document")).unwrap();
 
         let tuple_delete = db.execute_query(&Query::tuple(&[("id", "1")]).delete());
@@ -441,7 +440,7 @@ mod tests {
     #[test]
     fn duplicates() {
         let mut db = Database::default();
-        db.execute_create(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
+        db.define(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
 
         let insert_query = Query::tuple(&[("id", "1"), ("content", "the content")]).insert_into("document");
         db.execute_query(&insert_query).unwrap();
@@ -457,7 +456,7 @@ mod tests {
     #[test]
     fn update() {
         let mut db = Database::default();
-        db.execute_create(&Definition::relation("document").indexed_attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
+        db.define(&Definition::relation("document").indexed_attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
         let obj = db.object("document").unwrap();
 
         db.execute_plan(Plan::insert(obj, &["1", "orig content"])).unwrap();
@@ -471,11 +470,11 @@ mod tests {
     #[test]
     fn recover_object() {
         let mut source_db = Database::default();
-        source_db.execute_create(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
+        source_db.define(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
         let source_obj = source_db.object("document").unwrap();
 
         let mut target_db = Database::default();
-        target_db.execute_create(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
+        target_db.define(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
         let target_obj = target_db.object("document").unwrap();
 
         source_db.execute_plan(Plan::insert(source_obj, &["1", "one"])).unwrap();
@@ -494,7 +493,7 @@ mod tests {
     #[test]
     fn index_scan() {
         let mut db = Database::default();
-        db.execute_create(&Definition::relation("document").indexed_attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
+        db.define(&Definition::relation("document").indexed_attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
 
         for i in 1..20 {
             let id = i.to_string();
@@ -524,14 +523,14 @@ mod tests {
     #[test]
     fn dump_all() {
         let mut db = Database::default();
-        db.execute_create(&Definition::relation("first").indexed_attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
-        db.execute_create(&Definition::relation("second").attribute("num", Type::NUMBER));
+        db.define(&Definition::relation("first").indexed_attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
+        db.define(&Definition::relation("second").attribute("num", Type::NUMBER));
         db.execute_query(&Query::tuple(&[("id", "1"), ("content", "one")]).insert_into("first")).unwrap();
 
         let expected = concat!(
-            "create_table first id::NUMBER::KEY content::TEXT\n",
+            ".define relation first id::NUMBER::KEY content::TEXT\n",
             "tuple first.content = one first.id = 1 | insert_into first\n",
-            "create_table second num::NUMBER\n",
+            ".define relation second num::NUMBER\n",
         );
 
         let mut out = String::new();

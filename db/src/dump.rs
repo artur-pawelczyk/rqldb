@@ -50,7 +50,7 @@ mod tests {
     fn test_dump_contents() {
         let mut db = Database::default();
 
-        db.execute_create(&Definition::relation("example")
+        db.define(&Definition::relation("example")
                           .indexed_attribute("id", Type::NUMBER)
                           .attribute("content", Type::TEXT));
 
