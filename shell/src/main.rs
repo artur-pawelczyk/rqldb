@@ -88,7 +88,7 @@ impl Shell {
             if cmd == "save" {
                 self.persist.write(&self.db).unwrap();
             } else if cmd == "define" {
-                let command = match parse_command(args) {
+                let command = match parse_definition(args) {
                     Ok(x) => x,
                     Err(error) => { println!("{}", error); return; }
                 };

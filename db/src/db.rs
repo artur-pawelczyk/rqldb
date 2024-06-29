@@ -34,7 +34,7 @@ impl Database {
     }
 
     // TODO: create -> define
-    pub fn execute_create(&mut self, command: &dsl::Command) {
+    pub fn execute_create(&mut self, command: &dsl::Definition) {
         let table = command.columns.iter().fold(self.schema.create_table(&command.name), |acc, col| {
             if col.indexed {
                 acc.indexed_column(&col.name, col.kind)
@@ -254,7 +254,7 @@ fn tuple_to_cells(attrs: &[Attribute], tuple: &Tuple) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{bytes::IntoBytes as _, dsl::{Command, Operator, Query, TupleBuilder}, Type};
+    use crate::{bytes::IntoBytes as _, dsl::{Definition, Operator, Query, TupleBuilder}, Type};
 
     #[test]
     fn query_not_existing_relation() {
@@ -267,9 +267,9 @@ mod tests {
     #[test]
     fn query_empty_relation() {
         let mut db = Database::default();
-        let command = Command::create_table("document")
-            .column("id", Type::NUMBER)
-            .column("content", Type::TEXT);
+        let command = Definition::relation("document")
+            .attribute("id", Type::NUMBER)
+            .attribute("content", Type::TEXT);
 
         db.execute_create(&command);
 
@@ -288,9 +288,9 @@ mod tests {
     pub fn insert() {
         let mut db = Database::default();
 
-        let command = Command::create_table("document")
-            .column("id", Type::NUMBER)
-            .column("content", Type::TEXT);
+        let command = Definition::relation("document")
+            .attribute("id", Type::NUMBER)
+            .attribute("content", Type::TEXT);
         db.execute_create(&command);
 
         let insert_query = Query::tuple(&[("id", "1"), ("content", "something")]).insert_into("document");
@@ -310,9 +310,9 @@ mod tests {
     pub fn failed_insert() {
         let mut db = Database::default();
 
-        let command = Command::create_table("document")
-            .column("id", Type::NUMBER)
-            .column("content", Type::TEXT);
+        let command = Definition::relation("document")
+            .attribute("id", Type::NUMBER)
+            .attribute("content", Type::TEXT);
         db.execute_create(&command);
 
         let result = db.execute_query(&Query::tuple(&[("id", "not-a-number"), ("id", "random-text")]).insert_into("document"));
@@ -322,7 +322,7 @@ mod tests {
     #[test]
     pub fn filter() {
         let mut db = Database::default();
-        db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT));
+        db.execute_create(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
 
         for i in 1..20 {
             let id = i.to_string();
@@ -346,8 +346,8 @@ mod tests {
     #[test]
     pub fn join() {
         let mut db = Database::default();
-        db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT).column("type_id", Type::NUMBER));
-        db.execute_create(&Command::create_table("type").column("id", Type::NUMBER).column("name", Type::TEXT));
+        db.execute_create(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT).attribute("type_id", Type::NUMBER));
+        db.execute_create(&Definition::relation("type").attribute("id", Type::NUMBER).attribute("name", Type::TEXT));
 
         db.execute_query(&Query::tuple(&[("id", "1"), ("content", "example"), ("type_id", "2")]).insert_into("document")).unwrap();
         db.execute_query(&Query::tuple(&[("id", "1"), ("name", "type_a")]).insert_into("type")).unwrap();
@@ -368,10 +368,10 @@ mod tests {
     #[test]
     fn apply() {
         let mut db = Database::default();
-        db.execute_create(&Command::create_table("document")
-                          .column("id", Type::NUMBER)
-                          .column("content", Type::TEXT)
-                          .column("size", Type::NUMBER));
+        db.execute_create(&Definition::relation("document")
+                          .attribute("id", Type::NUMBER)
+                          .attribute("content", Type::TEXT)
+                          .attribute("size", Type::NUMBER));
 
         for i in 1..=10 {
             let s = i.to_string();
@@ -401,7 +401,7 @@ mod tests {
     #[test]
     fn count() {
         let mut db = Database::default();
-        db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT));
+        db.execute_create(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
 
         for i in 1..21 {
             let s = i.to_string();
@@ -423,7 +423,7 @@ mod tests {
     #[test]
     fn delete() {
         let mut db = Database::default();
-        db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT));
+        db.execute_create(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
         db.execute_query(&Query::tuple(&[("id", "1"), ("content", "the content")]).insert_into("document")).unwrap();
 
         let tuple_delete = db.execute_query(&Query::tuple(&[("id", "1")]).delete());
@@ -441,7 +441,7 @@ mod tests {
     #[test]
     fn duplicates() {
         let mut db = Database::default();
-        db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT));
+        db.execute_create(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
 
         let insert_query = Query::tuple(&[("id", "1"), ("content", "the content")]).insert_into("document");
         db.execute_query(&insert_query).unwrap();
@@ -457,7 +457,7 @@ mod tests {
     #[test]
     fn update() {
         let mut db = Database::default();
-        db.execute_create(&Command::create_table("document").indexed_column("id", Type::NUMBER).column("content", Type::TEXT));
+        db.execute_create(&Definition::relation("document").indexed_attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
         let obj = db.object("document").unwrap();
 
         db.execute_plan(Plan::insert(obj, &["1", "orig content"])).unwrap();
@@ -471,11 +471,11 @@ mod tests {
     #[test]
     fn recover_object() {
         let mut source_db = Database::default();
-        source_db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT));
+        source_db.execute_create(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
         let source_obj = source_db.object("document").unwrap();
 
         let mut target_db = Database::default();
-        target_db.execute_create(&Command::create_table("document").column("id", Type::NUMBER).column("content", Type::TEXT));
+        target_db.execute_create(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
         let target_obj = target_db.object("document").unwrap();
 
         source_db.execute_plan(Plan::insert(source_obj, &["1", "one"])).unwrap();
@@ -494,7 +494,7 @@ mod tests {
     #[test]
     fn index_scan() {
         let mut db = Database::default();
-        db.execute_create(&Command::create_table("document").indexed_column("id", Type::NUMBER).column("content", Type::TEXT));
+        db.execute_create(&Definition::relation("document").indexed_attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
 
         for i in 1..20 {
             let id = i.to_string();
@@ -524,8 +524,8 @@ mod tests {
     #[test]
     fn dump_all() {
         let mut db = Database::default();
-        db.execute_create(&Command::create_table("first").indexed_column("id", Type::NUMBER).column("content", Type::TEXT));
-        db.execute_create(&Command::create_table("second").column("num", Type::NUMBER));
+        db.execute_create(&Definition::relation("first").indexed_attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
+        db.execute_create(&Definition::relation("second").attribute("num", Type::NUMBER));
         db.execute_query(&Query::tuple(&[("id", "1"), ("content", "one")]).insert_into("first")).unwrap();
 
         let expected = concat!(

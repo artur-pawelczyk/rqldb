@@ -1,14 +1,14 @@
 use core::fmt;
 use std::collections::BTreeMap;
 
-use crate::{schema::Relation, Command, Query, QueryResults};
+use crate::{schema::Relation, Definition, Query, QueryResults};
 
-pub(crate) fn dump_create(rel: &Relation) -> Command {
-    rel.attributes().fold(Command::create_table(rel.name()), |acc, col| {
+pub(crate) fn dump_create(rel: &Relation) -> Definition {
+    rel.attributes().fold(Definition::relation(rel.name()), |acc, col| {
         if col.indexed() {
-            acc.indexed_column(col.short_name(), col.kind())
+            acc.indexed_attribute(col.short_name(), col.kind())
         } else {
-            acc.column(col.short_name(), col.kind())
+            acc.attribute(col.short_name(), col.kind())
         }
     })
 }
@@ -29,7 +29,7 @@ pub(crate) fn dump_values<'a>(rel: &str, values: QueryResults, writer: &mut impl
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{schema::Schema, Type, Command, Database, Query};
+    use crate::{schema::Schema, Type, Definition, Database, Query};
 
     #[test]
     fn test_dump_schema() {
@@ -41,18 +41,18 @@ mod tests {
 
         let rel = schema.find_relation("example").unwrap();
 
-        assert_eq!(dump_create(rel), Command::create_table("example")
-                   .indexed_column("id", Type::NUMBER)
-                   .column("content", Type::TEXT));
+        assert_eq!(dump_create(rel), Definition::relation("example")
+                   .indexed_attribute("id", Type::NUMBER)
+                   .attribute("content", Type::TEXT));
     }
 
     #[test]
     fn test_dump_contents() {
         let mut db = Database::default();
 
-        db.execute_create(&Command::create_table("example")
-                          .indexed_column("id", Type::NUMBER)
-                          .column("content", Type::TEXT));
+        db.execute_create(&Definition::relation("example")
+                          .indexed_attribute("id", Type::NUMBER)
+                          .attribute("content", Type::TEXT));
 
         let mut expected_tuple = BTreeMap::new();
         expected_tuple.insert("example.id", "1");

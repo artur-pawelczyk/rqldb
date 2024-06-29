@@ -6,11 +6,11 @@ use rqldb_persist::*;
 
 fn create_database() -> Database {
     let mut db = Database::default();
-    db.execute_create(&Command::create_table("document")
-                      .indexed_column("id", Type::NUMBER)
-                      .column("type", Type::NUMBER)
-                      .column("title", Type::TEXT)
-                      .column("content", Type::TEXT));
+    db.execute_create(&Definition::relation("document")
+                      .indexed_attribute("id", Type::NUMBER)
+                      .attribute("type", Type::NUMBER)
+                      .attribute("title", Type::TEXT)
+                      .attribute("content", Type::TEXT));
 
     for i in 1..10_000 {
         let id = i.to_string();

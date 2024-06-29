@@ -377,16 +377,16 @@ mod tests {
     use crate::object::TempObject;
     use crate::schema::{Schema, Type};
     use crate::tuple::PositionalAttribute as _;
-    use crate::Command;
+    use crate::Definition;
 
 
     #[test]
     fn test_compute_filter() {
         let mut db = Database::default();
-        let command = Command::create_table("example")
-            .column("id", Type::NUMBER)
-            .column("content", Type::TEXT)
-            .column("type", Type::NUMBER);
+        let command = Definition::relation("example")
+            .attribute("id", Type::NUMBER)
+            .attribute("content", Type::TEXT)
+            .attribute("type", Type::NUMBER);
         db.execute_create(&command);
 
         let filters = expect_filters(compute_plan(&db, &dsl::Query::scan("example").filter("example.id", EQ, "1").filter("example.type", EQ, "2")), 2);
@@ -401,10 +401,10 @@ mod tests {
     #[test]
     fn test_apply_filter() {
         let mut db = Database::default();
-        db.execute_create(&Command::create_table("example")
-                          .column("id", Type::NUMBER)
-                          .column("content", Type::TEXT)
-                          .column("type", Type::NUMBER));
+        db.execute_create(&Definition::relation("example")
+                          .attribute("id", Type::NUMBER)
+                          .attribute("content", Type::TEXT)
+                          .attribute("type", Type::NUMBER));
 
         let mut object = TempObject::from_relation(db.schema().find_relation("example").unwrap());
         object.push_str(&["1", "content1", "11"]);
@@ -443,12 +443,12 @@ mod tests {
     #[test]
     fn test_compute_join() {
         let mut db = Database::default();
-        db.execute_create(&Command::create_table("document")
-                          .column("name", Type::TEXT)
-                          .column("type_id", Type::NUMBER));
-        db.execute_create(&Command::create_table("type")
-                          .column("id", Type::NUMBER)
-                          .column("name", Type::TEXT));
+        db.execute_create(&Definition::relation("document")
+                          .attribute("name", Type::TEXT)
+                          .attribute("type_id", Type::NUMBER));
+        db.execute_create(&Definition::relation("type")
+                          .attribute("id", Type::NUMBER)
+                          .attribute("name", Type::TEXT));
 
         let query = dsl::Query::scan("document").join("type", "document.type_id", "type.id");
         let plan = compute_plan(&db, &query).unwrap();

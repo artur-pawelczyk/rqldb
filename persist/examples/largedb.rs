@@ -1,14 +1,14 @@
 use std::time::SystemTime;
 
-use rqldb::{Database, Command, Type, Query, dsl::TupleBuilder};
+use rqldb::{Database, Definition, Type, Query, dsl::TupleBuilder};
 use rqldb_persist::{Persist, TempFilePersist};
 
 fn main() {
     let mut db = Database::default();
-    db.execute_create(&Command::create_table("document")
-                      .indexed_column("id", Type::NUMBER)
-                      .column("title", Type::TEXT)
-                      .column("content", Type::TEXT));
+    db.execute_create(&Definition::relation("document")
+                      .indexed_attribute("id", Type::NUMBER)
+                      .attribute("title", Type::TEXT)
+                      .attribute("content", Type::TEXT));
 
 
     let mut last_time = SystemTime::now();

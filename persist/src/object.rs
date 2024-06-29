@@ -36,12 +36,12 @@ mod tests {
 
     use super::*;
 
-    use rqldb::{Type, Database, Query, Command};
+    use rqldb::{Type, Database, Query, Definition};
 
     #[test]
     fn test_serialize_empty_object() {
         let mut db = Database::default();
-        db.execute_create(&Command::create_table("example").indexed_column("id", Type::NUMBER).column("content", Type::TEXT));
+        db.execute_create(&Definition::relation("example").indexed_attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
 
         let raw_object = db.raw_object("example").unwrap();
         let mut out = Vec::new();
@@ -54,7 +54,7 @@ mod tests {
     #[test]
     fn test_serialize_object() {
         let mut db = Database::default();
-        db.execute_create(&Command::create_table("example").indexed_column("id", Type::NUMBER).column("content", Type::TEXT));
+        db.execute_create(&Definition::relation("example").indexed_attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
 
         db.execute_query(&Query::tuple(&[("id", "1"), ("content", "test")]).insert_into("example")).unwrap();
         db.execute_query(&Query::tuple(&[("id", "2"), ("content", "test")]).insert_into("example")).unwrap();
@@ -67,7 +67,7 @@ mod tests {
         
 
         let mut recovered_db = Database::default();
-        recovered_db.execute_create(&Command::create_table("example").indexed_column("id", Type::NUMBER).column("content", Type::TEXT));
+        recovered_db.execute_create(&Definition::relation("example").indexed_attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
         recovered_db.recover_object(0, saved_object);
         let result = recovered_db.execute_query(&Query::scan("example")).unwrap();
         assert_eq!(result.tuples().count(), 2);

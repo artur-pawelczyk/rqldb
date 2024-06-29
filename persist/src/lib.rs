@@ -224,23 +224,23 @@ impl<R: Read> ByteReader<R> {
 
 #[cfg(test)]
 mod tests {
-    use rqldb::{Command, Type, Query, Operator};
+    use rqldb::{Definition, Type, Query, Operator};
 
     use super::*;
 
     #[test]
     fn test_serialize_db() {
         let mut db = Database::default();
-        db.execute_create(&Command::create_table("example")
-                          .indexed_column("id", Type::NUMBER)
-                          .column("title", Type::TEXT)
-                          .column("content", Type::TEXT));
+        db.execute_create(&Definition::relation("example")
+                          .indexed_attribute("id", Type::NUMBER)
+                          .attribute("title", Type::TEXT)
+                          .attribute("content", Type::TEXT));
 
-        db.execute_create(&Command::create_table("other")
-                          .column("a", Type::TEXT)
-                          .column("b", Type::TEXT)
-                          .column("c", Type::TEXT)
-                          .column("d", Type::TEXT));
+        db.execute_create(&Definition::relation("other")
+                          .attribute("a", Type::TEXT)
+                          .attribute("b", Type::TEXT)
+                          .attribute("c", Type::TEXT)
+                          .attribute("d", Type::TEXT));
 
         db.execute_query(&Query::tuple(&[("id", "1"), ("title", "test1"), ("content", "stuff")]).insert_into("example")).unwrap();
         db.execute_query(&Query::tuple(&[("id", "2"), ("title", "test2"), ("content", "stuff")]).insert_into("example")).unwrap();
@@ -259,7 +259,7 @@ mod tests {
     #[test]
     fn test_write_to_file() {
         let mut db = Database::default();
-        db.execute_create(&Command::create_table("example").indexed_column("id", Type::NUMBER).column("content", Type::TEXT));
+        db.execute_create(&Definition::relation("example").indexed_attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
         db.execute_query(&Query::tuple(&[("id", "1"), ("content", "test")]).insert_into("example")).unwrap();
 
         let mut persist = TempFilePersist::new();

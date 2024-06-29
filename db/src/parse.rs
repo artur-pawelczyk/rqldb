@@ -1,4 +1,4 @@
-use crate::dsl::{Command, Query, Operator, AttrKind, TupleAttr, TupleBuilder, IntoTuple};
+use crate::dsl::{Definition, Query, Operator, AttrKind, TupleAttr, TupleBuilder, IntoTuple};
 use crate::schema::Type;
 use crate::tokenize::{Token, Tokenizer, TokenizerError};
 
@@ -212,9 +212,9 @@ fn expect_pipe_or_end(tokenizer: &mut Tokenizer) -> Result<(), ParseError> {
     }
 }
 
-pub fn parse_command(source: &str) -> Result<Command, ParseError> {
+pub fn parse_definition(source: &str) -> Result<Definition, ParseError> {
     let mut tokenizer = Tokenizer::new(source);
-    let mut command = Command::create_table("");
+    let mut command = Definition::relation("");
 
     loop {
         let token = tokenizer.next()?;
@@ -225,13 +225,13 @@ pub fn parse_command(source: &str) -> Result<Command, ParseError> {
                         Token::Symbol(name, _) => name,
                         _ => return Err(ParseError::msg("Expected table name"))
                     };
-                    command = Command::create_table(name);
+                    command = Definition::relation(name);
 
                     loop {
                         let arg = tokenizer.next()?;
                         match arg {
-                            Token::SymbolWithType(name, kind, _) => { command = command.column(name, str_to_type(kind)?); },
-                            Token::SymbolWithKeyType(name, kind, _) => { command = command.indexed_column(name, str_to_type(kind)?); },
+                            Token::SymbolWithType(name, kind, _) => { command = command.attribute(name, str_to_type(kind)?); },
+                            Token::SymbolWithKeyType(name, kind, _) => { command = command.indexed_attribute(name, str_to_type(kind)?); },
                             Token::End(_) => break,
                             _ => return Err(ParseError::msg("Expected a symbol with a type")),
                         }
@@ -312,28 +312,28 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_command() {
-        assert_parse_command("create_table example id::NUMBER content::TEXT");
-        assert_parse_command("create_table example id::NUMBER::KEY content::TEXT");
+    fn test_parse_definition() {
+        assert_parse_definition("create_table example id::NUMBER content::TEXT");
+        assert_parse_definition("create_table example id::NUMBER::KEY content::TEXT");
     }
 
     #[test]
-    fn test_fails_parse_command() {
+    fn test_fails_parse_definition() {
         // TODO: "create_table" -> "relation" without "create"
-        assert_parse_command_fails("create_someting example");
-        assert_parse_command_fails("| create_table example");
-        assert_parse_command_fails("create_table int::NUMBER example contents::TEXT");
-        assert_parse_command_fails("create_table example int::NUMBER | contents::TEXT");
-        assert_parse_command_fails("create_table example int::NUMBER something contents::TEXT");
+        assert_parse_definition_fails("create_someting example");
+        assert_parse_definition_fails("| create_table example");
+        assert_parse_definition_fails("create_table int::NUMBER example contents::TEXT");
+        assert_parse_definition_fails("create_table example int::NUMBER | contents::TEXT");
+        assert_parse_definition_fails("create_table example int::NUMBER something contents::TEXT");
     }
 
-    fn assert_parse_command(command: &str) {
-        let parsed = parse_command(dbg!(command));
+    fn assert_parse_definition(command: &str) {
+        let parsed = parse_definition(dbg!(command));
         assert_eq!(parsed.unwrap().to_string(), command);
     }
 
-    fn assert_parse_command_fails(command: &str) {
-        let parsed = parse_command(command);
+    fn assert_parse_definition_fails(command: &str) {
+        let parsed = parse_definition(command);
         assert!(parsed.is_err());
     }
 }

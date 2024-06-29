@@ -358,28 +358,28 @@ fn write_attrs(f: &mut fmt::Formatter, attrs: &[TupleAttr<'_>]) -> fmt::Result {
 }
 
 #[derive(Eq, PartialEq, Debug)]
-pub struct Command {
+pub struct Definition {
     pub name: String,
     pub columns: Vec<Column>
 }
 
-impl Command {
-    pub fn create_table(name: &str) -> Self {
-        Command{name: name.to_string(), columns: Vec::new()}
+impl Definition {
+    pub fn relation(name: &str) -> Self {
+        Definition{name: name.to_string(), columns: Vec::new()}
     }
 
-    pub fn column(mut self, name: &str, kind: Type) -> Self {
+    pub fn attribute(mut self, name: &str, kind: Type) -> Self {
         self.columns.push(Column{ name: name.to_string(), kind, indexed: false });
         self
     }
 
-    pub fn indexed_column(mut self, name: &str, kind: Type) -> Self {
+    pub fn indexed_attribute(mut self, name: &str, kind: Type) -> Self {
         self.columns.push(Column{ name: name.to_string(), kind, indexed: true });
         self
     }
 }
 
-impl fmt::Display for Command {
+impl fmt::Display for Definition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "create_table {} ", self.name)?;
         let mut i = self.columns.iter().peekable();
@@ -473,9 +473,9 @@ mod tests {
 
     #[test]
     fn create_table() {
-        let query = Command::create_table("example")
-            .indexed_column("id", Type::NUMBER)
-            .column("contents", Type::TEXT);
+        let query = Definition::relation("example")
+            .indexed_attribute("id", Type::NUMBER)
+            .attribute("contents", Type::TEXT);
 
         assert_eq!("create_table example id::NUMBER::KEY contents::TEXT", query.to_string());
     }

@@ -72,16 +72,16 @@ pub(crate) struct Column {
 mod tests {
     use std::{io::Cursor, iter::zip};
 
-    use rqldb::{Type, Database, Command};
+    use rqldb::{Type, Database, Definition};
 
     use super::*;
 
     #[test]
     fn test_serialize_schema() {
         let mut db = Database::default();
-        db.execute_create(&Command::create_table("example")
-                          .indexed_column("id", Type::NUMBER)
-                          .column("content", Type::TEXT));
+        db.execute_create(&Definition::relation("example")
+                          .indexed_attribute("id", Type::NUMBER)
+                          .attribute("content", Type::TEXT));
 
         let mut out = Vec::new();
         write_schema(&mut out, db.schema()).unwrap();
