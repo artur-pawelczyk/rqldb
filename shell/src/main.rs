@@ -61,22 +61,25 @@ fn main() {
 struct Shell {
     persist: Box<dyn Persist>,
     db: Database,
+    last_result: Option<QueryResults>,
 }
 
 impl Default for Shell {
     fn default() -> Self {
-        Self{
+        Self {
             persist: Box::new(NoOpPersist),
             db: Database::default(),
+            last_result: None,
         }
     }
 }
 
 impl Shell {
     fn db_file(s: &str) -> Self {
-        let instance = Self{
+        let instance = Self {
             persist: Box::new(FilePersist::new(Path::new(s))),
             db: Database::default(),
+            last_result: None,
         };
 
         instance.restore().unwrap()
@@ -99,6 +102,10 @@ impl Shell {
                 } else {
                     self.dump_relation(args);
                 }
+            } else if cmd == "print" {
+                if let Some(result) = &self.last_result {
+                    print_result(&result);
+                }
             } else if cmd == "quit" {
                 std::process::exit(0);
             }
@@ -109,7 +116,10 @@ impl Shell {
                 };
 
                 match self.db.execute_query(&query) {
-                    Result::Ok(response) => if output { print_result(&response) },
+                    Result::Ok(response) => if output {
+                        print_result(&response);
+                        self.last_result.replace(response);
+                    },
                     Result::Err(err) => println!("{}", err),
                 }
         }
@@ -117,9 +127,10 @@ impl Shell {
 
     fn restore(self) -> Result<Self, Box<dyn Error>> {
         let new_db = self.persist.read(self.db)?;
-        Ok(Self{
+        Ok(Self {
             db: new_db,
             persist: self.persist,
+            last_result: None,
         })
     }
 

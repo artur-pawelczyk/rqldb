@@ -10,12 +10,11 @@ pub mod dump;
 mod bytes;
 
 use core::fmt;
-use std::cell::{RefCell, RefMut};
 use std::cmp::Ordering;
 use std::iter::zip;
 
 use object::{Attribute, NamedAttribute as _};
-use bytes::{IntoBytes as _};
+use bytes::IntoBytes as _;
 
 pub use crate::schema::Type;
 pub use crate::db::Database;
@@ -25,7 +24,7 @@ pub use crate::object::RawObjectView;
 
 pub struct QueryResults {
     attributes: Vec<ResultAttribute>,
-    results: RefCell<Box<dyn Iterator<Item = Vec<u8>>>>,
+    results: Vec<Vec<u8>>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -58,7 +57,7 @@ impl PartialEq<str> for ResultAttribute {
 #[derive(Debug)]
 pub struct Tuple<'a> {
     attributes: &'a [ResultAttribute],
-    contents: Vec<u8>,
+    contents: &'a [u8],
 }
 
 impl<'a> Tuple<'a> {
@@ -223,12 +222,12 @@ impl QueryResults {
         let tuple = val.into().to_byte_vec();
         Self {
             attributes: vec![ResultAttribute { name: Box::from(name), kind: Type::NUMBER }],
-            results: RefCell::new(Box::new(std::iter::once(tuple)))
+            results: vec![tuple],
         }
     }
 
     pub(crate) fn empty() -> Self {
-        Self{ attributes: vec![], results: RefCell::new(Box::new(std::iter::empty())) }
+        Self { attributes: vec![], results: Vec::new() }
     }
 
     pub fn attributes(&self) -> &[ResultAttribute] {
@@ -238,22 +237,26 @@ impl QueryResults {
     pub fn tuples(&self) -> Tuples {
         Tuples {
             attributes: &self.attributes,
-            contents: self.results.borrow_mut(),
+            contents: &self.results
         }
     }
 }
 
 pub struct Tuples<'a> {
     attributes: &'a [ResultAttribute],
-    contents: RefMut<'a, Box<dyn Iterator<Item = Vec<u8>>>>,
+    contents: &'a [Vec<u8>],
 }
 
 impl<'a> Iterator for Tuples<'a> {
     type Item = Tuple<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.contents.next().map(|cells| {
-            Tuple { attributes: self.attributes, contents: cells }
-        })
+        if let Some(bytes) = self.contents.get(0) {
+            let tuple = Tuple { attributes: self.attributes, contents: bytes };
+            self.contents = &self.contents[1..];
+            Some(tuple)
+        } else {
+            None
+        }
     }
 }

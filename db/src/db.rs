@@ -230,7 +230,7 @@ impl<'a> Sink<'a> {
             Self::Return(attributes, results) => {
                 QueryResults{
                     attributes: attributes.iter().map(ResultAttribute::from).collect(),
-                    results: RefCell::new(Box::new(results.into_iter())),
+                    results,
                 }
             }
             Self::Insert(_) => QueryResults::empty(),
@@ -463,8 +463,9 @@ mod tests {
         db.execute_plan(Plan::insert(obj, &["1", "new content"])).unwrap();
 
         let result = db.execute_plan(Plan::scan(obj)).unwrap();
-        assert_eq!(result.tuples().next().unwrap().element("document.content").unwrap().to_string(), "new content");
-        assert!(result.tuples().next().is_none());
+        let mut tuples = result.tuples();
+        assert_eq!(tuples.next().unwrap().element("document.content").unwrap().to_string(), "new content");
+        assert!(tuples.next().is_none());
     }
 
     #[test]
