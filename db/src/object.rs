@@ -214,6 +214,7 @@ impl TempObject {
         self.values.len()
     }
 
+    #[cfg(test)]
     pub(crate) fn attributes(&self) -> impl Iterator<Item = &Attribute> {
         self.attrs.iter()
     }

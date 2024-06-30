@@ -11,7 +11,7 @@ mod bytes;
 
 use core::fmt;
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::iter::zip;
 
 use object::{Attribute, NamedAttribute as _};
@@ -273,19 +273,6 @@ impl<'a> Iterator for Tuples<'a> {
         } else {
             None
         }
-    }
-}
-
-struct SortedTuples<'a> {
-    attributes: &'a [ResultAttribute],
-    contents: BTreeMap<Vec<u8>, &'a [u8]>, // TODO: Replace Vec<u8> with [u8]
-}
-
-impl<'a> Iterator for SortedTuples<'a> {
-    type Item = Tuple<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.contents.pop_first().map(|(_, bytes)| Tuple { attributes: &self.attributes, contents: bytes })
     }
 }
 
