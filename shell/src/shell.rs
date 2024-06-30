@@ -37,7 +37,7 @@ impl Shell {
 
     fn simple_output(self) -> Self {
         Self {
-            result_printer: Box::new(TablePrinter),
+            result_printer: Box::new(SimplePrinter),
             ..self
         }
     }
@@ -55,9 +55,9 @@ impl Shell {
                 self.db.define(&command);
             } else if cmd == "dump" {
                 if args.is_empty() {
-                    self.dump_all_relations();
+                    self.dump_all_relations(output);
                 } else {
-                    self.dump_relation(args);
+                    self.dump_relation(args, output);
                 }
             } else if cmd == "print" {
                 if let Some(result) = &self.last_result {
@@ -100,14 +100,14 @@ impl Shell {
         })
     }
 
-    fn dump_relation(&self, name: &str) {
-        if let Err(e) = self.db.dump(name, &mut StandardOut) {
+    fn dump_relation(&self, name: &str, output: &mut impl fmt::Write) {
+        if let Err(e) = self.db.dump(name, output) {
             println!("{e}");
         }
     }
 
-    fn dump_all_relations(&self) {
-        if let Err(e) = self.db.dump_all(&mut StandardOut) {
+    fn dump_all_relations(&self, output: &mut impl fmt::Write) {
+        if let Err(e) = self.db.dump_all(output) {
             println!("{e}");
         }
     }
@@ -192,13 +192,33 @@ impl fmt::Write for NilOut {
 
 #[cfg(test)]
 mod tests {
+    use rqldb::{Definition, Query, Type};
+
     use super::*;
 
     #[test]
     fn test_dump() {
         let mut shell = Shell::default().simple_output();
+        shell.db.define(&Definition::relation("example").attribute("id", Type::NUMBER));
+
         let mut s = String::new();
         shell.handle_input(".dump", &mut s);
-        assert_eq!(s, "");
+        assert_eq!(s.trim(), ".define relation example id::NUMBER");
+    }
+
+    #[test]
+    fn test_print_results() {
+        let mut shell = Shell::default().simple_output();
+        shell.db.define(&Definition::relation("document")
+                        .indexed_attribute("id", Type::NUMBER)
+                        .attribute("content", Type::TEXT));
+        shell.db.execute_query(&Query::tuple(&[("id", "1"), ("content", "example")])
+                               .insert_into("document")).unwrap();
+
+        let mut s = String::new();
+        shell.handle_input("scan document", &mut s);
+        assert_eq!(s.trim(), "
+document.id = 1
+document.content = example".trim());
     }
 }

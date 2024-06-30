@@ -33,8 +33,8 @@ impl Database {
         }
     }
 
-    pub fn define(&mut self, command: &dsl::Definition) {
-        let table = command.columns.iter().fold(self.schema.create_table(&command.name), |acc, col| {
+    pub fn define(&mut self, definition: &dsl::Definition) {
+        let table = definition.columns.iter().fold(self.schema.create_table(&definition.name), |acc, col| {
             if col.indexed {
                 acc.indexed_column(&col.name, col.kind)
             } else {
