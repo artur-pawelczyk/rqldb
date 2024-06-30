@@ -32,7 +32,7 @@ impl Shell {
         instance.restore().unwrap()
     }
 
-    pub(crate) fn handle_input(&mut self, input: &str, output: bool) {
+    pub(crate) fn handle_input(&mut self, input: &str, output: &mut impl fmt::Write) {
         if input.is_empty() {
         } else if let Some((cmd, args)) = maybe_read_command(input) {
             if cmd == "save" {
@@ -51,7 +51,7 @@ impl Shell {
                 }
             } else if cmd == "print" {
                 if let Some(result) = &self.last_result {
-                    print_result(&result);
+                    print_result(&result, &mut StandardOut);
                 }
             } else if cmd == "quit" {
                 std::process::exit(0);
@@ -63,8 +63,8 @@ impl Shell {
                 };
 
                 match self.db.execute_query(&query) {
-                    Result::Ok(response) => if output {
-                        print_result(&response);
+                    Result::Ok(response) => {
+                        print_result(&response, output);
                         self.last_result.replace(response);
                     },
                     Result::Err(err) => println!("{}", err),
@@ -117,7 +117,7 @@ fn maybe_read_command(input: &str) -> Option<(&str, &str)> {
     }
 }
 
-fn print_result(result: &QueryResults) {
+fn print_result(result: &QueryResults, f: &mut impl fmt::Write) {
     let mut table = Table::new();
     for attr in result.attributes() {
         table.add_title_cell(attr.name());
@@ -131,14 +131,34 @@ fn print_result(result: &QueryResults) {
         row.add();
     }
 
-    println!("{}", table);
+    writeln!(f, "{}", table).unwrap();
 }
 
 
-struct StandardOut;
+pub(crate) struct StandardOut;
 impl fmt::Write for StandardOut {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        println!("{}", s);
+        print!("{}", s);
         Ok(())
+    }
+}
+
+pub(crate) struct NilOut;
+impl fmt::Write for NilOut {
+    fn write_str(&mut self, _: &str) -> fmt::Result {
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_dump() {
+        let mut shell = Shell::default();
+        let mut s = String::new();
+        shell.handle_input(".dump", &mut s);
+        assert_eq!(s, "");
     }
 }

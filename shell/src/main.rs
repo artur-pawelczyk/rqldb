@@ -2,7 +2,7 @@ mod shell;
 mod table;
 
 use rustyline::config::Configurer;
-use shell::Shell;
+use shell::{NilOut, Shell, StandardOut};
 
 use rustyline::Editor;
 use clap::Parser;
@@ -36,19 +36,19 @@ fn main() {
         let mut file = File::open(Path::new(&path)).unwrap();
         file.read_to_string(&mut contents).unwrap();
         for line in contents.split('\n') {
-            shell.handle_input(line.trim(), false);
+            shell.handle_input(line.trim(), &mut NilOut);
         }
     }
 
     if let Some(command) = args.command {
-        shell.handle_input(&command, true);
+        shell.handle_input(&command, &mut StandardOut);
     } else {
         let mut editor = Editor::<()>::new();
         editor.set_auto_add_history(true);
 
         loop {
             match editor.readline("query> ") {
-                Ok(line) => shell.handle_input(&line, true),
+                Ok(line) => shell.handle_input(&line, &mut StandardOut),
                 Err(e) => { println!("{:?}", e); break; }
             }
         }
