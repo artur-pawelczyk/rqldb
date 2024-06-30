@@ -9,6 +9,7 @@ pub(crate) struct Shell {
     persist: Box<dyn Persist>,
     db: Database,
     last_result: Option<QueryResults>,
+    result_printer: Box<dyn ResultPrinter>,
 }
 
 impl Default for Shell {
@@ -17,6 +18,7 @@ impl Default for Shell {
             persist: Box::new(NoOpPersist),
             db: Database::default(),
             last_result: None,
+            result_printer: Box::new(TablePrinter),
         }
     }
 }
@@ -27,9 +29,17 @@ impl Shell {
             persist: Box::new(FilePersist::new(Path::new(s))),
             db: Database::default(),
             last_result: None,
+            result_printer: Box::new(TablePrinter),
         };
 
         instance.restore().unwrap()
+    }
+
+    fn simple_output(self) -> Self {
+        Self {
+            result_printer: Box::new(TablePrinter),
+            ..self
+        }
     }
 
     pub(crate) fn handle_input(&mut self, input: &str, output: &mut impl fmt::Write) {
@@ -51,8 +61,16 @@ impl Shell {
                 }
             } else if cmd == "print" {
                 if let Some(result) = &self.last_result {
-                    print_result(&result, &mut StandardOut);
+                    self.result_printer.print_result(&result, &mut StandardOut).unwrap();
                 }
+            } else if cmd == "output" {
+                let printer: Box<dyn ResultPrinter> = match args {
+                    "simple" => Box::new(SimplePrinter),
+                    "table" => Box::new(TablePrinter),
+                    _ => { println!("No such output type"); return; },
+                };
+
+                self.result_printer = printer;
             } else if cmd == "quit" {
                 std::process::exit(0);
             }
@@ -64,7 +82,7 @@ impl Shell {
 
                 match self.db.execute_query(&query) {
                     Result::Ok(response) => {
-                        print_result(&response, output);
+                        self.result_printer.print_result(&response, output).unwrap();
                         self.last_result.replace(response);
                     },
                     Result::Err(err) => println!("{}", err),
@@ -78,6 +96,7 @@ impl Shell {
             db: new_db,
             persist: self.persist,
             last_result: None,
+            result_printer: Box::new(TablePrinter),
         })
     }
 
@@ -117,23 +136,44 @@ fn maybe_read_command(input: &str) -> Option<(&str, &str)> {
     }
 }
 
-fn print_result(result: &QueryResults, f: &mut impl fmt::Write) {
-    let mut table = Table::new();
-    for attr in result.attributes() {
-        table.add_title_cell(attr.name());
-    }
-
-    for res_row in result.tuples() {
-        let mut row = table.row();
-        for attr in result.attributes() {
-            row = row.cell(res_row.element(attr.name()).unwrap());
-        }
-        row.add();
-    }
-
-    writeln!(f, "{}", table).unwrap();
+trait ResultPrinter {
+    fn print_result(&self, result: &QueryResults, f: &mut dyn fmt::Write) -> Result<(), fmt::Error>;
 }
 
+struct TablePrinter;
+impl ResultPrinter for TablePrinter {
+    fn print_result(&self, result: &QueryResults, f: &mut dyn fmt::Write) -> Result<(), fmt::Error> {
+        let mut table = Table::new();
+        for attr in result.attributes() {
+            table.add_title_cell(attr.name());
+        }
+
+        for res_row in result.tuples() {
+            let mut row = table.row();
+            for attr in result.attributes() {
+                row = row.cell(res_row.element(attr.name()).unwrap());
+            }
+            row.add();
+        }
+
+        writeln!(f, "{}", table)
+    }
+}
+
+struct SimplePrinter;
+impl ResultPrinter for SimplePrinter {
+    fn print_result(&self, result: &QueryResults, f: &mut dyn fmt::Write) -> Result<(), fmt::Error> {
+        let attributes = result.attributes();
+        for tuple in result.tuples() {
+            for attr in attributes {
+                writeln!(f, "{} = {}", attr.name(), tuple.element(attr.name()).unwrap())?;
+            }
+            writeln!(f)?;
+        }
+
+        Ok(())
+    }
+}
 
 pub(crate) struct StandardOut;
 impl fmt::Write for StandardOut {
@@ -156,7 +196,7 @@ mod tests {
 
     #[test]
     fn test_dump() {
-        let mut shell = Shell::default();
+        let mut shell = Shell::default().simple_output();
         let mut s = String::new();
         shell.handle_input(".dump", &mut s);
         assert_eq!(s, "");
