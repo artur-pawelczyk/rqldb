@@ -11,6 +11,7 @@ mod bytes;
 
 use core::fmt;
 use std::cmp::Ordering;
+use std::collections::{BTreeMap, BTreeSet};
 use std::iter::zip;
 
 use object::{Attribute, NamedAttribute as _};
@@ -240,8 +241,22 @@ impl QueryResults {
             contents: &self.results
         }
     }
+
+    pub fn sort(self, attr: &str) -> Self {
+        let sorted_contents: BTreeMap<_, _> = self.results.into_iter().map(|bytes| {
+            let tuple = Tuple { attributes: &self.attributes, contents: &bytes };
+            let elem = tuple.element(attr).unwrap();
+            (elem.as_bytes().to_vec(), bytes)
+        }).collect();
+
+        Self {
+            attributes: self.attributes,
+            results: sorted_contents.into_iter().map(|(_, v)| v).collect()
+        }
+    }
 }
 
+// TODO: Make private
 pub struct Tuples<'a> {
     attributes: &'a [ResultAttribute],
     contents: &'a [Vec<u8>],
@@ -258,5 +273,48 @@ impl<'a> Iterator for Tuples<'a> {
         } else {
             None
         }
+    }
+}
+
+struct SortedTuples<'a> {
+    attributes: &'a [ResultAttribute],
+    contents: BTreeMap<Vec<u8>, &'a [u8]>, // TODO: Replace Vec<u8> with [u8]
+}
+
+impl<'a> Iterator for SortedTuples<'a> {
+    type Item = Tuple<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.contents.pop_first().map(|(_, bytes)| Tuple { attributes: &self.attributes, contents: bytes })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use self::object::TempObject;
+    use self::schema::Schema;
+
+    use super::*;
+
+    #[test]
+    fn test_sort_results() {
+        let mut schema = Schema::default();
+        schema.create_table("document")
+            .column("id", Type::NUMBER)
+            .column("size", Type::NUMBER)
+            .add();
+
+        let mut obj = TempObject::from_relation(schema.find_relation("document").unwrap());
+        obj.push_str(&["1", "123"]);
+        obj.push_str(&["2", "2"]);
+
+        let result = QueryResults {
+            attributes: obj.attributes().map(ResultAttribute::from).collect(),
+            results: obj.iter().map(|tuple| tuple.raw_bytes().to_vec()).collect(),
+        };
+
+        let sorted = result.sort("document.size");
+        let first = sorted.tuples().next().unwrap();
+        assert_eq!(first.element("document.size").unwrap().to_string(), "2");
     }
 }

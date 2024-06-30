@@ -213,6 +213,10 @@ impl TempObject {
     pub fn len(&self) -> usize {
         self.values.len()
     }
+
+    pub(crate) fn attributes(&self) -> impl Iterator<Item = &Attribute> {
+        self.attrs.iter()
+    }
 }
 
 pub(crate) struct TupleBuilder {

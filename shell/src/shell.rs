@@ -50,7 +50,7 @@ impl Shell {
             } else if cmd == "define" {
                 let command = match parse_definition(args) {
                     Ok(x) => x,
-                    Err(error) => { println!("{}", error); return; }
+                    Err(error) => { write!(output, "{}", error).unwrap(); return; }
                 };
                 self.db.define(&command);
             } else if cmd == "dump" {
@@ -61,7 +61,13 @@ impl Shell {
                 }
             } else if cmd == "print" {
                 if let Some(result) = &self.last_result {
-                    self.result_printer.print_result(&result, &mut StandardOut).unwrap();
+                    self.result_printer.print_result(&result, output).unwrap();
+                }
+            } else if cmd == "sort" {
+                if let Some(result) = self.last_result.take() {
+                    let sorted = result.sort(args);
+                    self.result_printer.print_result(&sorted, output).unwrap();
+                    self.last_result = Some(sorted);
                 }
             } else if cmd == "output" {
                 let printer: Box<dyn ResultPrinter> = match args {
@@ -85,7 +91,7 @@ impl Shell {
                         self.result_printer.print_result(&response, output).unwrap();
                         self.last_result.replace(response);
                     },
-                    Result::Err(err) => println!("{}", err),
+                    Result::Err(err) => write!(output, "{}", err).unwrap(),
                 }
         }
     }
@@ -220,5 +226,32 @@ mod tests {
         assert_eq!(s.trim(), "
 document.id = 1
 document.content = example".trim());
+    }
+
+    #[test]
+    fn test_sort() {
+        let mut shell = Shell::default().simple_output();
+        shell.db.define(&Definition::relation("document")
+                        .indexed_attribute("id", Type::NUMBER)
+                        .attribute("content", Type::TEXT)
+                        .attribute("size", Type::NUMBER));
+
+        shell.db.execute_query(&Query::tuple(&[("id", "1"), ("content", "example"), ("size", "123")])
+                               .insert_into("document")).unwrap();
+        shell.db.execute_query(&Query::tuple(&[("id", "2"), ("content", "example"), ("size", "2")])
+                               .insert_into("document")).unwrap();
+
+        shell.handle_input("scan document", &mut String::new());
+
+        let mut s = String::new();
+        shell.handle_input(".sort document.size", &mut s);
+        assert_eq!(s.trim(), "
+document.id = 2
+document.content = example
+document.size = 2
+
+document.id = 1
+document.content = example
+document.size = 123".trim());
     }
 }
