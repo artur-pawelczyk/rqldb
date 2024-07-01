@@ -12,6 +12,7 @@ mod bytes;
 use core::fmt;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
+use std::error::Error;
 use std::iter::zip;
 
 use object::{Attribute, NamedAttribute as _};
@@ -242,17 +243,18 @@ impl QueryResults {
         }
     }
 
-    pub fn sort(self, attr: &str) -> Self {
-        let sorted_contents: BTreeMap<_, _> = self.results.into_iter().map(|bytes| {
-            let tuple = Tuple { attributes: &self.attributes, contents: &bytes };
-            let elem = tuple.element(attr).unwrap();
-            (elem.as_bytes().to_vec(), bytes)
-        }).collect();
+    pub fn sort(self, attr: &str) -> Result<Self, SortError> {
+        let mut sorted_contents = BTreeMap::new();
+        for byte_tuple in self.results.into_iter() {
+            let tuple = Tuple { attributes: &self.attributes, contents: &byte_tuple };
+            let elem = tuple.element(attr).ok_or_else(|| SortError { missing_attribute: Box::from(attr) })?;
+            sorted_contents.insert(elem.as_bytes().to_vec(), byte_tuple);
+        }
 
-        Self {
+        Ok(Self {
             attributes: self.attributes,
             results: sorted_contents.into_iter().map(|(_, v)| v).collect()
-        }
+        })
     }
 }
 
@@ -273,6 +275,18 @@ impl<'a> Iterator for Tuples<'a> {
         } else {
             None
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct SortError {
+    missing_attribute: Box<str>,
+}
+
+impl Error for SortError {}
+impl fmt::Display for SortError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Missing attribute for sort: {}", self.missing_attribute)
     }
 }
 
@@ -300,7 +314,7 @@ mod tests {
             results: obj.iter().map(|tuple| tuple.raw_bytes().to_vec()).collect(),
         };
 
-        let sorted = result.sort("document.size");
+        let sorted = result.sort("document.size").unwrap();
         let first = sorted.tuples().next().unwrap();
         assert_eq!(first.element("document.size").unwrap().to_string(), "2");
     }

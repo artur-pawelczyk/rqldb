@@ -65,9 +65,15 @@ impl Shell {
                 }
             } else if cmd == "sort" {
                 if let Some(result) = self.last_result.take() {
-                    let sorted = result.sort(args);
-                    self.result_printer.print_result(&sorted, output).unwrap();
-                    self.last_result = Some(sorted);
+                    match result.sort(args) {
+                        Result::Ok(sorted) => {
+                            self.result_printer.print_result(&sorted, output).unwrap();
+                            self.last_result = Some(sorted);
+                        },
+                        Result::Err(err) => {
+                            writeln!(output, "{err}").unwrap();
+                        },
+                    }
                 }
             } else if cmd == "output" {
                 let printer: Box<dyn ResultPrinter> = match args {
@@ -253,5 +259,21 @@ document.size = 2
 document.id = 1
 document.content = example
 document.size = 123".trim());
+    }
+
+    #[test]
+    fn test_sort_missing_attribute() {
+        let mut shell = Shell::default().simple_output();
+        shell.db.define(&Definition::relation("document")
+                        .indexed_attribute("id", Type::NUMBER)
+                        .attribute("content", Type::TEXT));
+        shell.db.execute_query(&Query::tuple(&[("id", "1"), ("content", "example")])
+                               .insert_into("document")).unwrap();
+
+        shell.handle_input("scan document", &mut String::new());
+
+        let mut s = String::new();
+        shell.handle_input(".sort document.size", &mut s);
+        assert_eq!(s.trim(), "Missing attribute for sort: document.size");
     }
 }
