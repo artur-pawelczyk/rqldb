@@ -8,8 +8,8 @@ use crate::table::Table;
 pub(crate) struct Shell {
     persist: Box<dyn Persist>,
     db: Database,
-    last_result: Option<QueryResults>,
-    result_printer: Box<dyn ResultPrinter>,
+    result_printer: Box<dyn ResultPrinter>, // TODO: Remove
+    sort: Option<Box<str>>,
 }
 
 impl Default for Shell {
@@ -17,8 +17,8 @@ impl Default for Shell {
         Self {
             persist: Box::new(NoOpPersist),
             db: Database::default(),
-            last_result: None,
             result_printer: Box::new(TablePrinter),
+            sort: None,
         }
     }
 }
@@ -28,8 +28,8 @@ impl Shell {
         let instance = Self {
             persist: Box::new(FilePersist::new(Path::new(s))),
             db: Database::default(),
-            last_result: None,
             result_printer: Box::new(TablePrinter),
+            sort: None,
         };
 
         instance.restore().unwrap()
@@ -59,22 +59,8 @@ impl Shell {
                 } else {
                     self.dump_relation(args, output);
                 }
-            } else if cmd == "print" {
-                if let Some(result) = &self.last_result {
-                    self.result_printer.print_result(&result, output).unwrap();
-                }
             } else if cmd == "sort" {
-                if let Some(result) = self.last_result.take() {
-                    match result.sort(args) {
-                        Result::Ok(sorted) => {
-                            self.result_printer.print_result(&sorted, output).unwrap();
-                            self.last_result = Some(sorted);
-                        },
-                        Result::Err(err) => {
-                            writeln!(output, "{err}").unwrap();
-                        },
-                    }
-                }
+                self.sort = if args.trim().is_empty() { None } else { Some(Box::from(args)) };
             } else if cmd == "output" {
                 let printer: Box<dyn ResultPrinter> = match args {
                     "simple" => Box::new(SimplePrinter),
@@ -93,11 +79,17 @@ impl Shell {
                 };
 
                 match self.db.execute_query(&query) {
-                    Result::Ok(response) => {
-                        self.result_printer.print_result(&response, output).unwrap();
-                        self.last_result.replace(response);
+                    Result::Ok(result) => {
+                        if let Some(sort_attr) = &self.sort {
+                            match result.sort(sort_attr) {
+                                Result::Ok(sorted) => { self.result_printer.print_result(&sorted, output).unwrap() },
+                                Result::Err(err) => { writeln!(output, "{err}").unwrap(); },
+                            }
+                        } else {
+                            self.result_printer.print_result(&result, output).unwrap();
+                        }
                     },
-                    Result::Err(err) => write!(output, "{}", err).unwrap(),
+                    Result::Err(err) => writeln!(output, "{}", err).unwrap(),
                 }
         }
     }
@@ -107,8 +99,8 @@ impl Shell {
         Ok(Self {
             db: new_db,
             persist: self.persist,
-            last_result: None,
             result_printer: Box::new(TablePrinter),
+            sort: None,
         })
     }
 
@@ -247,10 +239,10 @@ document.content = example".trim());
         shell.db.execute_query(&Query::tuple(&[("id", "2"), ("content", "example"), ("size", "2")])
                                .insert_into("document")).unwrap();
 
-        shell.handle_input("scan document", &mut String::new());
 
         let mut s = String::new();
-        shell.handle_input(".sort document.size", &mut s);
+        shell.handle_input(".sort document.size", &mut NilOut);
+        shell.handle_input("scan document", &mut s);
         assert_eq!(s.trim(), "
 document.id = 2
 document.content = example
@@ -270,10 +262,10 @@ document.size = 123".trim());
         shell.db.execute_query(&Query::tuple(&[("id", "1"), ("content", "example")])
                                .insert_into("document")).unwrap();
 
-        shell.handle_input("scan document", &mut String::new());
-
         let mut s = String::new();
-        shell.handle_input(".sort document.size", &mut s);
+        shell.handle_input(".sort document.size", &mut NilOut);
+        shell.handle_input("scan document", &mut s);
+
         assert_eq!(s.trim(), "Missing attribute for sort: document.size");
     }
 }
