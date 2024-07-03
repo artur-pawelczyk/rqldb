@@ -344,8 +344,8 @@ fn compute_joins(plan: Plan, db: &Database, query: &dsl::Query) -> Result<Plan> 
     }.and_then(|name| db.object(*name)).ok_or("Relation {name} not found")?;
 
     for join_source in &query.join_sources {
-        let joiner = db.object(join_source.table)
-            .ok_or_else(|| format!("Relation {} not found", join_source.table))?;
+        let joiner = db.object(join_source.right) // TODO: Make it "left" or both "left" and "right"
+            .ok_or_else(|| format!("Relation {} not found", join_source.left))?;
 
         if let Some(joinee_key) = joinee.borrow().attributes().find(|a| a == join_source.left).map(|a| a.reference) {
             if let Some(joiner_key) = joiner.borrow().attributes().find(|a| a == join_source.right).map(|a| a.reference) {
@@ -354,7 +354,7 @@ fn compute_joins(plan: Plan, db: &Database, query: &dsl::Query) -> Result<Plan> 
                     joinee_key, joiner_key
                 })
             } else {
-                return Err(format!("Joiner: {} attribute not found", join_source.right))
+                return Err(format!("Attribute {} joiner in {} not found", join_source.right, joiner.borrow().name()))
             }
         } else {
             return Err(format!("Joinee: {} attribute not found", join_source.left))
@@ -448,19 +448,19 @@ mod tests {
                           .attribute("id", Type::NUMBER)
                           .attribute("name", Type::TEXT));
 
-        let query = dsl::Query::scan("document").join("type", "document.type_id", "type.id");
+        let query = dsl::Query::scan("document").join("document.type_id", "type.id");
         let plan = compute_plan(&db, &query).unwrap();
         assert_eq!(attribute_names(&plan.final_attributes()), BTreeSet::from(["document.name", "document.type_id", "type.id", "type.name"]));
 
-        let query = dsl::Query::scan("nothing").join("type", "a", "b");
+        let query = dsl::Query::scan("nothing").join("a", "b");
         let missing_source_table = compute_plan(&db, &query);
         assert!(missing_source_table.is_err());
 
-        let query = dsl::Query::scan("document").join("nothing", "a", "b");
+        let query = dsl::Query::scan("document").join("a", "b");
         let missing_table = compute_plan(&db, &query);
         assert!(missing_table.is_err());
 
-        let query = dsl::Query::scan("document").join("type", "something", "else");
+        let query = dsl::Query::scan("document").join("something", "else");
         let missing_column = compute_plan(&db, &query);
         assert!(missing_column.is_err());
     }
@@ -474,8 +474,8 @@ mod tests {
         let db = Database::with_schema(schema);
 
         let query = dsl::Query::scan("document")
-            .join("type", "document.type_id", "type.id")
-            .join("author", "document.author", "author.username");
+            .join("document.type_id", "type.id")
+            .join("document.author", "author.username");
         let plan = compute_plan(&db, &query).unwrap();
 
         assert_eq!(
@@ -491,7 +491,7 @@ mod tests {
         schema.create_table("type").column("id", Type::NUMBER).column("name", Type::TEXT).add();
         let db = Database::with_schema(schema);
 
-        let filter = expect_filter(compute_plan(&db, &dsl::Query::scan("document").join("type", "document.type_id", "type.id").filter("type.name", EQ, "b")));
+        let filter = expect_filter(compute_plan(&db, &dsl::Query::scan("document").join("document.type_id", "type.id").filter("type.name", EQ, "b")));
         assert_eq!(filter.attribute.name(), "type.name");
     }
 

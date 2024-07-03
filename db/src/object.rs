@@ -13,6 +13,7 @@ type ByteTuple = Vec<u8>;
 #[derive(Default)]
 pub(crate) struct IndexedObject {
     id: usize,
+    name: Box<str>,
     pub(crate) tuples: Vec<ByteTuple>,
     pub(crate) attrs: Vec<Attribute>,
     index: Index,
@@ -26,6 +27,7 @@ impl IndexedObject {
 
         Self {
             id: table.id,
+            name: Box::from(table.name()),
             tuples: Vec::new(),
             attrs: table.attributes().map(Attribute::from).collect(),
             index: key.map(Index::Attr).unwrap_or(Index::Uniq),
@@ -36,6 +38,10 @@ impl IndexedObject {
 
     pub(crate) fn id(&self) -> usize {
         self.id
+    }
+
+    pub(crate) fn name(&self) -> &str {
+        &self.name
     }
 
     pub(crate) fn add_tuple(&mut self, tuple: &Tuple) -> bool {
@@ -95,6 +101,7 @@ impl IndexedObject {
 
             let mut obj = Self {
                 id: table.id,
+                name: Box::from(table.name()),
                 tuples: snapshot.values,
                 attrs: table.attributes().map(Attribute::from).collect(),
                 index,
@@ -107,6 +114,7 @@ impl IndexedObject {
         } else {
             Self {
                 id: table.id,
+                name: Box::from(table.name()),
                 tuples: snapshot.values,
                 attrs: table.attributes().map(Attribute::from).collect(),
                 index: Default::default(),

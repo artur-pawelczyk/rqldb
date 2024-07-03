@@ -50,11 +50,10 @@ pub fn parse_query(query_str: &str) -> Result<Query<'_>, ParseError> {
                     query = query.filter(left, op, right);
                 },
                 "join" => {
-                    let table = read_symbol(tokenizer.next()?)?;
                     let left = read_symbol(tokenizer.next()?)?;
                     let right = read_symbol(tokenizer.next()?)?;
                     check_if_end(tokenizer.next()?)?;
-                    query = query.join(table, left, right);
+                    query = query.join(left, right);
                 },
                 "apply" => {
                     let function = read_symbol(tokenizer.next()?)?;
@@ -291,7 +290,7 @@ mod tests {
         assert_parse!("tuple id::NUMBER = 1 name::TEXT = something | select_all");
         assert_parse!("scan example | filter id = 1 | select_all");
         assert_parse!("scan example | filter id > 1 | select_all");
-        assert_parse!("scan example | join other example.other_id example.id | select_all");
+        assert_parse!("scan example | join example.other_id other.id | select_all");
         assert_parse!("scan example | count");
         assert_parse!("scan example | filter example.id = 1 | delete");
         assert_parse!("scan_index example.id = 1 | select_all");

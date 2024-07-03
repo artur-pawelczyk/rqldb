@@ -70,7 +70,7 @@ fn test_tuple_queries() {
 fn test_single_join() {
     let db = prepare_db();
 
-    let query = parse_query("scan document | join type document.type type.id").unwrap();
+    let query = parse_query("scan document | join document.type type.id").unwrap();
     let result = db.execute_query(&query).unwrap();
     assert_eq!(result.tuples().count(), 2);
 }

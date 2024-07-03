@@ -38,7 +38,8 @@ impl TableId for usize {
 
 impl TableId for &str {
     fn find_in(self, schema: &Schema) -> Option<&Relation> {
-        schema.relations.iter().find(|rel| rel.name.as_ref() == self)
+        let rel_name = self.find('.').map(|i| &self[..i]).unwrap_or(self);
+        schema.relations.iter().find(|rel| rel.name.as_ref() == rel_name)
     }
 }
 

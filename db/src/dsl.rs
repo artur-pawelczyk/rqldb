@@ -34,8 +34,8 @@ impl<'a> Query<'a> {
         }
     }
 
-    pub fn join(mut self, table: &'a str, left: &'a str, right: &'a str) -> Self {
-        self.join_sources.push(JoinSource{ table, left, right });
+    pub fn join(mut self, left: &'a str, right: &'a str) -> Self {
+        self.join_sources.push(JoinSource{ left, right });
         self
     }
 
@@ -267,14 +267,13 @@ impl<'a> fmt::Display for Source<'a> {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct JoinSource<'a> {
-    pub table: &'a str,
     pub left: &'a str,
     pub right: &'a str,
 }
 
 impl<'a> fmt::Display for JoinSource<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "join {} {} {}", self.table, self.left, self.right)
+        write!(f, "join {} {}", self.left, self.right)
     }
 }
 
@@ -440,8 +439,8 @@ mod tests {
 
     #[test]
     fn join() {
-        let query = Query::scan("example").join("type", "example.type_id", "type.id");
-        assert_eq!(query.to_string(), "scan example | join type example.type_id type.id | select_all");
+        let query = Query::scan("example").join("example.type_id", "type.id");
+        assert_eq!(query.to_string(), "scan example | join example.type_id type.id | select_all");
     }
 
     #[test]

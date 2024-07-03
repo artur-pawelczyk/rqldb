@@ -352,7 +352,7 @@ mod tests {
         db.execute_query(&Query::tuple(&[("id", "1"), ("name", "type_a")]).insert_into("type")).unwrap();
         db.execute_query(&Query::tuple(&[("id", "2"), ("name", "type_b")]).insert_into("type")).unwrap();
 
-        let result = db.execute_query(&Query::scan("document").join("type", "document.type_id", "type.id")).unwrap();
+        let result = db.execute_query(&Query::scan("document").join("document.type_id", "type.id")).unwrap();
         assert_eq!(
             result.attributes.iter().map(ResultAttribute::name).collect::<Vec<_>>(),
             vec!["document.id", "document.content", "document.type_id", "type.id", "type.name"]
