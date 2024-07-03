@@ -4,7 +4,6 @@ use std::{error::Error, io::{self, Write}};
 use crate::Type;
 
 pub(crate) trait IntoBytes {
-    fn kind() -> Type;
     fn write_bytes<W: Write>(&self, w: &mut W) -> Result<(), io::Error>;
 
     fn to_byte_vec(&self) -> Vec<u8> {
@@ -15,20 +14,12 @@ pub(crate) trait IntoBytes {
 }
 
 impl IntoBytes for i32 {
-    fn kind() -> Type {
-        Type::NUMBER
-    }
-
     fn write_bytes<W: Write>(&self, w: &mut W) -> Result<(), io::Error> {
         w.write_all(&self.to_be_bytes())
     }
 }
 
 impl IntoBytes for &str {
-    fn kind() -> Type {
-        Type::TEXT
-    }
-
     fn write_bytes<W: Write>(&self, w: &mut W) -> Result<(), io::Error> {
         w.write_all(&[self.len() as u8])?;
         w.write_all(self.as_bytes())
@@ -42,10 +33,6 @@ impl IntoBytes for &str {
 }
 
 impl IntoBytes for bool {
-    fn kind() -> Type {
-        Type::TEXT
-    }
-
     fn write_bytes<W: Write>(&self, w: &mut W) -> Result<(), io::Error> {
         if *self {
             w.write_all(&[1])

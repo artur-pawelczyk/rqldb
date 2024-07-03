@@ -76,7 +76,6 @@ impl Filter {
 }
 
 pub(crate) struct Join {
-    joinee: SharedObject,
     joiner: SharedObject,
     joinee_key: AttributeRef,
     joiner_key: AttributeRef,
@@ -352,7 +351,6 @@ fn compute_joins(plan: Plan, db: &Database, query: &dsl::Query) -> Result<Plan> 
             if let Some(joiner_key) = joiner.borrow().attributes().find(|a| a == join_source.right).map(|a| a.reference) {
                 joins.push(Join {
                     joiner: Rc::clone(joiner),
-                    joinee: Rc::clone(joinee),
                     joinee_key, joiner_key
                 })
             } else {
