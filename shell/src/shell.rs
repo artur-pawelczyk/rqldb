@@ -8,7 +8,7 @@ use crate::table::Table;
 pub(crate) struct Shell {
     persist: Box<dyn Persist>,
     db: Database,
-    result_printer: Box<dyn ResultPrinter>, // TODO: Remove
+    result_printer: Box<dyn ResultPrinter>,
     sort: Option<Box<str>>,
 }
 

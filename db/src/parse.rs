@@ -319,12 +319,11 @@ mod tests {
 
     #[test]
     fn test_fails_parse_definition() {
-        // TODO: "create_table" -> "relation" without "create"
-        assert_parse_definition_fails("create_someting example");
-        assert_parse_definition_fails("| create_table example");
-        assert_parse_definition_fails("create_table int::NUMBER example contents::TEXT");
-        assert_parse_definition_fails("create_table example int::NUMBER | contents::TEXT");
-        assert_parse_definition_fails("create_table example int::NUMBER something contents::TEXT");
+        assert_parse_definition_fails("something example");
+        assert_parse_definition_fails("| relation example");
+        assert_parse_definition_fails("relation int::NUMBER example contents::TEXT");
+        assert_parse_definition_fails("relation example int::NUMBER | contents::TEXT");
+        assert_parse_definition_fails("relation example int::NUMBER something contents::TEXT");
     }
 
     fn assert_parse_definition(command: &str) {

@@ -236,7 +236,7 @@ impl QueryResults {
         &self.attributes
     }
 
-    pub fn tuples(&self) -> Tuples {
+    pub fn tuples(&self) -> impl Iterator<Item = Tuple> {
         Tuples {
             attributes: &self.attributes,
             contents: &self.results
@@ -258,8 +258,7 @@ impl QueryResults {
     }
 }
 
-// TODO: Make private
-pub struct Tuples<'a> {
+struct Tuples<'a> {
     attributes: &'a [ResultAttribute],
     contents: &'a [Vec<u8>],
 }
