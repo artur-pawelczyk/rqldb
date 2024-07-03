@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-type Result<T> = std::result::Result<T, String>;    
+type Result<T> = std::result::Result<T, String>;
 
 #[derive(Default)]
 pub(crate) struct Plan {
@@ -341,24 +341,25 @@ fn compute_joins(plan: Plan, db: &Database, query: &dsl::Query) -> Result<Plan> 
     let joinee = match &query.source {
         dsl::Source::TableScan(name) => Some(name),
         _ => todo!(),
-    }.and_then(|name| db.object(*name)).ok_or("Relation {name} not found")?;
+    }.and_then(|name| db.schema().find_relation(*name)).ok_or("Relation {name} not found")?;
 
     for join_source in &query.join_sources {
-        let joiner = db.object(join_source.right) // TODO: Make it "left" or both "left" and "right"
-            .ok_or_else(|| format!("Relation {} not found", join_source.left))?;
+        // TODO: Write a test for bi-directional join syntax
+        let joinee_attr = joinee.lookup(join_source.left)
+            .or_else(|| joinee.lookup(join_source.right))
+            .ok_or_else(|| format!("No attribute matches previous sources"))?;
 
-        if let Some(joinee_key) = joinee.borrow().attributes().find(|a| a == join_source.left).map(|a| a.reference) {
-            if let Some(joiner_key) = joiner.borrow().attributes().find(|a| a == join_source.right).map(|a| a.reference) {
-                joins.push(Join {
-                    joiner: Rc::clone(joiner),
-                    joinee_key, joiner_key
-                })
-            } else {
-                return Err(format!("Attribute {} joiner in {} not found", join_source.right, joiner.borrow().name()))
-            }
-        } else {
-            return Err(format!("Joinee: {} attribute not found", join_source.left))
-        }
+        let joiner_attr = db.schema().lookup_attribute(join_source.left)
+            .filter(|a| !a.belongs_to(joinee))
+            .or_else(|| db.schema().lookup_attribute(join_source.right))
+            .filter(|a| !a.belongs_to(joinee))
+            .ok_or_else(|| format!("Neither {} nor {} match an attribute", join_source.left, join_source.right))?;
+
+        joins.push(Join {
+            joiner: Rc::clone(db.object(&joiner_attr).unwrap()),
+            joinee_key: joinee_attr.reference(),
+            joiner_key: joiner_attr.reference(),
+        })
     }
 
     Ok(Plan{ joins, ..plan })

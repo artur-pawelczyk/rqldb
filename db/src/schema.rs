@@ -55,6 +55,12 @@ impl TableId for &AttributeRef {
     }
 }
 
+impl TableId for &Column<'_> {
+    fn find_in(self, schema: &Schema) -> Option<&Relation> {
+        self.reference().rel_id.and_then(|id| schema.relations.get(id))
+    }
+}
+
 pub trait AttributeIdentifier {
     fn find_in_schema(self, schema: &Schema) -> Option<Column>;
     fn find_in_relation(self, rel: &Relation) -> Option<Column>;
@@ -173,6 +179,10 @@ impl<'a> Column<'a> {
             rel_id: Some(self.rel_id),
             attr_id: self.id
         }
+    }
+
+    pub fn belongs_to(&self, rel: &Relation) -> bool {
+        self.table == rel
     }
 }
 
