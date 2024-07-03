@@ -1,6 +1,6 @@
 use std::{error::Error, fmt, path::Path};
 
-use rqldb::{parse_definition, parse_query, Database, QueryResults};
+use rqldb::{parse_definition, parse_query, Database, QueryResults, SortOrder};
 use rqldb_persist::{FilePersist, Persist, Error as PersistError};
 
 use crate::table::Table;
@@ -9,7 +9,8 @@ pub(crate) struct Shell {
     persist: Box<dyn Persist>,
     db: Database,
     result_printer: Box<dyn ResultPrinter>,
-    sort: Option<Box<str>>,
+    sort: Option<(Box<str>, SortOrder)>,
+    limit: Option<usize>,
 }
 
 impl Default for Shell {
@@ -19,6 +20,7 @@ impl Default for Shell {
             db: Database::default(),
             result_printer: Box::new(TablePrinter),
             sort: None,
+            limit: None,
         }
     }
 }
@@ -27,14 +29,13 @@ impl Shell {
     pub(crate) fn with_db_file(s: &str) -> Self {
         let instance = Self {
             persist: Box::new(FilePersist::new(Path::new(s))),
-            db: Database::default(),
-            result_printer: Box::new(TablePrinter),
-            sort: None,
+            ..Default::default()
         };
 
         instance.restore().unwrap()
     }
 
+    #[cfg(test)]
     fn simple_output(self) -> Self {
         Self {
             result_printer: Box::new(SimplePrinter),
@@ -60,7 +61,13 @@ impl Shell {
                     self.dump_relation(args, output);
                 }
             } else if cmd == "sort" {
-                self.sort = if args.trim().is_empty() { None } else { Some(Box::from(args)) };
+                self.sort = if args.trim().is_empty() { None } else { read_sort_args(args) };
+            } else if cmd == "limit" {
+                if let Ok(limit) = args.parse() {
+                    self.limit = Some(limit)
+                } else {
+                    self.limit = None;
+                }
             } else if cmd == "output" {
                 let printer: Box<dyn ResultPrinter> = match args {
                     "simple" => Box::new(SimplePrinter),
@@ -80,13 +87,13 @@ impl Shell {
 
                 match self.db.execute_query(&query) {
                     Result::Ok(result) => {
-                        if let Some(sort_attr) = &self.sort {
-                            match result.sort(sort_attr) {
-                                Result::Ok(sorted) => { self.result_printer.print_result(&sorted, output).unwrap() },
+                        if let Some((sort_attr, ord)) = &self.sort {
+                            match result.sort(sort_attr, *ord) {
+                                Result::Ok(sorted) => { self.result_printer.print_result(&sorted, self.print_context(output)).unwrap() },
                                 Result::Err(err) => { writeln!(output, "{err}").unwrap(); },
                             }
                         } else {
-                            self.result_printer.print_result(&result, output).unwrap();
+                            self.result_printer.print_result(&result, self.print_context(output)).unwrap();
                         }
                     },
                     Result::Err(err) => writeln!(output, "{}", err).unwrap(),
@@ -94,13 +101,21 @@ impl Shell {
         }
     }
 
+    fn print_context<'a>(&self, output: &'a mut impl fmt::Write) -> PrintContext<'a> {
+        let mut ctx = PrintContext::with_output(output);
+        if let Some(limit) = &self.limit {
+            ctx = ctx.limit(*limit);
+        }
+
+        ctx
+    }
+
     fn restore(self) -> Result<Self, Box<dyn Error>> {
         let new_db = self.persist.read(self.db)?;
         Ok(Self {
             db: new_db,
             persist: self.persist,
-            result_printer: Box::new(TablePrinter),
-            sort: None,
+            ..Default::default()
         })
     }
 
@@ -114,6 +129,20 @@ impl Shell {
         if let Err(e) = self.db.dump_all(output) {
             println!("{e}");
         }
+    }
+}
+
+fn read_sort_args(args: &str) -> Option<(Box<str>, SortOrder)> {
+    let mut args = args.split_ascii_whitespace();
+    if let Some(attr) = args.next() {
+        if let Some(ord) = args.next() {
+            let ord = if ord == "desc" { SortOrder::LargestFirst } else { SortOrder::SmallestFirst };
+            Some((Box::from(attr), ord))
+        } else {
+            Some((Box::from(attr), SortOrder::default()))
+        }
+    } else {
+        None
     }
 }
 
@@ -141,18 +170,37 @@ fn maybe_read_command(input: &str) -> Option<(&str, &str)> {
 }
 
 trait ResultPrinter {
-    fn print_result(&self, result: &QueryResults, f: &mut dyn fmt::Write) -> Result<(), fmt::Error>;
+    fn print_result<'a>(&self, result: &QueryResults, ctx: PrintContext<'a>) -> Result<(), fmt::Error>;
+}
+
+struct PrintContext<'a> {
+    output: &'a mut dyn fmt::Write,
+    limit: Option<usize>
+}
+
+impl<'a> PrintContext<'a> {
+    fn with_output(output: &'a mut dyn fmt::Write) -> Self {
+        Self { output, limit: None }
+    }
+
+    fn limit(self, limit: usize) -> Self {
+        Self { limit: Some(limit), ..self }
+    }
 }
 
 struct TablePrinter;
 impl ResultPrinter for TablePrinter {
-    fn print_result(&self, result: &QueryResults, f: &mut dyn fmt::Write) -> Result<(), fmt::Error> {
+    fn print_result<'a>(&self, result: &QueryResults, ctx: PrintContext<'a>) -> Result<(), fmt::Error> {
         let mut table = Table::new();
         for attr in result.attributes() {
             table.add_title_cell(attr.name());
         }
 
-        for res_row in result.tuples() {
+        for (n, res_row) in result.tuples().enumerate() {
+            if ctx.limit.map(|limit| n >= limit).unwrap_or(false) {
+                break;
+            }
+
             let mut row = table.row();
             for attr in result.attributes() {
                 row = row.cell(res_row.element(attr.name()).unwrap());
@@ -160,19 +208,23 @@ impl ResultPrinter for TablePrinter {
             row.add();
         }
 
-        writeln!(f, "{}", table)
+        writeln!(ctx.output, "{}", table)
     }
 }
 
 struct SimplePrinter;
 impl ResultPrinter for SimplePrinter {
-    fn print_result(&self, result: &QueryResults, f: &mut dyn fmt::Write) -> Result<(), fmt::Error> {
+    fn print_result<'a>(&self, result: &QueryResults, ctx: PrintContext<'a>) -> Result<(), fmt::Error> {
         let attributes = result.attributes();
-        for tuple in result.tuples() {
-            for attr in attributes {
-                writeln!(f, "{} = {}", attr.name(), tuple.element(attr.name()).unwrap())?;
+        for (n, tuple) in result.tuples().enumerate() {
+            if ctx.limit.map(|limit| n >= limit).unwrap_or(false) {
+                break;
             }
-            writeln!(f)?;
+
+            for attr in attributes {
+                writeln!(ctx.output, "{} = {}", attr.name(), tuple.element(attr.name()).unwrap())?;
+            }
+            writeln!(ctx.output)?;
         }
 
         Ok(())
@@ -251,6 +303,18 @@ document.size = 2
 document.id = 1
 document.content = example
 document.size = 123".trim());
+
+        let mut s = String::new();
+        shell.handle_input(".sort document.size desc", &mut NilOut);
+        shell.handle_input("scan document", &mut s);
+        assert_eq!(s.trim(), "
+document.id = 1
+document.content = example
+document.size = 123
+
+document.id = 2
+document.content = example
+document.size = 2".trim());
     }
 
     #[test]
@@ -267,5 +331,27 @@ document.size = 123".trim());
         shell.handle_input("scan document", &mut s);
 
         assert_eq!(s.trim(), "Missing attribute for sort: document.size");
+    }
+
+    #[test]
+    fn test_limit() {
+        let mut shell = Shell::default().simple_output();
+        shell.db.define(&Definition::relation("document")
+                        .attribute("id", Type::NUMBER));
+
+        for i in 0..100 {
+            let id = i.to_string();
+            shell.db.execute_query(&Query::tuple(&[("id", id.as_str())]).insert_into("document")).unwrap();
+        }
+
+        let mut s = String::new();
+        shell.handle_input(".limit 10", &mut NilOut);
+        shell.handle_input("scan document", &mut s);
+        assert_eq!(s.lines().count(), 20);
+
+        let mut s = String::new();
+        shell.handle_input(".limit", &mut NilOut);
+        shell.handle_input("scan document", &mut s);
+        assert_eq!(s.lines().count(), 200);
     }
 }

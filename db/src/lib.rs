@@ -243,7 +243,7 @@ impl QueryResults {
         }
     }
 
-    pub fn sort(self, attr: &str) -> Result<Self, SortError> {
+    pub fn sort(self, attr: &str, order: SortOrder) -> Result<Self, SortError> {
         let mut sorted_contents = BTreeMap::new();
         for byte_tuple in self.results.into_iter() {
             let tuple = Tuple { attributes: &self.attributes, contents: &byte_tuple };
@@ -251,10 +251,16 @@ impl QueryResults {
             sorted_contents.insert(elem.as_bytes().to_vec(), byte_tuple);
         }
 
-        Ok(Self {
-            attributes: self.attributes,
-            results: sorted_contents.into_iter().map(|(_, v)| v).collect()
-        })
+        match order {
+            SortOrder::SmallestFirst => Ok(Self {
+                attributes: self.attributes,
+                results: sorted_contents.into_iter().map(|(_, v)| v).collect()
+            }),
+            SortOrder::LargestFirst => Ok(Self {
+                attributes: self.attributes,
+                results: sorted_contents.into_iter().rev().map(|(_, v)| v).collect()
+            }),
+        }
     }
 }
 
@@ -289,6 +295,9 @@ impl fmt::Display for SortError {
     }
 }
 
+#[derive(Copy, Clone, Default)]
+pub enum SortOrder { #[default] SmallestFirst, LargestFirst }
+
 #[cfg(test)]
 mod tests {
     use self::object::TempObject;
@@ -313,8 +322,17 @@ mod tests {
             results: obj.iter().map(|tuple| tuple.raw_bytes().to_vec()).collect(),
         };
 
-        let sorted = result.sort("document.size").unwrap();
+        let sorted = result.sort("document.size", SortOrder::SmallestFirst).unwrap();
         let first = sorted.tuples().next().unwrap();
         assert_eq!(first.element("document.size").unwrap().to_string(), "2");
+
+        let result = QueryResults {
+            attributes: obj.attributes().map(ResultAttribute::from).collect(),
+            results: obj.iter().map(|tuple| tuple.raw_bytes().to_vec()).collect(),
+        };
+
+        let sorted = result.sort("document.size", SortOrder::LargestFirst).unwrap();
+        let first = sorted.tuples().next().unwrap();
+        assert_eq!(first.element("document.size").unwrap().to_string(), "123");
     }
 }
