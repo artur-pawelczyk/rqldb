@@ -82,21 +82,16 @@ impl Database {
         let join_sources: Vec<Ref<IndexedObject>> = plan.joins.iter().map(|join| join.source_object().borrow()).collect();
         let mut sink = self.create_sink(&plan);
 
-        for (idx, byte_tuple) in source.iter().enumerate() {
-            let tuple = match &plan.joins[..] {
-                [] => byte_tuple,
-                [join] => {
-                    let joinee = byte_tuple;
-                    let key = joinee.element(join.joinee_key());
-                    let source_object = join_sources.first().expect("join source is computed from the list of joins");
-                    if let Some(join_source) = source_object.iter().find(|bytes| bytes.element(join.joiner_key()) == key) {
-                        joinee.extend(join_source)
-                    } else {
-                        joinee
-                    }
-                },
-                _ => return Err(String::from("Multiple joins aren't supported"))
-            };
+        for (idx, source_tuple) in source.iter().enumerate() {
+            let mut tuple = source_tuple;
+
+            for join in &plan.joins {
+                let key = tuple.element(join.joinee_key());
+                let source_object = join_sources.first().expect("join source is computed from the list of joins");
+                if let Some(join_source) = source_object.iter().find(|bytes| bytes.element(join.joiner_key()) == key) {
+                    tuple = tuple.extend(join_source);
+                }
+            }
 
             if test_filters(&plan.filters, &tuple) {
                 sink.accept_tuple(idx, &tuple);
@@ -343,7 +338,7 @@ mod tests {
     }
 
     #[test]
-    pub fn join() {
+    fn single_join() {
         let mut db = Database::default();
         db.define(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT).attribute("type_id", Type::NUMBER));
         db.define(&Definition::relation("type").attribute("id", Type::NUMBER).attribute("name", Type::TEXT));
@@ -362,6 +357,20 @@ mod tests {
         let type_name = tuple.element("type.name").unwrap().to_string();
         assert_eq!(document_id, "1");
         assert_eq!(type_name, "type_b");
+    }
+
+    #[test]
+    fn two_joins() {
+        let mut db = Database::default();
+        db.define(&Definition::relation("document").indexed_attribute("id", Type::NUMBER).attribute("type_id", Type::NUMBER).attribute("author", Type::TEXT));
+        db.define(&Definition::relation("type").indexed_attribute("id", Type::NUMBER).attribute("name", Type::TEXT));
+        db.define(&Definition::relation("author").indexed_attribute("name", Type::TEXT).attribute("displayname", Type::TEXT));
+
+        db.execute_query(&Query::tuple(&[("id", "1"), ("type_id", "1"), ("author", "admin")]).insert_into("document")).unwrap();
+        db.execute_query(&Query::tuple(&[("id", "1"), ("name", "page")]).insert_into("type")).unwrap();
+        db.execute_query(&Query::tuple(&[("name", "admin"), ("displayname", "the author")]).insert_into("author")).unwrap();
+
+        let result = db.execute_query(&Query::scan("document").join("document.type_id", "type.id").join("document.author", "author.name")).unwrap();
     }
 
     #[test]
