@@ -13,7 +13,6 @@ type ByteTuple = Vec<u8>;
 #[derive(Default)]
 pub(crate) struct IndexedObject {
     id: usize,
-    name: Box<str>,
     pub(crate) tuples: Vec<ByteTuple>,
     pub(crate) attrs: Vec<Attribute>,
     index: Index,
@@ -27,7 +26,6 @@ impl IndexedObject {
 
         Self {
             id: table.id,
-            name: Box::from(table.name()),
             tuples: Vec::new(),
             attrs: table.attributes().map(Attribute::from).collect(),
             index: key.map(Index::Attr).unwrap_or(Index::Uniq),
@@ -38,10 +36,6 @@ impl IndexedObject {
 
     pub(crate) fn id(&self) -> usize {
         self.id
-    }
-
-    pub(crate) fn name(&self) -> &str {
-        &self.name
     }
 
     pub(crate) fn add_tuple(&mut self, tuple: &Tuple) -> bool {
@@ -101,7 +95,6 @@ impl IndexedObject {
 
             let mut obj = Self {
                 id: table.id,
-                name: Box::from(table.name()),
                 tuples: snapshot.values,
                 attrs: table.attributes().map(Attribute::from).collect(),
                 index,
@@ -114,7 +107,6 @@ impl IndexedObject {
         } else {
             Self {
                 id: table.id,
-                name: Box::from(table.name()),
                 tuples: snapshot.values,
                 attrs: table.attributes().map(Attribute::from).collect(),
                 index: Default::default(),
@@ -171,7 +163,6 @@ pub struct TempObject {
 impl TempObject {
     pub fn from_attrs(attrs: &[impl NamedAttribute]) -> Self {
         let attrs = attrs.iter().map(|a| Attribute {
-            pos: a.pos(),
             name: Box::from(a.name()),
             kind: a.kind(),
             reference: AttributeRef { attr_id: a.pos(), rel_id: a.object_id() },
@@ -236,7 +227,7 @@ pub(crate) struct TupleBuilder {
 impl TupleBuilder {
     pub(crate) fn add(&mut self, attr_ref: &AttributeRef, val: &str) {
         let attr = self.obj.attrs.iter().find(|a| *a == attr_ref).unwrap();
-        let mut container = &mut self.raw[attr.pos];
+        let mut container = &mut self.raw[attr.pos()];
         write_as_bytes(attr.kind(), val, &mut container).expect("Cannot fail with vec");
     }
 
@@ -262,9 +253,6 @@ pub trait NamedAttribute: PositionalAttribute {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Attribute {
-    // TODO: position should be internal to the object (but not schema
-    // because the element ordering should be private for the object)
-    pub pos: usize,
     pub name: Box<str>,
     pub kind: Type,
     pub reference: AttributeRef,
@@ -272,7 +260,7 @@ pub struct Attribute {
 
 impl PositionalAttribute for Attribute {
     fn pos(&self) -> usize {
-        self.pos
+        self.reference.attr_id
     }
 
     fn object_id(&self) -> Option<usize> {
@@ -292,13 +280,13 @@ impl NamedAttribute for Attribute {
 
 impl PartialOrd for Attribute {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.pos.partial_cmp(&other.pos)
+        self.reference.partial_cmp(&other.reference)
     }
 }
 
 impl Ord for Attribute {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.pos.cmp(&other.pos)
+        self.reference.cmp(&other.reference)
     }
 }
 

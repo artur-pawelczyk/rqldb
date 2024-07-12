@@ -1,6 +1,6 @@
 use core::fmt;
 
-use crate::object::{Attribute, IndexedObject, NamedAttribute as _, TempObject};
+use crate::object::{Attribute, IndexedObject, NamedAttribute as _};
 use crate::schema::Type;
 
 pub trait PositionalAttribute {

@@ -155,7 +155,7 @@ impl Source {
         let mut values = BTreeMap::new();
 
         for (pos, (k, v)) in map.iter().enumerate() {
-            let attr = Attribute { pos, name: Box::from(*k), kind: v.0, reference: AttributeRef::temporary(pos) };
+            let attr = Attribute { name: Box::from(*k), kind: v.0, reference: AttributeRef::temporary(pos) };
             attributes.push(attr.clone());
             values.insert(attr, v.1.to_string());
         }

@@ -96,7 +96,7 @@ impl AttributeIdentifier for &AttributeRef {
     }
 }
 
-#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub struct AttributeRef {
     // TODO: make this field a u32 so the whole struct can fit in 16 bytes
     pub(crate) rel_id: Option<usize>,
@@ -136,7 +136,6 @@ impl<'a> fmt::Debug for Column<'a> {
 impl From<Column<'_>> for Attribute {
     fn from(a: Column<'_>) -> Self {
         Self {
-            pos: a.id,
             name: Box::from(a.name()),
             kind: a.kind(),
             reference: a.reference(),
@@ -147,7 +146,6 @@ impl From<Column<'_>> for Attribute {
 impl From<&Column<'_>> for Attribute {
     fn from(a: &Column<'_>) -> Self {
         Self {
-            pos: a.id,
             name: Box::from(a.name()),
             kind: a.kind(),
             reference: a.reference(),
