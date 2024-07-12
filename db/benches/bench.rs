@@ -119,7 +119,7 @@ fn benchmark_parse(c: &mut Criterion) {
 }
 
 fn benchmark_query_to_string(c: &mut Criterion) {
-    let scan_query = Query::scan("document").join("type", "document.type_id", "type.id").filter("document.id", Operator::EQ, "1");
+    let scan_query = Query::scan("document").join("document.type_id", "type.id").filter("document.id", Operator::EQ, "1");
     let insert_query = Query::tuple(&[("id", "1"), ("first", "foo"), ("second", "bar")]).insert_into("document");
 
     c.bench_function("dump scan query", |b| b.iter(|| scan_query.to_string()));

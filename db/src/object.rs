@@ -170,11 +170,11 @@ pub struct TempObject {
 
 impl TempObject {
     pub fn from_attrs(attrs: &[impl NamedAttribute]) -> Self {
-        let attrs = attrs.iter().enumerate().map(|(pos, a)| Attribute {
-            pos,
+        let attrs = attrs.iter().map(|a| Attribute {
+            pos: a.pos(),
             name: Box::from(a.name()),
             kind: a.kind(),
-            reference: AttributeRef::temporary(pos),
+            reference: AttributeRef { attr_id: a.pos(), rel_id: a.object_id() },
         }).collect();
 
         Self{ values: vec![], attrs }
@@ -246,7 +246,7 @@ impl TupleBuilder {
     }
 }
 
-pub trait NamedAttribute {
+pub trait NamedAttribute: PositionalAttribute {
     fn name(&self) -> &str;
     fn kind(&self) -> Type;
 

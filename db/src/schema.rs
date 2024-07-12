@@ -100,7 +100,7 @@ impl AttributeIdentifier for &AttributeRef {
 pub struct AttributeRef {
     // TODO: make this field a u32 so the whole struct can fit in 16 bytes
     pub(crate) rel_id: Option<usize>,
-    attr_id: usize,
+    pub(crate) attr_id: usize,
 }
 
 impl AttributeRef {
@@ -112,6 +112,10 @@ impl AttributeRef {
 impl PositionalAttribute for AttributeRef {
     fn pos(&self) -> usize {
         self.attr_id
+    }
+
+    fn object_id(&self) -> Option<usize> {
+        self.rel_id
     }
 }
 

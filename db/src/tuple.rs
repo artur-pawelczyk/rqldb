@@ -1,9 +1,9 @@
 use core::fmt;
 
-use crate::object::{Attribute, IndexedObject, NamedAttribute as _};
+use crate::object::{Attribute, IndexedObject, NamedAttribute as _, TempObject};
 use crate::schema::Type;
 
-pub(crate) trait PositionalAttribute {
+pub trait PositionalAttribute {
     fn pos(&self) -> usize;
     fn object_id(&self) -> Option<usize> {
         None
@@ -26,7 +26,11 @@ pub(crate) struct Tuple<'a> {
 
 impl<'a> Tuple<'a> {
     pub(crate) fn from_bytes(raw: &'a [u8], attrs: &'a [Attribute]) -> Self {
-        Self { raw, attrs, rest: None, source_id: 0 }
+        Self {
+            raw, attrs,
+            rest: None,
+            source_id: attrs.first().and_then(|a| a.object_id()).unwrap_or(0),
+        }
     }
 
     pub(crate) fn with_object(raw: &'a [u8], obj: &'a IndexedObject) -> Self {
@@ -39,37 +43,44 @@ impl<'a> Tuple<'a> {
 
     pub(crate) fn element(&self, attr: &impl PositionalAttribute) -> Option<Element> {
         let pos = attr.pos();
-        if attr.object_id().map(|id| id != self.source_id).unwrap_or(false) {
-            if let Some(rest) = &self.rest {
-                return rest.element(attr);
-            }
-        }
 
-        let attr = self.attrs.get(pos)?;
-        let start = self.offset(pos);
-        let end = start + attr.kind().size(&self.raw[start..]);
-        Some(Element { raw: &self.raw[start..end], kind: attr.kind() })
+        if let Some(obj_id) = attr.object_id() {
+            if obj_id == self.source_id {
+                let attr = self.attrs.get(pos)?;
+                let start = self.offset(pos);
+                let end = start + attr.kind().size(&self.raw[start..]);
+                Some(Element { raw: &self.raw[start..end], kind: attr.kind(), name: attr.name() })
+            } else {
+                self.rest.as_ref().and_then(|tuple| tuple.element(attr))
+            }
+        } else {
+            let attr = self.attrs.get(pos)?;
+            let start = self.offset(pos);
+            let end = start + attr.kind().size(&self.raw[start..]);
+            Some(Element { raw: &self.raw[start..end], kind: attr.kind(), name: attr.name() })
+        }
     }
 
     fn offset(&self, pos: usize) -> usize {
         let mut offset = 0usize;
         for attr in self.attrs.iter().take(pos) {
-            let len = Element{ raw: &self.raw[offset..], kind: attr.kind() }.len();
+            let len = Element{ raw: &self.raw[offset..], kind: attr.kind(), name: "" }.len();
             offset += len;
         }
 
         offset
     }
 
-    pub(crate) fn extend(mut self, other: Tuple<'a>) -> Self {
-        self.rest = Some(Box::new(other));
-        self
+    pub(crate) fn extend(self, mut other: Tuple<'a>) -> Self {
+        other.rest = Some(Box::new(self));
+        other
     }
 }
 
 #[derive(Debug)]
 pub(crate) struct Element<'a> {
     pub(crate) raw: &'a [u8],
+    pub(crate) name: &'a str,
     pub(crate) kind: Type,
 }
 
@@ -93,6 +104,14 @@ impl<'a> Element<'a> {
 
     fn len(&self) -> usize {
         self.kind.size(self.raw)
+    }
+
+    pub(crate) fn kind(&self) -> Type {
+        self.kind
+    }
+
+    pub(crate) fn name(&self) -> &str {
+        &self.name
     }
 }
 

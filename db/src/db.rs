@@ -1,5 +1,6 @@
 use core::fmt;
 use std::cell::{RefCell, Ref, RefMut};
+use std::iter::zip;
 use std::rc::Rc;
 
 use crate::dump::{dump_values, dump_create};
@@ -85,9 +86,8 @@ impl Database {
         for (idx, source_tuple) in source.iter().enumerate() {
             let mut tuple = source_tuple;
 
-            for join in &plan.joins {
+            for (join, source_object) in zip(plan.joins.iter(), join_sources.iter()) {
                 let key = tuple.element(join.joinee_key());
-                let source_object = join_sources.first().expect("join source is computed from the list of joins");
                 if let Some(join_source) = source_object.iter().find(|bytes| bytes.element(join.joiner_key()) == key) {
                     tuple = tuple.extend(join_source);
                 }
@@ -236,9 +236,15 @@ impl<'a> Sink<'a> {
 }
 
 fn tuple_to_cells(attrs: &[Attribute], tuple: &Tuple) -> Vec<u8> {
+    use crate::object::NamedAttribute as _;
+
     attrs.iter().fold(Vec::new(), |mut bytes, attr| {
         if let Some(elem) = tuple.element(attr) {
+            debug_assert!(attr.kind() == elem.kind());
+            debug_assert!(attr.name() == elem.name());
             bytes.extend(elem.bytes());
+        } else {
+            panic!("Attribute not matched {}", attr.name());
         }
 
         bytes
@@ -371,6 +377,8 @@ mod tests {
         db.execute_query(&Query::tuple(&[("name", "admin"), ("displayname", "the author")]).insert_into("author")).unwrap();
 
         let result = db.execute_query(&Query::scan("document").join("document.type_id", "type.id").join("document.author", "author.name")).unwrap();
+        let tuple = result.tuples().next().unwrap();
+        assert_eq!(tuple.element("author.displayname").unwrap().to_string(), "the author");
     }
 
     #[test]
