@@ -347,13 +347,13 @@ fn compute_joins(plan: Plan, db: &Database, query: &dsl::Query) -> Result<Plan> 
         // TODO: Write a test for bi-directional join syntax
         let joinee_attr = joinee.lookup(join_source.left)
             .or_else(|| joinee.lookup(join_source.right))
-            .ok_or_else(|| format!("No attribute matches previous sources"))?;
+            .ok_or_else(|| format!("Cannot find attribute {} or {}", join_source.left, join_source.right))?;
 
         let joiner_attr = db.schema().lookup_attribute(join_source.left)
             .filter(|a| !a.belongs_to(joinee))
             .or_else(|| db.schema().lookup_attribute(join_source.right))
             .filter(|a| !a.belongs_to(joinee))
-            .ok_or_else(|| format!("Neither {} nor {} match an attribute", join_source.left, join_source.right))?;
+            .ok_or_else(|| format!("Cannot find attribute {} or {}", join_source.left, join_source.right))?;
 
         joins.push(Join {
             joiner: Rc::clone(db.object(&joiner_attr).unwrap()),
