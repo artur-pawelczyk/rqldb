@@ -1,4 +1,5 @@
 use std::fmt;
+use std::hash::{DefaultHasher, Hash as _, Hasher};
 use std::iter::zip;
 use std::{collections::{HashSet, HashMap}, cell::Ref};
 
@@ -7,7 +8,6 @@ use crate::schema::AttributeRef;
 use crate::tuple::PositionalAttribute;
 use crate::{tuple::Tuple, schema::Relation, Type};
 
-type ByteCell = Vec<u8>;
 type ByteTuple = Vec<u8>;
 
 #[derive(Default)]
@@ -16,7 +16,7 @@ pub(crate) struct IndexedObject {
     pub(crate) tuples: Vec<ByteTuple>,
     pub(crate) attrs: Vec<Attribute>,
     index: Index,
-    hash: HashMap<ByteCell, usize>,
+    hash: HashMap<u64, Vec<usize>>,
     removed_ids: HashSet<usize>,
 }
 
@@ -41,20 +41,23 @@ impl IndexedObject {
     pub(crate) fn add_tuple(&mut self, tuple: &Tuple) -> bool {
         match &self.index {
             Index::Attr(key_pos) => {
-                let key = tuple.element(key_pos);
-                if let Some(id) = self.hash.get(key.unwrap().bytes()) {
-                    let _ = std::mem::replace(&mut self.tuples[*id], tuple.raw_bytes().to_vec());
+                let key = tuple.element(key_pos).unwrap();
+                if let Some(id) = self.find_in_index(key.bytes()) {
+                    let _ = std::mem::replace(&mut self.tuples[id], tuple.raw_bytes().to_vec());
                     false
                 } else {
-                    self.hash.insert(tuple.element(key_pos).expect("Already validated").bytes().to_vec(), self.tuples.len());
+                    let new_id = self.tuples.len();
+                    self.add_to_index(key.bytes(), new_id);
                     self.tuples.push(tuple.raw_bytes().to_vec());
                     true
                 }
             },
             Index::Uniq => {
-                if self.tuples.iter().any(|x| x == tuple.raw_bytes()) {
+                if self.find_in_index(tuple.raw_bytes()).is_some() {
                     false
                 } else {
+                    let new_id = self.tuples.len();
+                    self.add_to_index(tuple.raw_bytes(), new_id);
                     self.tuples.push(tuple.raw_bytes().to_vec());
                     true
                 }
@@ -63,13 +66,30 @@ impl IndexedObject {
         }
     }
 
-    pub(crate) fn find_in_index(&self, cell: &[u8]) -> Option<usize> {
-        match self.index {
-            Index::Attr(_) => {
-                self.hash.get(cell).copied()
+    pub(crate) fn find_in_index(&self, bytes: &[u8]) -> Option<usize> {
+        match &self.index {
+            Index::Attr(attr) => {
+                let matched_ids = self.hash.get(&hash(bytes))?;
+                matched_ids.iter().find(|id| {
+                    let tuple = self.tuple_by_id(**id).unwrap();
+                    let elem = tuple.element(attr).unwrap();
+                    elem.bytes() == bytes
+                }).copied()
             }
-            _ => todo!(),
+            Index::Uniq => {
+                let matched_ids = self.hash.get(&hash(bytes))?;
+                matched_ids.iter().find(|id| {
+                    let tuple = self.tuple_by_id(**id).unwrap();
+                    tuple.raw_bytes() == bytes
+                }).copied()
+            }
         }
+    }
+
+    fn add_to_index(&mut self, bytes: &[u8], id: usize) {
+        self.hash.entry(hash(bytes))
+            .and_modify(|ids| { ids.push(id); })
+            .or_insert_with(|| vec![id]);
     }
 
     pub(crate) fn get(&self, id: usize) -> Option<Tuple> {
@@ -82,6 +102,11 @@ impl IndexedObject {
                 .filter(|(id, _)| !self.removed_ids.contains(id))
                 .map(move |(_, bytes)| Tuple::with_object(bytes, self))
         )
+    }
+
+    fn tuple_by_id(&self, id: usize) -> Option<Tuple> {
+        let bytes = self.tuples.get(id)?;
+        Some(Tuple::with_object(bytes, self))
     }
 
     pub(crate) fn remove_tuples(&mut self, ids: &[usize]) {
@@ -117,11 +142,14 @@ impl IndexedObject {
     }
 
     fn reindex(&mut self) {
-        if let Index::Attr(key_pos) = &self.index {
+        if let Index::Attr(key) = &self.index {
             self.hash.clear();
             for (id, raw_tuple) in self.tuples.iter().enumerate() {
                 let tuple = Tuple::from_bytes(raw_tuple, &self.attrs);
-                self.hash.insert(tuple.element(key_pos).unwrap().bytes().to_vec(), id);
+                let hash = hash(tuple.element(key).unwrap().bytes());
+                self.hash.entry(hash)
+                    .and_modify(|ids| { ids.push(id); })
+                    .or_insert_with(|| vec![id]);
             }
         }
     }
@@ -139,6 +167,12 @@ impl IndexedObject {
     pub(crate) fn attributes(&self) -> impl Iterator<Item = &Attribute> {
         self.attrs.iter()
     }
+}
+
+fn hash(bytes: &[u8]) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    hasher.finish()
 }
 
 impl fmt::Debug for IndexedObject {
@@ -337,6 +371,8 @@ impl<'a> RawObjectView<'a> {
 
 #[cfg(test)]
 mod test {
+    use std::hash::{DefaultHasher, Hash, Hasher};
+
     use super::*;
     use crate::schema::Schema;
 
@@ -379,6 +415,10 @@ mod test {
         assert_eq!(obj.tuples.len(), 2);
 
         obj.vaccum();
+
+        let mut hasher = DefaultHasher::new();
+        obj.tuples[0].hash(&mut hasher);
+        hasher.finish();
 
         assert_eq!(obj.tuples.len(), 1);
         assert_eq!(obj.iter().count(), 1);
