@@ -4,6 +4,7 @@ use std::iter::zip;
 use std::rc::Rc;
 
 use crate::dump::{dump_values, dump_create};
+use crate::event::{EventHandler};
 use crate::object::{IndexedObject, TempObject, Attribute};
 use crate::plan::{Source, Filter, Plan, Finisher, ApplyFn};
 use crate::schema::{AttributeRef, TableId};
@@ -19,6 +20,7 @@ pub(crate) type SharedObject = Rc<RefCell<IndexedObject>>;
 pub struct Database {
     schema: Schema,
     objects: Vec<SharedObject>,
+    pub(crate) handler: EventHandler,
 }
 
 impl Database {
@@ -28,14 +30,15 @@ impl Database {
             .map(|o| Rc::new(RefCell::new(o)))
             .collect();
 
-        Self{
+        Self {
             schema,
             objects,
+            ..Default::default()
         }
     }
 
     pub fn define(&mut self, definition: &dsl::Definition) {
-        let table = definition.columns.iter().fold(self.schema.create_table(&definition.name), |acc, col| {
+        let relation = definition.columns.iter().fold(self.schema.create_table(&definition.name), |acc, col| {
             if col.indexed {
                 acc.indexed_column(&col.name, col.kind)
             } else {
@@ -43,7 +46,10 @@ impl Database {
             }
         }).add();
 
-        self.objects.insert(table.id, Rc::new(RefCell::new(IndexedObject::from_table(table))));
+        self.objects.insert(relation.id, Rc::new(RefCell::new(IndexedObject::from_table(relation))));
+
+        let rel_id = relation.id;
+        self.schema().find_relation(rel_id).map(|r| self.handler.emit_define_relation(r));
     }
 
     pub fn execute_query(&self, query: &dsl::Query) -> Result<QueryResults> {

@@ -1,0 +1,11 @@
+[package]
+name = "rqldb-live-storage"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rqldb = { path = "../db" }
+rqldb-persist = { path = "../persist/" }
+
+
+

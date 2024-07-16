@@ -752,6 +752,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rqldb-live-storage"
+version = "0.1.0"
+dependencies = [
+ "rqldb",
+ "rqldb-persist",
+]
+
+[[package]]
 name = "rqldb-persist"
 version = "0.1.0"
 dependencies = [

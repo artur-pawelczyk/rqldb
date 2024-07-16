@@ -1,13 +1,14 @@
- pub mod db;
+mod bytes;
+mod event;
+pub mod db;
 pub mod dsl;
+pub mod dump;
+pub mod object;
 pub mod parse;
 pub mod plan;
 pub mod schema;
 pub mod tokenize;
 pub mod tuple;
-pub mod object;
-pub mod dump;
-mod bytes;
 
 use core::fmt;
 use std::cmp::Ordering;
@@ -23,6 +24,7 @@ pub use crate::db::Database;
 pub use crate::dsl::{Query, Operator, Definition};
 pub use crate::parse::{parse_definition, parse_query};
 pub use crate::object::RawObjectView;
+pub use crate::event::EventSource;
 
 pub struct QueryResults {
     attributes: Vec<ResultAttribute>,
