@@ -5,7 +5,7 @@ use object::{write_object, read_object};
 use rqldb::Database;
 use rqldb::object::TempObject;
 use rqldb::schema::Schema;
-use schema::{write_schema, read_schema};
+pub use schema::{write_schema, read_schema};
 
 use std::fs::{File, OpenOptions};
 use std::io::{self, Cursor, ErrorKind};

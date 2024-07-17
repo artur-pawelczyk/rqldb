@@ -5,7 +5,7 @@ use rqldb::{schema::Schema, Type};
 
 use crate::Error;
 
-pub(crate) fn write_schema<W: Write>(writer: &mut W, schema: &Schema) -> Result<(), Error> {
+pub fn write_schema<W: Write>(writer: &mut W, schema: &Schema) -> Result<(), Error> {
     let mut relations = Array::new();
     for rel in &schema.relations {
         let mut rel_doc = Document::new();
@@ -33,7 +33,7 @@ pub(crate) fn write_schema<W: Write>(writer: &mut W, schema: &Schema) -> Result<
     Ok(())
 }
 
-pub(crate) fn read_schema<R: Read>(reader: R) -> Result<Vec<Table>, Error> {
+pub fn read_schema<R: Read>(reader: R) -> Result<Vec<Table>, Error> {
     let doc = Document::from_reader(reader)?;
     let mut tables = Vec::new();
 
@@ -47,25 +47,26 @@ pub(crate) fn read_schema<R: Read>(reader: R) -> Result<Vec<Table>, Error> {
             let kind = col_doc.get_str("kind")?.parse().unwrap();
             let indexed = col_doc.get_bool("indexed")?;
 
-            columns.push(Column{ name: name.to_string(), kind, indexed });
+            columns.push(Column { name: Box::from(name), kind, indexed });
         }
 
-        tables.push(Table{ id, name, columns });
+        tables.push(Table { id, name: Box::from(name), columns: Box::from(columns) });
     }
+
 
     Ok(tables)
 }
 
-pub(crate) struct Table {
-    pub(crate) id: usize,
-    pub(crate) name: String,
-    pub(crate) columns: Vec<Column>,
+pub struct Table {
+    pub id: usize,
+    pub name: Box<str>,
+    pub columns: Box<[Column]>,
 }
 
-pub(crate) struct Column {
-    pub(crate) name: String,
-    pub(crate) kind: Type,
-    pub(crate) indexed: bool,
+pub struct Column {
+    pub name: Box<str>,
+    pub kind: Type,
+    pub indexed: bool,
 }
 
 #[cfg(test)]
@@ -90,7 +91,7 @@ mod tests {
 
         for (rel, saved_rel) in zip(&db.schema().relations, saved_schema) {
             assert_eq!(rel.id, saved_rel.id);
-            assert_eq!(rel.name.as_ref(), saved_rel.name.as_str());
+            assert_eq!(rel.name.as_ref(), saved_rel.name.as_ref());
             assert_eq!(rel.attributes().count(), saved_rel.columns.len());
         }
     }

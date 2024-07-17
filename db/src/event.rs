@@ -1,23 +1,23 @@
 use crate::{schema::Relation, Database};
 
 pub trait EventSource {
-    fn on_define_relation(&mut self, handler: impl Fn(&Relation) -> () + 'static);
+    fn on_define_relation(&mut self, handler: impl Fn(&Self, &Relation) -> () + 'static);
 }
 
 impl EventSource for Database {
-    fn on_define_relation(&mut self, handler: impl Fn(&Relation) -> () + 'static) {
+    fn on_define_relation(&mut self, handler: impl Fn(&Self, &Relation) -> () + 'static) {
         self.handler.on_def_relation = Some(Box::new(handler));
     }
 }
 
 #[derive(Default)]
 pub(crate) struct EventHandler {
-    on_def_relation: Option<Box<dyn Fn(&Relation) -> ()>>,
+    on_def_relation: Option<Box<dyn Fn(&Database, &Relation) -> ()>>,
 }
 
 impl EventHandler {
-    pub(crate) fn emit_define_relation(&self, rel: &Relation) {
-        self.on_def_relation.as_ref().map(|h| h(rel));
+    pub(crate) fn emit_define_relation(&self, db: &Database, rel: &Relation) {
+        self.on_def_relation.as_ref().map(|h| h(db, rel));
     }
 }
 
@@ -36,7 +36,7 @@ mod tests {
         let created_relation = Rc::new(RefCell::new(String::new()));
         db.on_define_relation({
             let created_relation = Rc::clone(&created_relation);
-            move |rel| { created_relation.borrow_mut().push_str(rel.name()); }
+            move |_, rel| { created_relation.borrow_mut().push_str(rel.name()); }
         });
         assert_eq!(created_relation.borrow().as_str(), "");
 

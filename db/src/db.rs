@@ -49,7 +49,7 @@ impl Database {
         self.objects.insert(relation.id, Rc::new(RefCell::new(IndexedObject::from_table(relation))));
 
         let rel_id = relation.id;
-        self.schema().find_relation(rel_id).map(|r| self.handler.emit_define_relation(r));
+        self.schema().find_relation(rel_id).map(|r| self.handler.emit_define_relation(&self, r));
     }
 
     pub fn execute_query(&self, query: &dsl::Query) -> Result<QueryResults> {
