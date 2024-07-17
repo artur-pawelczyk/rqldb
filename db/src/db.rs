@@ -20,20 +20,21 @@ pub(crate) type SharedObject = Rc<RefCell<IndexedObject>>;
 pub struct Database {
     schema: Schema,
     objects: Vec<SharedObject>,
-    pub(crate) handler: EventHandler,
+    pub(crate) handler: Rc<RefCell<EventHandler>>,
 }
 
 impl Database {
     pub fn with_schema(schema: Schema) -> Self {
+        let handler = Rc::new(RefCell::new(EventHandler::default()));
         let objects = schema.relations.iter()
-            .map(IndexedObject::from_table)
+            .map(|rel| IndexedObject::from_table(rel).with_handler(Rc::clone(&handler)))
             .map(|o| Rc::new(RefCell::new(o)))
             .collect();
 
         Self {
             schema,
             objects,
-            ..Default::default()
+            handler,
         }
     }
 
@@ -46,10 +47,13 @@ impl Database {
             }
         }).add();
 
-        self.objects.insert(relation.id, Rc::new(RefCell::new(IndexedObject::from_table(relation))));
+        self.objects.insert(
+            relation.id,
+            Rc::new(RefCell::new(IndexedObject::from_table(relation).with_handler(Rc::clone(&self.handler))))
+        );
 
         let rel_id = relation.id;
-        self.schema().find_relation(rel_id).map(|r| self.handler.emit_define_relation(&self, r));
+        self.schema().find_relation(rel_id).map(|r| self.handler.borrow().emit_define_relation(&self, r));
     }
 
     pub fn execute_query(&self, query: &dsl::Query) -> Result<QueryResults> {

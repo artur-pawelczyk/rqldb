@@ -1,9 +1,12 @@
+use std::cell::RefCell;
 use std::fmt;
 use std::hash::{DefaultHasher, Hash as _, Hasher};
 use std::iter::zip;
+use std::rc::Rc;
 use std::{collections::{HashSet, HashMap}, cell::Ref};
 
 use crate::bytes::write_as_bytes;
+use crate::event::EventHandler;
 use crate::schema::AttributeRef;
 use crate::tuple::PositionalAttribute;
 use crate::{tuple::Tuple, schema::Relation, Type};
@@ -18,6 +21,7 @@ pub(crate) struct IndexedObject {
     index: Index,
     hash: HashMap<u64, Vec<usize>>,
     removed_ids: HashSet<usize>,
+    handler: Rc<RefCell<EventHandler>>,
 }
 
 impl IndexedObject {
@@ -26,12 +30,15 @@ impl IndexedObject {
 
         Self {
             id: table.id,
-            tuples: Vec::new(),
             attrs: table.attributes().map(Attribute::from).collect(),
             index: key.map(Index::Attr).unwrap_or(Index::Uniq),
-            hash: Default::default(),
-            removed_ids: Default::default(),
+            ..Default::default()
         }
+    }
+
+    pub(crate) fn with_handler(mut self, handler: Rc<RefCell<EventHandler>>) -> Self {
+        self.handler = handler;
+        self
     }
 
     pub(crate) fn id(&self) -> usize {
@@ -39,7 +46,7 @@ impl IndexedObject {
     }
 
     pub(crate) fn add_tuple(&mut self, tuple: &Tuple) -> bool {
-        match &self.index {
+        let added = match &self.index {
             Index::Attr(key_pos) => {
                 let key = tuple.element(key_pos).unwrap();
                 if let Some(id) = self.find_in_index(key.bytes()) {
@@ -63,7 +70,13 @@ impl IndexedObject {
                 }
                 
             }
+        };
+ 
+       if added {
+            self.handler.borrow().emit_add_tuple();
         }
+
+        added
     }
 
     pub(crate) fn find_in_index(&self, bytes: &[u8]) -> Option<usize> {
@@ -123,8 +136,7 @@ impl IndexedObject {
                 tuples: snapshot.values,
                 attrs: table.attributes().map(Attribute::from).collect(),
                 index,
-                hash: Default::default(),
-                removed_ids: HashSet::new(),
+                ..Default::default()
             };
 
             obj.reindex();
@@ -135,8 +147,7 @@ impl IndexedObject {
                 tuples: snapshot.values,
                 attrs: table.attributes().map(Attribute::from).collect(),
                 index: Default::default(),
-                hash: Default::default(),
-                removed_ids: HashSet::new(),
+                ..Default::default()
             }
         }
     }
