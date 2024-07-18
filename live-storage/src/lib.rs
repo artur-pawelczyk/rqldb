@@ -1,18 +1,21 @@
 mod page;
 
 use std::{fs::{create_dir_all, File}, io, path::{Path, PathBuf}};
+use crate::page::Page;
 
-use rqldb::{schema::Schema, Database, EventSource};
+use rqldb::{object::TempObject, schema::Schema, Database, EventSource};
 use rqldb_persist::{read_schema, write_schema};
 
 pub struct LiveStorage {
-    dir: PathBuf
+    dir: PathBuf,
 }
 
 impl LiveStorage {
     #[cfg(test)]
     fn temporary() -> io::Result<Self> {
-        Ok(LiveStorage { dir: tempfile::tempdir()?.path().into() })
+        Ok(LiveStorage {
+            dir: tempfile::tempdir()?.path().into(),
+        })
     }
 
     fn create_db(&self) -> io::Result<Database> {
@@ -21,6 +24,18 @@ impl LiveStorage {
         let mut db = self.schema_file()
             .map(|file| read_database(&file))
             .unwrap_or_else(|| Ok(Database::default()))?;
+
+        for rel in db.schema().relations.clone() {
+            if let Some(file_path) = self.object_file(rel.id) {
+                let page = Page::read(File::options().read(true).open(file_path)?)?;
+                let mut object = TempObject::from_relation(&rel);
+                for tuple in page.tuples() {
+                    object.push(tuple);
+                }
+
+                db.recover_object(rel.id, object);
+            }
+        }
 
         let mut schema_file = self.dir.clone();
         schema_file.push("schema");
@@ -34,7 +49,18 @@ impl LiveStorage {
             write_schema(&mut f, db.schema()).unwrap();
         });
 
-        db.on_add_tuple(|_, _| {
+        let dir = self.dir.clone();
+        db.on_add_tuple(move |obj_id, bytes| {
+            let mut path = dir.clone();
+            path.push(&obj_id.to_string());
+            let mut page = if path.is_file() {
+                Page::read(File::options().read(true).create(true).open(&path).unwrap()).unwrap()
+            } else {
+                Page::new()
+            };
+
+            page.push(bytes);
+            page.write(File::options().write(true).create(true).open(&path).unwrap()).unwrap();
         });
 
         Ok(db)
@@ -44,6 +70,16 @@ impl LiveStorage {
         let mut file = self.dir.clone();
         file.push("schema");
 
+        if file.is_file() {
+            Some(file)
+        } else {
+            None
+        }
+    }
+
+    fn object_file(&self, id: usize) -> Option<PathBuf> {
+        let mut file = self.dir.clone();
+        file.push(id.to_string());
         if file.is_file() {
             Some(file)
         } else {
@@ -104,7 +140,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_restore_db()  -> Result<(), Box<dyn Error>> {
         let storage = LiveStorage::temporary()?;
         let mut db = storage.create_db()?;
@@ -121,7 +156,7 @@ mod tests {
 
         let result = db.execute_query(&Query::scan("document"))?;
         let first = result.tuples().next().unwrap();
-        assert_eq!(first.element("name").unwrap().to_string(), "example one");
+        assert_eq!(first.element("document.name").unwrap().to_string(), "example one");
 
         Ok(())
     }

@@ -187,27 +187,27 @@ pub fn read_db<R: Read>(reader: R) -> Result<Database, Error> {
     Ok(db)
 }
 
-pub(crate) struct ByteReader<R: Read> {
+pub struct ByteReader<R: Read> {
     reader: BufReader<R>,
 }
 
 impl<R: Read> ByteReader<R> {
-    pub(crate) fn new(reader: R) -> Self {
+    pub fn new(reader: R) -> Self {
         Self{ reader: BufReader::new(reader) }
     }
 
-    pub(crate) fn peek_i32(&mut self) -> io::Result<i32> {
+    pub fn peek_i32(&mut self) -> io::Result<i32> {
         const LEN: usize = i32::BITS as usize / 8;
         let buf = self.reader.fill_buf()?;
         let bytes: [u8; LEN] = buf[0..LEN].try_into().unwrap();
         Ok(i32::from_le_bytes(bytes))
     }
 
-    pub(crate) fn read_u32(&mut self) -> io::Result<i32> {
+    pub fn read_u32(&mut self) -> io::Result<u32> {
         const LEN: usize = u32::BITS as usize / 8;
         let mut buf = [0u8; LEN];
         self.reader.read_exact(&mut buf).unwrap();
-        Ok(i32::from_le_bytes(buf))
+        Ok(u32::from_le_bytes(buf))
     }
 
     pub(crate) fn read_bytes(&mut self, size: usize) -> io::Result<Vec<u8>> {
@@ -219,6 +219,12 @@ impl<R: Read> ByteReader<R> {
 
     pub(crate) fn has_some(&mut self) -> io::Result<bool> {
         Ok(!self.reader.fill_buf().unwrap().is_empty())
+    }
+}
+
+impl<R: Read> Read for ByteReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.reader.read(buf)
     }
 }
 
