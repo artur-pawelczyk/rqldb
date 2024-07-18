@@ -73,7 +73,7 @@ impl IndexedObject {
         };
  
        if added {
-            self.handler.borrow().emit_add_tuple();
+            self.handler.borrow().emit_add_tuple(self.id, tuple.raw_bytes());
         }
 
         added

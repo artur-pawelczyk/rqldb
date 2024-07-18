@@ -1,4 +1,6 @@
-use std::{fs::{create_dir_all, DirBuilder, File}, io::{self, Cursor}, os::unix::fs::OpenOptionsExt, path::{Path, PathBuf}};
+mod page;
+
+use std::{fs::{create_dir_all, File}, io, path::{Path, PathBuf}};
 
 use rqldb::{schema::Schema, Database, EventSource};
 use rqldb_persist::{read_schema, write_schema};
@@ -8,6 +10,11 @@ pub struct LiveStorage {
 }
 
 impl LiveStorage {
+    #[cfg(test)]
+    fn temporary() -> io::Result<Self> {
+        Ok(LiveStorage { dir: tempfile::tempdir()?.path().into() })
+    }
+
     fn create_db(&self) -> io::Result<Database> {
         create_dir_all(&self.dir)?;
 
@@ -27,6 +34,9 @@ impl LiveStorage {
             write_schema(&mut f, db.schema()).unwrap();
         });
 
+        db.on_add_tuple(|_, _| {
+        });
+
         Ok(db)
     }
 
@@ -39,6 +49,11 @@ impl LiveStorage {
         } else {
             None
         }
+    }
+
+    #[cfg(test)]
+    fn reopen(self) -> Self {
+        Self { dir: self.dir }
     }
 }
 
@@ -63,14 +78,12 @@ fn read_database(file: &Path) -> io::Result<Database> {
 mod tests {
     use std::error::Error;
 
-    use rqldb::{Definition, Type};
-    use tempfile::tempdir;
-
+    use rqldb::{dsl::TupleBuilder, Definition, Query, Type};
     use super::*;
 
     #[test]
     fn test_init_empty_db() -> Result<(), Box<dyn Error>> {
-        let storage = LiveStorage { dir: tempdir()?.path().into() };
+        let storage = LiveStorage::temporary()?;
         let db = storage.create_db()?;
         assert!(db.schema().relations.is_empty());
 
@@ -78,15 +91,37 @@ mod tests {
     }
 
     #[test]
-    fn test_restore_db() -> Result<(), Box<dyn Error>> {
-        let dir = tempdir()?;
-        let storage = LiveStorage { dir: dir.path().into() };
+    fn test_restore_schema() -> Result<(), Box<dyn Error>> {
+        let storage = LiveStorage::temporary()?;
         let mut db = storage.create_db()?;
         db.define(&Definition::relation("document").attribute("id", Type::NUMBER));
 
-        let storage = LiveStorage { dir: dir.path().into() };
+        let storage = storage.reopen();
         let db = storage.create_db()?;
         assert!(db.schema().find_relation("document").is_some());
+
+        Ok(())
+    }
+
+    #[test]
+    #[ignore]
+    fn test_restore_db()  -> Result<(), Box<dyn Error>> {
+        let storage = LiveStorage::temporary()?;
+        let mut db = storage.create_db()?;
+        db.define(&Definition::relation("document")
+                  .indexed_attribute("id", Type::NUMBER)
+                  .attribute("name", Type::TEXT));
+        db.execute_query(&Query::tuple(TupleBuilder::new()
+                                       .inferred("id", "1")
+                                       .inferred("name", "example one"))
+                         .insert_into("document"))?;
+
+        let storage = storage.reopen();
+        let db = storage.create_db()?;
+
+        let result = db.execute_query(&Query::scan("document"))?;
+        let first = result.tuples().next().unwrap();
+        assert_eq!(first.element("name").unwrap().to_string(), "example one");
 
         Ok(())
     }
