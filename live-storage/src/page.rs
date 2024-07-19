@@ -16,7 +16,7 @@ impl LinePointer {
         let start = self.0 as usize;
         let end = self.1 as usize;
         for i in start..end {
-            target[i] = source[i];
+            target[i] = source[i - start];
         }
     }
 
@@ -110,14 +110,20 @@ mod tests {
 
     #[test]
     fn test_add_tuple() {
-        let expected_tuple = [0, 0, 0, 1];
+        let tuple_1 = [0, 0, 0, 1];
+        let tuple_2 = [0, 0, 0, 2];
 
         let mut page = Page::new();
-        page.push(&expected_tuple);
+        page.push(&tuple_1);
+        page.push(&tuple_2);
 
-        assert_eq!(page.tuples().count(), 1);
-        let actual_tuple = page.tuples().next().unwrap();
-        assert_eq!(actual_tuple, expected_tuple);
+        assert_eq!(page.tuples().count(), 2);
+
+        let actual_tuple_1 = page.tuples().next().unwrap();
+        assert_eq!(actual_tuple_1, tuple_1);
+
+        let actual_tuple_2 = page.tuples().nth(1).unwrap();
+        assert_eq!(actual_tuple_2, tuple_2);
     }
 
     #[test]
