@@ -167,6 +167,8 @@ impl Iterator for LinePointerIter<'_> {
 mod tests {
     use std::error::Error;
 
+    use crate::test_util::large_tuple;
+
     use super::*;
 
     #[test]
@@ -222,11 +224,5 @@ mod tests {
         }
 
         assert!(page.push(&tuple).is_err())
-    }
-
-    fn large_tuple<const N: usize>() -> [u8; N] {
-        let mut v = [0; N];
-        v[0] = 123;
-        v
     }
 }

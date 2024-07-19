@@ -1,4 +1,8 @@
+mod heap;
 mod page;
+
+#[cfg(test)]
+mod test_util;
 
 use std::{fs::{create_dir_all, File}, io, path::{Path, PathBuf}};
 use crate::page::Page;
