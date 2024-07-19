@@ -63,7 +63,7 @@ impl LiveStorage {
                 Page::new()
             };
 
-            page.push(bytes);
+            page.push(bytes).unwrap();
             page.write(File::options().write(true).create(true).open(&path).unwrap()).unwrap();
         });
 

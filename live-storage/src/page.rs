@@ -1,3 +1,4 @@
+use core::fmt;
 use std::{io::{self, Read, Write}, ops::Range};
 
 const PAGE_SIZE: usize = 8 * 1024;
@@ -24,7 +25,7 @@ impl LinePointer {
         start..end
     }
 
-    const fn self_size(&self) -> usize {
+    const fn self_size() -> usize {
         std::mem::size_of::<u32>() * 2
     }
 }
@@ -48,6 +49,19 @@ impl TryFrom<&[u8]> for LinePointer {
     }
 }
 
+#[derive(Debug)]
+pub enum PageError {
+    PageFull,
+}
+
+impl fmt::Display for PageError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(self, f)
+    }
+}
+
+impl std::error::Error for PageError {}
+
 impl Page {
     pub(crate) fn new() -> Self {
         Self { contents: [0; PAGE_SIZE] }
@@ -64,9 +78,11 @@ impl Page {
         w.write_all(&self.contents)
     }
 
-    pub(crate) fn push(&mut self, b: &[u8]) {
-        let lp = self.reserve_space(b.len());
+    pub(crate) fn push(&mut self, b: &[u8]) -> Result<(), PageError> {
+        let lp = self.reserve_space(b.len())?;
         lp.insert_into(&mut self.contents, b);
+
+        Ok(())
     }
 
     pub(crate) fn tuples<'a>(&'a self) -> impl Iterator<Item = &'a [u8]> {
@@ -80,24 +96,28 @@ impl Page {
         LinePointerIter(read_u32(&self.contents), &self.contents[4..])
     }
 
-    fn reserve_space(&mut self, size: usize) -> LinePointer {
+    fn reserve_space(&mut self, size: usize) -> Result<LinePointer, PageError> {
         let (last_lp, end) = self.line_pointers().enumerate()
             .map(|(i, lp)| (i+1, lp.0))
             .last()
             .unwrap_or((0, self.contents.len() as u32));
+
+        let lp_self_start = last_lp * LinePointer::self_size() + 4;
         let start = end - size as u32;
-        assert!(self.contents[start as usize] == 0);
+        if start as usize <= lp_self_start {
+            return Err(PageError::PageFull);
+        }
+
         let lp = LinePointer(start, end);
 
         let lp_bytes = <[u8; 8]>::from(&lp);
-        let lp_self_start = last_lp * lp_bytes.len() + 4;
-        let lp_self_end = lp_self_start + lp.self_size();
+        let lp_self_end = lp_self_start + LinePointer::self_size();
         self.contents[lp_self_start..lp_self_end].copy_from_slice(&lp_bytes);
 
         let new_lp_count = (last_lp + 1) as u32;
         self.contents[0..4].copy_from_slice(&new_lp_count.to_le_bytes());
 
-        lp
+        Ok(lp)
     }
 }
 
@@ -137,7 +157,7 @@ impl Iterator for LinePointerIter<'_> {
         } else {
             self.0 -= 1;
             let lp = LinePointer::try_from(self.1).ok()?;
-            self.1 = &self.1[lp.self_size()..];
+            self.1 = &self.1[LinePointer::self_size()..];
             Some(lp)
         }
     }
@@ -156,13 +176,13 @@ mod tests {
     }
 
     #[test]
-    fn test_add_tuple() {
+    fn test_add_tuple() -> Result<(), Box<dyn Error>> {
         let tuple_1 = [0, 0, 0, 1];
         let tuple_2 = [0, 0, 0, 2];
 
         let mut page = Page::new();
-        page.push(&tuple_1);
-        page.push(&tuple_2);
+        page.push(&tuple_1)?;
+        page.push(&tuple_2)?;
 
         assert_eq!(page.tuples().count(), 2);
 
@@ -171,6 +191,8 @@ mod tests {
 
         let actual_tuple_2 = page.tuples().nth(1).unwrap();
         assert_eq!(actual_tuple_2, tuple_2);
+
+        Ok(())
     }
 
     #[test]
@@ -178,7 +200,7 @@ mod tests {
         let expected_tuple = [0, 0, 0, 1];
 
         let mut page = Page::new();
-        page.push(&expected_tuple);
+        page.push(&expected_tuple)?;
 
         let mut buf = Vec::<u8>::new();
         page.write(&mut buf)?;
@@ -188,5 +210,23 @@ mod tests {
         assert_eq!(actual_tuple, expected_tuple);
 
         Ok(())
+    }
+
+    #[test]
+    fn test_overflow_page() {
+        let tuple = large_tuple::<1024>();
+
+        let mut page = Page::new();
+        for _ in 0..10 {
+            let _ignore = page.push(&tuple);
+        }
+
+        assert!(page.push(&tuple).is_err())
+    }
+
+    fn large_tuple<const N: usize>() -> [u8; N] {
+        let mut v = [0; N];
+        v[0] = 123;
+        v
     }
 }
