@@ -1,6 +1,7 @@
-use std::{error::Error, fmt, path::Path};
+use std::{error::Error, fmt, fs::File, io, path::Path};
 
 use rqldb::{parse_definition, parse_query, Database, QueryResults, SortOrder};
+use rqldb_live_storage::LiveStorage;
 use rqldb_persist::{FilePersist, Persist, Error as PersistError};
 
 use crate::table::Table;
@@ -26,10 +27,19 @@ impl Default for Shell {
 }
 
 impl Shell {
-    pub(crate) fn with_db_file(s: &str) -> Self {
+    pub(crate) fn with_db_dir(s: &str) -> io::Result<Self> {
+        let storage = LiveStorage::new(s);
+        let db = storage.create_db()?;
+        Ok(Self {
+            db,
+            ..Default::default()
+        })
+    }
+    
+    pub(crate) fn db_file(self, s: &str) -> Self {
         let instance = Self {
             persist: Box::new(FilePersist::new(Path::new(s))),
-            ..Default::default()
+            ..self
         };
 
         instance.restore().unwrap()

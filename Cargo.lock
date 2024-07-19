@@ -781,6 +781,7 @@ version = "0.1.0"
 dependencies = [
  "clap 3.2.25",
  "rqldb",
+ "rqldb-live-storage",
  "rqldb-persist",
  "rustyline",
 ]

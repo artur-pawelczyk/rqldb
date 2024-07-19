@@ -7,6 +7,7 @@ use shell::{NilOut, Shell, StandardOut};
 use rustyline::Editor;
 use clap::Parser;
 
+use std::error::Error;
 use std::io::prelude::*;
 use std::fs::File;
 use std::path::Path;
@@ -22,15 +23,26 @@ struct Args {
     #[clap(short, long)]
     command: Option<String>,
 
+    /// Directory to use as database live storage. If not provided, an in-memory database is created.
+    #[clap(short = 'd', long)]
+    db_dir: Option<String>,
+
     /// Database file. If not provided, an in-memory database is created.
     #[clap(value_name = "FILENAME")]
     db_file: Option<String>,
-
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
-    let mut shell = args.db_file.map(|s| Shell::with_db_file(&s)).unwrap_or_else(Shell::default);
+
+    let mut shell = args.db_dir.as_ref()
+        .map(|s| Shell::with_db_dir(s))
+        .unwrap_or_else(|| Ok(Shell::default()))?;
+
+    if let Some(s) = args.db_file {
+        shell = shell.db_file(&s);
+    }
+
     if let Some(path) = args.init {
         let mut contents = String::new();
         let mut file = File::open(Path::new(&path)).unwrap();
@@ -53,5 +65,7 @@ fn main() {
             }
         }
     }
+
+    Ok(())
 }
 

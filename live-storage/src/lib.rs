@@ -18,7 +18,11 @@ impl LiveStorage {
         })
     }
 
-    fn create_db(&self) -> io::Result<Database> {
+    pub fn new(s: &str) -> Self {
+        Self { dir: PathBuf::from(s).canonicalize().unwrap() }
+    }
+
+    pub fn create_db(&self) -> io::Result<Database> {
         create_dir_all(&self.dir)?;
 
         let mut db = self.schema_file()
@@ -54,7 +58,7 @@ impl LiveStorage {
             let mut path = dir.clone();
             path.push(&obj_id.to_string());
             let mut page = if path.is_file() {
-                Page::read(File::options().read(true).create(true).open(&path).unwrap()).unwrap()
+                Page::read(File::options().read(true).open(&path).unwrap()).unwrap()
             } else {
                 Page::new()
             };
