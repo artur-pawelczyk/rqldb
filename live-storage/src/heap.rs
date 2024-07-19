@@ -1,12 +1,25 @@
+use std::io::{self, Read, Write};
+
 use crate::page::Page;
 
 #[derive(Default)]
-struct Heap {
+pub(crate) struct Heap {
     pages: Vec<Page>,
 }
 
 impl Heap {
-    fn push(&mut self, tuple: &[u8]) {
+    pub(crate) fn read(mut r: impl Read) -> io::Result<Self> {
+        let mut pages = Vec::new();
+        loop {
+            if let Ok(page) = Page::read(&mut r) {
+                pages.push(page);
+            } else {
+                return Ok(Self { pages })
+            }
+        }
+    }
+
+    pub(crate) fn push(&mut self, tuple: &[u8]) {
         if self.pages.is_empty() {
             self.pages.push(Page::new());
         }
@@ -22,17 +35,28 @@ impl Heap {
         }
     }
 
-    fn tuples(&self) -> impl Iterator<Item = &[u8]> {
+    pub(crate) fn tuples(&self) -> impl Iterator<Item = &[u8]> {
         self.pages.iter().flat_map(Page::tuples)
     }
 
+    #[cfg(test)]
     fn allocated_pages(&self) -> usize {
         self.pages.len()
+    }
+
+    pub(crate) fn write(&self, mut w: impl Write) -> io::Result<()> {
+        for page in &self.pages {
+            page.write(&mut w)?;
+        }
+
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::error::Error;
+
     use crate::test_util::large_tuple;
 
     use super::*;
@@ -58,5 +82,23 @@ mod tests {
 
         assert!(heap.allocated_pages() > 1);
         assert_eq!(heap.tuples().count(), 10);
+    }
+
+    #[test]
+    fn test_write_and_read_heap() -> Result<(), Box<dyn Error>> {
+        let tuple = large_tuple::<1024>();
+
+        let mut heap = Heap::default();
+        for _ in 0..10 {
+            heap.push(&tuple);
+        }
+
+        let mut buf = Vec::<u8>::new();
+        heap.write(&mut buf)?;
+
+        let heap = Heap::read(buf.as_slice())?;
+        assert_eq!(heap.tuples().count(), 10);
+
+        Ok(())
     }
 }

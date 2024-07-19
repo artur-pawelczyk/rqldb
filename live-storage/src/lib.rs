@@ -5,8 +5,8 @@ mod page;
 mod test_util;
 
 use std::{fs::{create_dir_all, File}, io, path::{Path, PathBuf}};
-use crate::page::Page;
 
+use heap::Heap;
 use rqldb::{object::TempObject, schema::Schema, Database, EventSource};
 use rqldb_persist::{read_schema, write_schema};
 
@@ -35,9 +35,9 @@ impl LiveStorage {
 
         for rel in db.schema().relations.clone() {
             if let Some(file_path) = self.object_file(rel.id) {
-                let page = Page::read(File::options().read(true).open(file_path)?)?;
+                let heap = Heap::read(File::options().read(true).open(file_path)?)?;
                 let mut object = TempObject::from_relation(&rel);
-                for tuple in page.tuples() {
+                for tuple in heap.tuples() {
                     object.push(tuple);
                 }
 
@@ -61,14 +61,14 @@ impl LiveStorage {
         db.on_add_tuple(move |obj_id, bytes| {
             let mut path = dir.clone();
             path.push(&obj_id.to_string());
-            let mut page = if path.is_file() {
-                Page::read(File::options().read(true).open(&path).unwrap()).unwrap()
+            let mut heap = if path.is_file() {
+                Heap::read(File::options().read(true).open(&path).unwrap()).unwrap()
             } else {
-                Page::new()
+                Heap::default()
             };
 
-            page.push(bytes).unwrap();
-            page.write(File::options().write(true).create(true).open(&path).unwrap()).unwrap();
+            heap.push(bytes);
+            heap.write(File::options().write(true).create(true).open(&path).unwrap()).unwrap();
         });
 
         Ok(db)
