@@ -1,4 +1,4 @@
-use std::{error::Error, fmt, fs::File, io, path::Path};
+use std::{error::Error, fmt, io, path::Path};
 
 use rqldb::{parse_definition, parse_query, Database, QueryResults, SortOrder};
 use rqldb_live_storage::LiveStorage;

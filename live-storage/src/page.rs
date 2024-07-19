@@ -1,15 +1,13 @@
 use std::{io::{self, Read, Write}, ops::Range};
 
-use rqldb_persist::ByteReader;
-
 const PAGE_SIZE: usize = 8 * 1024;
 
 pub(crate) struct Page {
-    line_pointers: Vec<LinePointer>,
     contents: [u8; PAGE_SIZE],
 }
 
 // TODO: u16 is probably enough
+#[derive(Debug)]
 struct LinePointer(u32, u32);
 impl LinePointer {
     fn insert_into(&self, target: &mut [u8], source: &[u8]) {
@@ -25,73 +23,122 @@ impl LinePointer {
         let end = self.1 as usize;
         start..end
     }
+
+    const fn self_size(&self) -> usize {
+        std::mem::size_of::<u32>() * 2
+    }
+}
+
+impl From<&LinePointer> for [u8; 8] {
+    fn from(value: &LinePointer) -> Self {
+        let mut a = [0u8; 8];
+        a[0..4].copy_from_slice(&value.0.to_le_bytes());
+        a[4..].copy_from_slice(&value.1.to_le_bytes());
+        a
+    }
+}
+
+impl TryFrom<&[u8]> for LinePointer {
+    type Error = ();
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        let a = read_u32(value);
+        let b = read_u32(&value[4..]);
+        Ok(Self(a, b))
+    }
 }
 
 impl Page {
     pub(crate) fn new() -> Self {
-        Self { line_pointers: Vec::new(), contents: [0; PAGE_SIZE] }
+        Self { contents: [0; PAGE_SIZE] }
     }
 
-    pub(crate) fn read(r: impl Read) -> io::Result<Self> {
-        let mut r = ByteReader::new(r);
-        let mut line_pointers = Vec::new();
-        for _ in 0..r.read_u32()? {
-            line_pointers.push(LinePointer(r.read_u32()?, r.read_u32()?));
-        }
-
+    pub(crate) fn read(mut r: impl Read) -> io::Result<Self> {
         let mut contents = [0u8; PAGE_SIZE];
         r.read_exact(&mut contents)?;
 
-        Ok(Self { line_pointers, contents })
+        Ok(Self { contents })
     }
 
     pub(crate) fn write(&self, mut w: impl Write) -> io::Result<()> {
-        let lp_count = self.line_pointers.len() as u32;
-        w.write_all(&lp_count.to_le_bytes())?;
-        for lp in &self.line_pointers {
-            w.write_all(&lp.0.to_le_bytes())?;
-            w.write_all(&lp.1.to_le_bytes())?;
-        }
-
-        w.write_all(&self.contents)?;
-
-        Ok(())
+        w.write_all(&self.contents)
     }
 
     pub(crate) fn push(&mut self, b: &[u8]) {
-        let last = self.last_tuple().unwrap_or(0);
-        let lp = LinePointer(last as u32, last + b.len() as u32);
+        let lp = self.reserve_space(b.len());
         lp.insert_into(&mut self.contents, b);
-        self.line_pointers.push(lp);
     }
 
     pub(crate) fn tuples<'a>(&'a self) -> impl Iterator<Item = &'a [u8]> {
         PageIter {
-            line_pointers: &self.line_pointers,
+            line_pointers: self.line_pointers(),
             contents: &self.contents,
         }
     }
 
-    // TODO: Grow tuples from the bottom, and line pointers from the top
-    fn last_tuple(&self) -> Option<u32> {
-        self.line_pointers.last().map(|lp| lp.1)
+    fn line_pointers<'a>(&'a self) -> impl Iterator<Item = LinePointer> + 'a {
+        LinePointerIter(read_u32(&self.contents), &self.contents[4..])
+    }
+
+    fn reserve_space(&mut self, size: usize) -> LinePointer {
+        let (last_lp, end) = self.line_pointers().enumerate()
+            .map(|(i, lp)| (i+1, lp.0))
+            .last()
+            .unwrap_or((0, self.contents.len() as u32));
+        let start = end - size as u32;
+        assert!(self.contents[start as usize] == 0);
+        let lp = LinePointer(start, end);
+
+        let lp_bytes = <[u8; 8]>::from(&lp);
+        let lp_self_start = last_lp * lp_bytes.len() + 4;
+        let lp_self_end = lp_self_start + lp.self_size();
+        self.contents[lp_self_start..lp_self_end].copy_from_slice(&lp_bytes);
+
+        let new_lp_count = (last_lp + 1) as u32;
+        self.contents[0..4].copy_from_slice(&new_lp_count.to_le_bytes());
+
+        lp
     }
 }
 
-struct PageIter<'a> {
-    line_pointers: &'a [LinePointer],
+fn read_u32(b: &[u8]) -> u32 {
+    u32::from_le_bytes(<[u8; 4]>::try_from(&b[0..4]).unwrap())
+}
+
+struct PageIter<'a, I>
+where I: Iterator<Item = LinePointer>
+{
+    line_pointers: I,
     contents: &'a [u8],
 }
 
-impl<'a> Iterator for PageIter<'a> {
+impl<'a, I> Iterator for PageIter<'a, I>
+where I: Iterator<Item = LinePointer>
+{
     type Item = &'a [u8];
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(lp) = self.line_pointers.get(0) {
-            self.line_pointers = &self.line_pointers[1..];
+        if let Some(lp) = self.line_pointers.next() {
+            dbg!(&lp);
             Some(&self.contents[lp.range()])
         } else {
             None
+        }
+    }
+}
+
+struct LinePointerIter<'a>(u32, &'a [u8]);
+impl Iterator for LinePointerIter<'_> {
+    type Item = LinePointer;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.0 == 0 {
+            None
+        } else {
+            self.0 -= 1;
+            let lp = LinePointer::try_from(self.1).ok()?;
+            self.1 = &self.1[lp.self_size()..];
+            Some(lp)
         }
     }
 }
