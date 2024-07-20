@@ -3,10 +3,6 @@ use std::{io::{self, Read, Write}, ops::Range};
 
 const PAGE_SIZE: usize = 8 * 1024;
 
-pub(crate) struct Page {
-    contents: [u8; PAGE_SIZE],
-}
-
 // TODO: u16 is probably enough
 #[derive(Debug)]
 struct LinePointer(u32, u32);
@@ -62,6 +58,10 @@ impl fmt::Display for PageError {
 
 impl std::error::Error for PageError {}
 
+pub(crate) struct Page {
+    contents: [u8; PAGE_SIZE],
+}
+
 impl Page {
     pub(crate) fn new() -> Self {
         Self { contents: [0; PAGE_SIZE] }
@@ -93,25 +93,30 @@ impl Page {
     }
 
     fn line_pointers<'a>(&'a self) -> impl Iterator<Item = LinePointer> + 'a {
-        LinePointerIter(read_u32(&self.contents), &self.contents[4..])
+        let lp_count = read_u32(&self.contents);
+        let lp_end = lp_count as usize * LinePointer::self_size() + 4;
+        debug_assert!(lp_count < 1024);
+        LinePointerIter(&self.contents[4..lp_end])
     }
 
     fn reserve_space(&mut self, size: usize) -> Result<LinePointer, PageError> {
-        let (last_lp, end) = self.line_pointers().enumerate()
+        let (last_lp, tuple_end) = self.line_pointers().enumerate()
             .map(|(i, lp)| (i+1, lp.0))
             .last()
             .unwrap_or((0, self.contents.len() as u32));
 
         let lp_self_start = last_lp * LinePointer::self_size() + 4;
-        let start = end - size as u32;
-        if start as usize <= lp_self_start {
+        let lp_self_end = lp_self_start + LinePointer::self_size();
+        let tuple_start = tuple_end - size as u32;
+        if tuple_start as usize <= lp_self_end {
             return Err(PageError::PageFull);
         }
 
-        let lp = LinePointer(start, end);
+        debug_assert!(tuple_start <= 8*1024);
+        debug_assert!(tuple_end <= 8*1024);
+        let lp = LinePointer(tuple_start, tuple_end);
 
         let lp_bytes = <[u8; 8]>::from(&lp);
-        let lp_self_end = lp_self_start + LinePointer::self_size();
         self.contents[lp_self_start..lp_self_end].copy_from_slice(&lp_bytes);
 
         let new_lp_count = (last_lp + 1) as u32;
@@ -139,7 +144,6 @@ where I: Iterator<Item = LinePointer>
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(lp) = self.line_pointers.next() {
-            dbg!(&lp);
             Some(&self.contents[lp.range()])
         } else {
             None
@@ -147,18 +151,19 @@ where I: Iterator<Item = LinePointer>
     }
 }
 
-struct LinePointerIter<'a>(u32, &'a [u8]);
+struct LinePointerIter<'a>(&'a [u8]);
 impl Iterator for LinePointerIter<'_> {
     type Item = LinePointer;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.0 == 0 {
-            None
-        } else {
-            self.0 -= 1;
-            let lp = LinePointer::try_from(self.1).ok()?;
-            self.1 = &self.1[LinePointer::self_size()..];
+        if let Some(lp_bytes) = self.0.get(0..LinePointer::self_size()) {
+            let lp = LinePointer::try_from(lp_bytes).unwrap();
+            debug_assert!(lp.0 <= 8*1024);
+            debug_assert!(lp.1 <= 8*1024);
+            self.0 = &self.0[LinePointer::self_size()..];
             Some(lp)
+        } else {
+            None
         }
     }
 }
