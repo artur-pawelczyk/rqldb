@@ -1,7 +1,7 @@
 use core::fmt;
 use std::{io::{self, Read, Write}, ops::Range};
 
-const PAGE_SIZE: usize = 8 * 1024;
+pub const PAGE_SIZE: usize = 8 * 1024;
 
 // TODO: u16 is probably enough
 #[derive(Debug)]
@@ -58,13 +58,20 @@ impl fmt::Display for PageError {
 
 impl std::error::Error for PageError {}
 
-pub(crate) struct Page {
-    contents: [u8; PAGE_SIZE],
+pub(crate) struct PageMut {
+    pub(crate) contents: [u8; PAGE_SIZE],
 }
 
-impl Page {
+impl PageMut {
     pub(crate) fn new() -> Self {
         Self { contents: [0; PAGE_SIZE] }
+    }
+
+    pub(crate) fn with_contents(bytes: &[u8]) -> Self {
+        debug_assert!(bytes.len() == PAGE_SIZE);
+        let mut contents = [0; PAGE_SIZE];
+        contents.copy_from_slice(bytes);
+        Self { contents }
     }
 
     pub(crate) fn read(mut r: impl Read) -> io::Result<Self> {
@@ -126,6 +133,32 @@ impl Page {
     }
 }
 
+pub(crate) struct Page<'a> {
+    contents: &'a [u8],
+}
+
+impl<'a> Page<'a> {
+    pub(crate) fn new(contents: &'a [u8]) -> Self {
+        debug_assert!(contents.len() == PAGE_SIZE);
+        Self { contents }
+    }
+
+    pub(crate) fn tuple(&self, n: usize) -> Option<&'a [u8]> {
+        self.line_pointer(n).map(|lp| &self.contents[lp.range()])
+    }
+
+    fn line_pointer(&self, n: usize) -> Option<LinePointer> {
+        let lp_count = read_u32(&self.contents);
+        if lp_count as usize > n {
+            let lp_start = n * LinePointer::self_size() + 4;
+            let lp_end = lp_start + LinePointer::self_size();
+            LinePointer::try_from(&self.contents[lp_start..lp_end]).ok()
+        } else {
+            None
+        }
+    }
+}
+
 fn read_u32(b: &[u8]) -> u32 {
     u32::from_le_bytes(<[u8; 4]>::try_from(&b[0..4]).unwrap())
 }
@@ -178,7 +211,7 @@ mod tests {
 
     #[test]
     fn test_empty_page() {
-        let page = Page::new();
+        let page = PageMut::new();
         assert_eq!(page.tuples().count(), 0);
     }
 
@@ -187,7 +220,7 @@ mod tests {
         let tuple_1 = [0, 0, 0, 1];
         let tuple_2 = [0, 0, 0, 2];
 
-        let mut page = Page::new();
+        let mut page = PageMut::new();
         page.push(&tuple_1)?;
         page.push(&tuple_2)?;
 
@@ -206,13 +239,13 @@ mod tests {
     fn test_recover_tuples_from_file() -> Result<(), Box<dyn Error>> {
         let expected_tuple = [0, 0, 0, 1];
 
-        let mut page = Page::new();
+        let mut page = PageMut::new();
         page.push(&expected_tuple)?;
 
         let mut buf = Vec::<u8>::new();
         page.write(&mut buf)?;
 
-        let page = Page::read(buf.as_slice())?;
+        let page = PageMut::read(buf.as_slice())?;
         let actual_tuple = page.tuples().next().unwrap();
         assert_eq!(actual_tuple, expected_tuple);
 
@@ -223,7 +256,7 @@ mod tests {
     fn test_overflow_page() {
         let tuple = large_tuple::<1024>();
 
-        let mut page = Page::new();
+        let mut page = PageMut::new();
         for _ in 0..10 {
             let _ignore = page.push(&tuple);
         }

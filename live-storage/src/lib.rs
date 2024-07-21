@@ -35,7 +35,7 @@ impl LiveStorage {
 
         for rel in db.schema().relations.clone() {
             if let Some(file_path) = self.object_file(rel.id) {
-                let heap = Heap::read(File::options().read(true).open(file_path)?)?;
+                let heap = Heap::open(&file_path)?;
                 let mut object = TempObject::from_relation(&rel);
                 for tuple in heap.tuples() {
                     object.push(tuple);
@@ -61,14 +61,9 @@ impl LiveStorage {
         db.on_add_tuple(move |obj_id, bytes| {
             let mut path = dir.clone();
             path.push(&obj_id.to_string());
-            let mut heap = if path.is_file() {
-                Heap::read(File::options().read(true).open(&path).unwrap()).unwrap()
-            } else {
-                Heap::default()
-            };
-
+            let mut heap = Heap::open(&path).unwrap();
             heap.push(bytes);
-            heap.write(File::options().write(true).create(true).open(&path).unwrap()).unwrap();
+            heap.write().unwrap();
         });
 
         Ok(db)
