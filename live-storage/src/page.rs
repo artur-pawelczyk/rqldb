@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{io::{self, Read, Write}, ops::Range};
+use std::ops::Range;
 
 pub const PAGE_SIZE: usize = 8 * 1024;
 
@@ -58,31 +58,14 @@ impl fmt::Display for PageError {
 
 impl std::error::Error for PageError {}
 
-pub(crate) struct PageMut {
-    pub(crate) contents: [u8; PAGE_SIZE],
+pub(crate) struct PageMut<'a> {
+    pub(crate) contents: &'a mut [u8],
 }
 
-impl PageMut {
-    pub(crate) fn new() -> Self {
-        Self { contents: [0; PAGE_SIZE] }
-    }
-
-    pub(crate) fn with_contents(bytes: &[u8]) -> Self {
-        debug_assert!(bytes.len() == PAGE_SIZE);
-        let mut contents = [0; PAGE_SIZE];
-        contents.copy_from_slice(bytes);
+impl<'a> PageMut<'a> {
+    pub(crate) fn new(contents: &'a mut [u8]) -> Self {
+        debug_assert!(contents.len() == PAGE_SIZE);
         Self { contents }
-    }
-
-    pub(crate) fn read(mut r: impl Read) -> io::Result<Self> {
-        let mut contents = [0u8; PAGE_SIZE];
-        r.read_exact(&mut contents)?;
-
-        Ok(Self { contents })
-    }
-
-    pub(crate) fn write(&self, mut w: impl Write) -> io::Result<()> {
-        w.write_all(&self.contents)
     }
 
     pub(crate) fn push(&mut self, b: &[u8]) -> Result<(), PageError> {
@@ -92,14 +75,7 @@ impl PageMut {
         Ok(())
     }
 
-    pub(crate) fn tuples<'a>(&'a self) -> impl Iterator<Item = &'a [u8]> {
-        PageIter {
-            line_pointers: self.line_pointers(),
-            contents: &self.contents,
-        }
-    }
-
-    fn line_pointers<'a>(&'a self) -> impl Iterator<Item = LinePointer> + 'a {
+    fn line_pointers(&'a self) -> impl Iterator<Item = LinePointer> + 'a {
         let lp_count = read_u32(&self.contents);
         let lp_end = lp_count as usize * LinePointer::self_size() + 4;
         debug_assert!(lp_count < 1024);
@@ -163,27 +139,6 @@ fn read_u32(b: &[u8]) -> u32 {
     u32::from_le_bytes(<[u8; 4]>::try_from(&b[0..4]).unwrap())
 }
 
-struct PageIter<'a, I>
-where I: Iterator<Item = LinePointer>
-{
-    line_pointers: I,
-    contents: &'a [u8],
-}
-
-impl<'a, I> Iterator for PageIter<'a, I>
-where I: Iterator<Item = LinePointer>
-{
-    type Item = &'a [u8];
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(lp) = self.line_pointers.next() {
-            Some(&self.contents[lp.range()])
-        } else {
-            None
-        }
-    }
-}
-
 struct LinePointerIter<'a>(&'a [u8]);
 impl Iterator for LinePointerIter<'_> {
     type Item = LinePointer;
@@ -201,66 +156,3 @@ impl Iterator for LinePointerIter<'_> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::error::Error;
-
-    use crate::test_util::large_tuple;
-
-    use super::*;
-
-    #[test]
-    fn test_empty_page() {
-        let page = PageMut::new();
-        assert_eq!(page.tuples().count(), 0);
-    }
-
-    #[test]
-    fn test_add_tuple() -> Result<(), Box<dyn Error>> {
-        let tuple_1 = [0, 0, 0, 1];
-        let tuple_2 = [0, 0, 0, 2];
-
-        let mut page = PageMut::new();
-        page.push(&tuple_1)?;
-        page.push(&tuple_2)?;
-
-        assert_eq!(page.tuples().count(), 2);
-
-        let actual_tuple_1 = page.tuples().next().unwrap();
-        assert_eq!(actual_tuple_1, tuple_1);
-
-        let actual_tuple_2 = page.tuples().nth(1).unwrap();
-        assert_eq!(actual_tuple_2, tuple_2);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_recover_tuples_from_file() -> Result<(), Box<dyn Error>> {
-        let expected_tuple = [0, 0, 0, 1];
-
-        let mut page = PageMut::new();
-        page.push(&expected_tuple)?;
-
-        let mut buf = Vec::<u8>::new();
-        page.write(&mut buf)?;
-
-        let page = PageMut::read(buf.as_slice())?;
-        let actual_tuple = page.tuples().next().unwrap();
-        assert_eq!(actual_tuple, expected_tuple);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_overflow_page() {
-        let tuple = large_tuple::<1024>();
-
-        let mut page = PageMut::new();
-        for _ in 0..10 {
-            let _ignore = page.push(&tuple);
-        }
-
-        assert!(page.push(&tuple).is_err())
-    }
-}

@@ -30,9 +30,8 @@ impl Heap {
 
         loop {
             let last_page_start = self.pages.len() - PAGE_SIZE;
-            let mut page = PageMut::with_contents(&self.pages[last_page_start..]);
+            let mut page = PageMut::new(&mut self.pages[last_page_start..]);
             if page.push(tuple).is_ok() {
-                self.pages[last_page_start..].copy_from_slice(&page.contents);
                 break;
             } else {
                 self.expand();
@@ -88,6 +87,13 @@ mod tests {
     use crate::test_util::large_tuple;
 
     use super::*;
+
+    #[test]
+    fn test_empty_heap() -> Result<(), Box<dyn Error>> {
+        let heap = Heap::open(&temp_heap_file()?)?;
+        assert_eq!(heap.tuples().count(), 0);
+        Ok(())
+    }
 
     #[test]
     fn test_write_to_heap() -> Result<(), Box<dyn Error>> {
