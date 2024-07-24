@@ -1,5 +1,5 @@
 use core::fmt;
-use std::ops::Index;
+use std::ops::{Index, IndexMut};
 
 pub const PAGE_SIZE: usize = 8 * 1024;
 
@@ -7,14 +7,6 @@ pub const PAGE_SIZE: usize = 8 * 1024;
 #[derive(Debug)]
 struct LinePointer(u32, u32);
 impl LinePointer {
-    fn insert_into(&self, target: &mut [u8], source: &[u8]) {
-        let start = self.0 as usize;
-        let end = self.1 as usize;
-        for i in start..end {
-            target[i] = source[i - start];
-        }
-    }
-
     const fn self_size() -> usize {
         std::mem::size_of::<u32>() * 2
     }
@@ -27,6 +19,14 @@ impl Index<LinePointer> for [u8] {
         let start = index.0 as usize;
         let end = index.1 as usize;
         &self[start..end]
+    }
+}
+
+impl IndexMut<LinePointer> for [u8] {
+    fn index_mut(&mut self, index: LinePointer) -> &mut Self::Output {
+        let start = index.0 as usize;
+        let end = index.1 as usize;
+        &mut self[start..end]
     }
 }
 
@@ -74,7 +74,7 @@ impl<'a> PageMut<'a> {
 
     pub(crate) fn push(&mut self, b: &[u8]) -> Result<(), PageError> {
         let lp = self.reserve_space(b.len())?;
-        lp.insert_into(&mut self.contents, b);
+        self.contents[lp].copy_from_slice(b);
 
         Ok(())
     }
