@@ -16,16 +16,16 @@ impl Index<LinePointer> for [u8] {
     type Output = [u8];
 
     fn index(&self, index: LinePointer) -> &Self::Output {
-        let start = index.0 as usize;
-        let end = index.1 as usize;
+        let start = PAGE_SIZE - (index.1 as usize);
+        let end = PAGE_SIZE - (index.0 as usize);
         &self[start..end]
     }
 }
 
 impl IndexMut<LinePointer> for [u8] {
     fn index_mut(&mut self, index: LinePointer) -> &mut Self::Output {
-        let start = index.0 as usize;
-        let end = index.1 as usize;
+        let start = PAGE_SIZE - (index.1 as usize);
+        let end = PAGE_SIZE - (index.0 as usize);
         &mut self[start..end]
     }
 }
@@ -87,15 +87,15 @@ impl<'a> PageMut<'a> {
     }
 
     fn reserve_space(&mut self, size: usize) -> Result<LinePointer, PageError> {
-        let (last_lp, tuple_end) = self.line_pointers().enumerate()
-            .map(|(i, lp)| (i+1, lp.0))
+        let (last_lp, tuple_start) = self.line_pointers().enumerate()
+            .map(|(i, lp)| (i+1, lp.1))
             .last()
-            .unwrap_or((0, self.contents.len() as u32));
+            .unwrap_or((0, 0));
 
         let lp_self_start = last_lp * LinePointer::self_size() + 4;
         let lp_self_end = lp_self_start + LinePointer::self_size();
-        let tuple_start = tuple_end - size as u32;
-        if tuple_start as usize <= lp_self_end {
+        let tuple_end = tuple_start + size as u32;
+        if tuple_end as usize >= PAGE_SIZE - lp_self_end {
             return Err(PageError::PageFull);
         }
 
