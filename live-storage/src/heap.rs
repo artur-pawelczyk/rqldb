@@ -67,7 +67,7 @@ impl<'a> Iterator for HeapIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         while self.pages.len() >= PAGE_SIZE {
-            if let Some(tuple) = Page::new(&self.pages[..PAGE_SIZE]).tuple(self.tuple_n) {
+            if let Some(tuple) = Page::new(&self.pages[..PAGE_SIZE]).nth(self.tuple_n) {
                 self.tuple_n += 1;
                 return Some(tuple);
             } else {

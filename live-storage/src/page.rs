@@ -16,8 +16,8 @@ impl Index<LinePointer> for [u8] {
     type Output = [u8];
 
     fn index(&self, index: LinePointer) -> &Self::Output {
-        let start = PAGE_SIZE - (index.1 as usize);
-        let end = PAGE_SIZE - (index.0 as usize);
+        let start = self.len() - (index.1 as usize);
+        let end = self.len() - (index.0 as usize);
         &self[start..end]
     }
 }
@@ -36,6 +36,14 @@ impl From<&LinePointer> for [u8; 8] {
         a[0..4].copy_from_slice(&value.0.to_le_bytes());
         a[4..].copy_from_slice(&value.1.to_le_bytes());
         a
+    }
+}
+
+impl From<[u8; 8]> for LinePointer {
+    fn from(value: [u8; 8]) -> Self {
+        let a = read_u32(&value);
+        let b = read_u32(&value[4..]);
+        Self(a, b)        
     }
 }
 
@@ -115,27 +123,48 @@ impl<'a> PageMut<'a> {
 
 pub(crate) struct Page<'a> {
     contents: &'a [u8],
+    tuple_count: usize,
 }
 
 impl<'a> Page<'a> {
     pub(crate) fn new(contents: &'a [u8]) -> Self {
         debug_assert!(contents.len() == PAGE_SIZE);
-        Self { contents }
+        let tuple_count = read_u32(contents) as usize;
+        let contents = &contents[4..];
+        Self { contents, tuple_count }
     }
+}
 
-    pub(crate) fn tuple(&self, n: usize) -> Option<&'a [u8]> {
-        self.line_pointer(n).map(|lp| &self.contents[lp])
-    }
+impl<'a> Iterator for Page<'a> {
+    type Item = &'a [u8];
 
-    fn line_pointer(&self, n: usize) -> Option<LinePointer> {
-        let lp_count = read_u32(&self.contents);
-        if lp_count as usize > n {
-            let lp_start = n * LinePointer::self_size() + 4;
-            let lp_end = lp_start + LinePointer::self_size();
-            LinePointer::try_from(&self.contents[lp_start..lp_end]).ok()
-        } else {
-            None
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.tuple_count <= 0 {
+            return None;
         }
+
+        let mut lp_bytes = [0u8; LinePointer::self_size()];
+        lp_bytes.copy_from_slice(&self.contents[..LinePointer::self_size()]);
+        let lp = LinePointer::from(lp_bytes);
+
+        self.contents = &self.contents[LinePointer::self_size()..];
+        self.tuple_count -= 1;
+
+        Some(&self.contents[lp])
+    }
+
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        if self.tuple_count <= n {
+            return None;
+        }
+
+        let mut lp_bytes = [0u8; LinePointer::self_size()];
+        let lp_start = LinePointer::self_size() * n;
+        let lp_end = lp_start + LinePointer::self_size();
+        lp_bytes.copy_from_slice(&self.contents[lp_start..lp_end]);
+        let lp = LinePointer::from(lp_bytes);
+
+        Some(&self.contents[lp])
     }
 }
 
