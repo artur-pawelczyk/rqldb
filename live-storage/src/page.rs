@@ -1,5 +1,5 @@
 use core::fmt;
-use std::ops::Range;
+use std::ops::Index;
 
 pub const PAGE_SIZE: usize = 8 * 1024;
 
@@ -15,14 +15,18 @@ impl LinePointer {
         }
     }
 
-    fn range(&self) -> Range<usize> {
-        let start = self.0 as usize;
-        let end = self.1 as usize;
-        start..end
-    }
-
     const fn self_size() -> usize {
         std::mem::size_of::<u32>() * 2
+    }
+}
+
+impl Index<LinePointer> for [u8] {
+    type Output = [u8];
+
+    fn index(&self, index: LinePointer) -> &Self::Output {
+        let start = index.0 as usize;
+        let end = index.1 as usize;
+        &self[start..end]
     }
 }
 
@@ -40,7 +44,7 @@ impl TryFrom<&[u8]> for LinePointer {
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         let a = read_u32(value);
-        let b = read_u32(&value[4..]);
+        let b = read_u32(&value.index(4..));
         Ok(Self(a, b))
     }
 }
@@ -120,7 +124,7 @@ impl<'a> Page<'a> {
     }
 
     pub(crate) fn tuple(&self, n: usize) -> Option<&'a [u8]> {
-        self.line_pointer(n).map(|lp| &self.contents[lp.range()])
+        self.line_pointer(n).map(|lp| &self.contents[lp])
     }
 
     fn line_pointer(&self, n: usize) -> Option<LinePointer> {
