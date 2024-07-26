@@ -38,7 +38,7 @@ impl LiveStorage {
                 let heap = Heap::open(&file_path)?;
                 let mut object = TempObject::from_relation(&rel);
                 for tuple in heap.tuples() {
-                    object.push(&tuple);
+                    object.push(tuple);
                 }
 
                 db.recover_object(rel.id, object);

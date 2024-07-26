@@ -1,4 +1,4 @@
-use std::{fs::File, io::{self, Cursor, Read, Write as _}, path::Path};
+use std::{fs::File, io::{self, Read, Write as _}, path::Path};
 
 use crate::page::{Page, PageMut, PAGE_SIZE};
 
@@ -43,7 +43,7 @@ impl Heap {
         self.pages.extend([0; PAGE_SIZE]);
     }
 
-    pub(crate) fn tuples(&self) -> impl Iterator<Item = Vec<u8>> + '_ {
+    pub(crate) fn tuples(&self) -> impl Iterator<Item = &[u8]> {
         HeapIter { pages: &self.pages, tuple_n: 0 }
     }
 
@@ -63,11 +63,11 @@ struct HeapIter<'a> {
 }
 
 impl<'a> Iterator for HeapIter<'a> {
-    type Item = Vec<u8>;
+    type Item = &'a [u8];
 
     fn next(&mut self) -> Option<Self::Item> {
         while self.pages.len() >= PAGE_SIZE {
-            if let Some(tuple) = Page::new(Cursor::new(&self.pages[..PAGE_SIZE])).nth(self.tuple_n) {
+            if let Some(tuple) = Page::new(&self.pages[..PAGE_SIZE]).nth(self.tuple_n) {
                 self.tuple_n += 1;
                 return Some(tuple);
             } else {
