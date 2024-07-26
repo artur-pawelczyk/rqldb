@@ -1,5 +1,5 @@
 use core::fmt;
-use std::ops::{Index, IndexMut};
+use std::{io::{self, Read, Seek, SeekFrom}, ops::{Index, IndexMut}};
 
 pub const PAGE_SIZE: usize = 8 * 1024;
 
@@ -121,36 +121,45 @@ impl<'a> PageMut<'a> {
     }
 }
 
-pub(crate) struct Page<'a> {
-    contents: &'a [u8],
+pub(crate) struct Page<R>
+where R: Read + Seek
+{
+    contents: TupleReader<R>,
+    current_tuple: usize,
     tuple_count: usize,
 }
 
-impl<'a> Page<'a> {
-    pub(crate) fn new(contents: &'a [u8]) -> Self {
-        debug_assert!(contents.len() == PAGE_SIZE);
-        let tuple_count = read_u32(contents) as usize;
-        let contents = &contents[4..];
-        Self { contents, tuple_count }
+impl<R> Page<R>
+where R: Read + Seek
+{
+    pub(crate) fn new(mut contents: R) -> Self {
+        fn size<T: Seek>(b: &mut T) -> usize {
+            let size = b.seek(SeekFrom::End(0)).unwrap();
+            b.rewind().unwrap();
+            size as usize
+        }
+
+        debug_assert!(size(&mut contents) == PAGE_SIZE);
+        let tuple_count = consume_u32(&mut contents).unwrap() as usize;
+        Self { contents: TupleReader(contents), current_tuple: 0, tuple_count }
     }
 }
 
-impl<'a> Iterator for Page<'a> {
-    type Item = &'a [u8];
+impl<T> Iterator for Page<T>
+where T: Read + Seek
+{
+    type Item = Vec<u8>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.tuple_count <= 0 {
+        if self.current_tuple >= self.tuple_count {
             return None;
         }
 
-        let mut lp_bytes = [0u8; LinePointer::self_size()];
-        lp_bytes.copy_from_slice(&self.contents[..LinePointer::self_size()]);
-        let lp = LinePointer::from(lp_bytes);
+        let lp = self.contents.read_line_pointer(self.current_tuple).ok()??;
 
-        self.contents = &self.contents[LinePointer::self_size()..];
-        self.tuple_count -= 1;
+        self.current_tuple += 1;
 
-        Some(&self.contents[lp])
+        self.contents.read_tuple(lp).ok()
     }
 
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
@@ -158,18 +167,20 @@ impl<'a> Iterator for Page<'a> {
             return None;
         }
 
-        let mut lp_bytes = [0u8; LinePointer::self_size()];
-        let lp_start = LinePointer::self_size() * n;
-        let lp_end = lp_start + LinePointer::self_size();
-        lp_bytes.copy_from_slice(&self.contents[lp_start..lp_end]);
-        let lp = LinePointer::from(lp_bytes);
+        let lp = self.contents.read_line_pointer(n).ok()??;
 
-        Some(&self.contents[lp])
+        self.contents.read_tuple(lp).ok()
     }
 }
 
 fn read_u32(b: &[u8]) -> u32 {
     u32::from_le_bytes(<[u8; 4]>::try_from(&b[0..4]).unwrap())
+}
+
+fn consume_u32(b: &mut impl Read) -> io::Result<u32> {
+    let mut buf = [0u8; 4];
+    b.read_exact(&mut buf)?;
+    Ok(u32::from_le_bytes(buf))
 }
 
 struct LinePointerIter<'a>(&'a [u8]);
@@ -189,3 +200,32 @@ impl Iterator for LinePointerIter<'_> {
     }
 }
 
+struct TupleReader<R: Read + Seek>(R);
+
+impl<R: Read + Seek> TupleReader<R> {
+    fn read_tuple(&mut self, lp: LinePointer) -> io::Result<Vec<u8>> {
+        let seek_from_end: i64 = lp.1.into();
+        self.0.seek(SeekFrom::End(-seek_from_end))?;
+        self.read_bytes(lp.1 - lp.0)
+    }
+
+    fn read_line_pointer(&mut self, n: usize) -> io::Result<Option<LinePointer>> {
+        self.0.rewind()?;
+        let lp_count = consume_u32(&mut self.0)?;
+        if lp_count as usize >= n {
+            let lp_offset = n * LinePointer::self_size() + 4;
+            self.0.seek(SeekFrom::Start(lp_offset.try_into().unwrap()))?;
+            let mut lp = [0u8; LinePointer::self_size()];
+            self.0.read_exact(&mut lp)?;
+            Ok(Some(LinePointer::from(lp)))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn read_bytes(&mut self, n: u32) -> io::Result<Vec<u8>> {
+        let mut buf = vec![0; n as usize];
+        self.0.read_exact(&mut buf)?;
+        Ok(buf)
+    }
+}
