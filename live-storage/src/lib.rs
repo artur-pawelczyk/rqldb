@@ -38,7 +38,7 @@ impl LiveStorage {
                 let heap = Heap::open(&file_path)?;
                 let mut object = TempObject::from_relation(&rel);
                 for tuple in heap.tuples() {
-                    object.push(tuple);
+                    object.push(&tuple);
                 }
 
                 db.recover_object(rel.id, object);
@@ -62,8 +62,7 @@ impl LiveStorage {
             let mut path = dir.clone();
             path.push(&obj_id.to_string());
             let mut heap = Heap::open(&path).unwrap();
-            heap.push(bytes);
-            heap.write().unwrap();
+            heap.push(bytes).unwrap();
         });
 
         Ok(db)

@@ -1,82 +1,87 @@
-use std::{fs::File, io::{self, Read, Write as _}, path::Path};
+use std::{fs::File, io::{self, Read, Seek as _, SeekFrom, Write as _}, path::Path};
 
 use crate::page::{Page, PageMut, PAGE_SIZE};
 
 pub(crate) struct Heap {
-    pages: Vec<u8>,
     file: File,
 }
 
 impl Heap {
     pub(crate) fn open(path: &Path) -> io::Result<Self> {
-        let h = Self {
-            pages: Vec::new(),
+        Ok(Self {
             file: File::options().read(true).write(true).create(true).open(path)?,
-        };
-
-        h.read(File::open(path)?)
+        })
     }
 
-    pub(crate) fn read(self, mut r: impl Read) -> io::Result<Self> {
-        let mut pages = Vec::new();
-        r.read_to_end(&mut pages)?;
-        Ok(Self { pages, ..self })
-    }
-
-    pub(crate) fn push(&mut self, tuple: &[u8]) {
-        if self.pages.is_empty() {
-            self.expand();
+    pub(crate) fn push(&mut self, tuple: &[u8]) -> io::Result<()> {
+        if self.file.metadata()?.len() < PAGE_SIZE as u64 {
+            self.expand()?;
         }
 
+        let mut buf = [0u8; PAGE_SIZE];
         loop {
-            let last_page_start = self.pages.len() - PAGE_SIZE;
-            let mut page = PageMut::new(&mut self.pages[last_page_start..]);
+            self.file.seek(SeekFrom::End((PAGE_SIZE as i64) * -1))?;
+            self.file.read_exact(&mut buf)?;
+            let mut page = PageMut::new(&mut buf);
             if page.push(tuple).is_ok() {
+                self.file.seek(SeekFrom::End((PAGE_SIZE as i64) * -1))?;
+                self.file.write_all(&buf)?;
                 break;
             } else {
-                self.expand();
+                self.expand()?;
             }
         }
+
+        self.file.rewind()?;
+        Ok(())
     }
 
-    fn expand(&mut self) {
-        self.pages.extend([0; PAGE_SIZE]);
+    fn expand(&mut self) -> io::Result<()> {
+        self.file.seek(SeekFrom::End(0))?;
+        self.file.write_all(&[0u8; PAGE_SIZE])?;
+        Ok(())
     }
 
-    pub(crate) fn tuples(&self) -> impl Iterator<Item = &[u8]> {
-        HeapIter { pages: &self.pages, tuple_n: 0 }
+    pub(crate) fn tuples<'a>(&'a self) -> impl Iterator<Item = Vec<u8>> + 'a {
+        HeapIter { file: &self.file, tuple_n: 0, buf: [0u8; PAGE_SIZE] }
     }
 
     #[cfg(test)]
     fn allocated_pages(&self) -> usize {
-        self.pages.len() / PAGE_SIZE
-    }
-
-    pub(crate) fn write(&mut self) -> io::Result<()> {
-        self.file.write_all(&self.pages)
+        self.file.metadata().unwrap().len() as usize / PAGE_SIZE
     }
 }
 
 struct HeapIter<'a> {
-    pages: &'a [u8],
+    file: &'a File,
+    buf: [u8; PAGE_SIZE],
     tuple_n: usize,
 }
 
+impl<'a> HeapIter<'a> {
+    fn new(file: &'a mut File) -> Self {
+        file.rewind().unwrap();
+        Self { file, buf: [0u8; PAGE_SIZE], tuple_n: 0 }
+    }
+}
+
 impl<'a> Iterator for HeapIter<'a> {
-    type Item = &'a [u8];
+    type Item = Vec<u8>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        while self.pages.len() >= PAGE_SIZE {
-            if let Some(tuple) = Page::new(&self.pages[..PAGE_SIZE]).nth(self.tuple_n) {
+
+        loop {
+            if self.tuple_n == 0 {
+                self.file.read_exact(&mut self.buf).ok()?;
+            }
+
+            if let Some(tuple) = Page::new(&self.buf).nth(self.tuple_n) {
                 self.tuple_n += 1;
-                return Some(tuple);
+                return Some(tuple.to_vec());
             } else {
-                self.pages = &self.pages[PAGE_SIZE..];
                 self.tuple_n = 0;
             }
         }
-
-        None
     }
 }
 
@@ -99,7 +104,7 @@ mod tests {
     fn test_write_to_heap() -> Result<(), Box<dyn Error>> {
         let mut heap = Heap::open(&temp_heap_file()?)?;
         let expected_tuple = [0, 0, 0, 1];
-        heap.push(&expected_tuple);
+        heap.push(&expected_tuple)?;
 
         let actual_tuple = heap.tuples().next().unwrap();
         assert_eq!(actual_tuple, expected_tuple);
@@ -113,7 +118,7 @@ mod tests {
 
         let mut heap = Heap::open(&temp_heap_file()?)?;
         for _ in 0..10 {
-            heap.push(&tuple);
+            heap.push(&tuple)?;
         }
 
         assert!(heap.allocated_pages() > 1);
@@ -129,10 +134,8 @@ mod tests {
 
         let mut heap = Heap::open(&heap_file)?;
         for _ in 0..10 {
-            heap.push(&tuple);
+            heap.push(&tuple)?;
         }
-
-        heap.write()?;
 
         let heap = Heap::open(&heap_file)?;
         assert_eq!(heap.tuples().count(), 10);
