@@ -123,7 +123,11 @@ impl IndexedObject {
     }
 
     pub(crate) fn remove_tuples(&mut self, ids: &[usize]) {
-        self.removed_ids.extend(ids);
+        let handler = self.handler.borrow();
+        for id in ids {
+            handler.emit_delete_tuple(*id as u32);
+            self.removed_ids.insert(*id);
+        }
     }
 
     pub(crate) fn recover(snapshot: TempObject, table: &Relation) -> Self {

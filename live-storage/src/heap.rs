@@ -58,13 +58,6 @@ struct HeapIter<'a> {
     tuple_n: usize,
 }
 
-impl<'a> HeapIter<'a> {
-    fn new(file: &'a mut File) -> Self {
-        file.rewind().unwrap();
-        Self { file, buf: [0u8; PAGE_SIZE], tuple_n: 0 }
-    }
-}
-
 impl<'a> Iterator for HeapIter<'a> {
     type Item = Vec<u8>;
 
@@ -77,7 +70,7 @@ impl<'a> Iterator for HeapIter<'a> {
 
             if let Some(tuple) = Page::new(&self.buf).nth(self.tuple_n) {
                 self.tuple_n += 1;
-                return Some(tuple.to_vec());
+                return Some(tuple.to_vec()); // TODO: Avoid this allocation
             } else {
                 self.tuple_n = 0;
             }
