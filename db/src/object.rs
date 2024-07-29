@@ -10,36 +10,15 @@ use crate::event::EventHandler;
 use crate::schema::AttributeRef;
 use crate::tuple::PositionalAttribute;
 use crate::{tuple::Tuple, schema::Relation, Type};
+use crate::page::{TupleId, PAGE_SIZE};
 
 type ByteTuple = Vec<u8>;
-
-#[derive(Copy, Clone)]
-pub(crate) struct TupleId(u32);
-
-impl std::ops::Index<TupleId> for Vec<ByteTuple> {
-    type Output = ByteTuple;
-
-    fn index(&self, index: TupleId) -> &Self::Output {
-        &self[(index.0 - 1) as usize]
-    }
-}
-
-impl std::ops::IndexMut<TupleId> for Vec<ByteTuple> {
-    fn index_mut(&mut self, index: TupleId) -> &mut Self::Output {
-        &mut self[(index.0 - 1) as usize]
-    }
-}
-
-impl From<usize> for TupleId {
-    fn from(value: usize) -> Self {
-        Self(<u32>::try_from(value).unwrap() + 1)
-    }
-}
 
 #[derive(Default)]
 pub(crate) struct IndexedObject {
     id: usize,
     pub(crate) tuples: Vec<ByteTuple>,
+    pages: Vec<[u8; PAGE_SIZE]>,
     pub(crate) attrs: Vec<Attribute>,
     index: Index,
     hash: HashMap<u64, Vec<TupleId>>,

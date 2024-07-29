@@ -5,7 +5,8 @@ use std::rc::Rc;
 
 use crate::dump::{dump_values, dump_create};
 use crate::event::{EventHandler};
-use crate::object::{Attribute, IndexedObject, TempObject, TupleId};
+use crate::object::{Attribute, IndexedObject, TempObject};
+use crate::page::TupleId;
 use crate::plan::{Source, Filter, Plan, Finisher, ApplyFn};
 use crate::schema::{AttributeRef, TableId};
 use crate::tuple::Tuple;

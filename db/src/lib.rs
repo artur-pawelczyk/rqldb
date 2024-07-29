@@ -9,6 +9,7 @@ pub mod plan;
 pub mod schema;
 pub mod tokenize;
 pub mod tuple;
+mod page;
 
 use core::fmt;
 use std::cmp::Ordering;
