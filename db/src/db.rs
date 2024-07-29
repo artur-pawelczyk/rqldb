@@ -105,7 +105,7 @@ impl Database {
             }
 
             if test_filters(&plan.filters, &tuple) {
-                sink.accept_tuple(idx, &tuple);
+                sink.accept_tuple(idx.into(), &tuple);
             }
         }
 
@@ -205,12 +205,12 @@ enum Sink<'a> {
     Max(AttributeRef, i32),
     Return(Vec<Attribute>, Vec<Vec<u8>>),
     Insert(RefMut<'a, IndexedObject>),
-    Delete(Vec<usize>),
+    Delete(Vec<TupleId>),
     NoOp,
 }
 
 impl<'a> Sink<'a> {
-    fn accept_tuple(&mut self, idx: usize, tuple: &Tuple) {
+    fn accept_tuple(&mut self, idx: TupleId, tuple: &Tuple) {
         match self {
             Self::Count(ref mut count) => *count += 1,
             Self::Sum(attr, ref mut sum) => *sum += tuple.element(attr).unwrap().as_number().unwrap(),

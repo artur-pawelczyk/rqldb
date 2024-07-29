@@ -22,7 +22,7 @@ pub(crate) struct IndexedObject {
     pub(crate) attrs: Vec<Attribute>,
     index: Index,
     hash: HashMap<u64, Vec<TupleId>>,
-    removed_ids: HashSet<usize>,
+    removed_ids: HashSet<TupleId>,
     handler: Rc<RefCell<EventHandler>>,
 }
 
@@ -114,7 +114,7 @@ impl IndexedObject {
     pub(crate) fn iter<'b>(&'b self) -> Box<dyn Iterator<Item = Tuple<'b>> + 'b> {
         Box::new(
             self.tuples.iter().enumerate()
-                .filter(|(id, _)| !self.removed_ids.contains(id))
+                .filter(|(id, _)| !self.removed_ids.contains(&id.into()))
                 .map(move |(_, bytes)| Tuple::with_object(bytes, self))
         )
     }
@@ -123,10 +123,10 @@ impl IndexedObject {
         Tuple::with_object(&self.tuples[id], self)
     }
 
-    pub(crate) fn remove_tuples(&mut self, ids: &[usize]) {
+    pub(crate) fn remove_tuples(&mut self, ids: &[TupleId]) {
         let handler = self.handler.borrow();
         for id in ids {
-            handler.emit_delete_tuple(*id as u32);
+            handler.emit_delete_tuple(id.into());
             self.removed_ids.insert(*id);
         }
     }
@@ -173,7 +173,7 @@ impl IndexedObject {
     pub(crate) fn vaccum(&mut self) {
         let old = std::mem::take(&mut self.tuples);
         self.tuples = old.into_iter().enumerate()
-            .filter(|(i, _)| !self.removed_ids.contains(i))
+            .filter(|(i, _)| !self.removed_ids.contains(&i.into()))
             .map(|(_, tuple)| tuple)
             .collect();
 
@@ -408,7 +408,8 @@ mod test {
         let mut obj = IndexedObject::recover(temp_obj, relation);
         assert_eq!(obj.iter().count(), 2);
 
-        obj.remove_tuples(&[0]);
+        // TODO: Use Tuple::id
+        obj.remove_tuples(&[0.into()]);
         assert_eq!(obj.iter().count(), 1);
     }
 
@@ -426,7 +427,7 @@ mod test {
         temp_obj.push_str(&["2", "second"]);
 
         let mut obj = IndexedObject::recover(temp_obj, relation);
-        obj.remove_tuples(&[0]);
+        obj.remove_tuples(&[0.into()]);
 
         assert_eq!(obj.tuples.len(), 2);
 

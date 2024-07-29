@@ -74,7 +74,7 @@ impl fmt::Display for PageError {
 
 impl std::error::Error for PageError {}
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Hash, PartialEq, Eq, Debug)]
 pub(crate) struct TupleId(u32);
 
 impl std::ops::Index<TupleId> for Vec<Vec<u8>> {
@@ -94,6 +94,19 @@ impl std::ops::IndexMut<TupleId> for Vec<Vec<u8>> {
 impl From<usize> for TupleId {
     fn from(value: usize) -> Self {
         Self(<u32>::try_from(value).unwrap() + 1)
+    }
+}
+
+impl From<&usize> for TupleId {
+    fn from(value: &usize) -> Self {
+        Self(<u32>::try_from(*value).unwrap() + 1)
+    }
+}
+
+
+impl From<&TupleId> for u32 {
+    fn from(value: &TupleId) -> Self {
+        value.0
     }
 }
 
