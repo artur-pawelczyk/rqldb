@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use crate::dump::{dump_values, dump_create};
 use crate::event::{EventHandler};
-use crate::object::{IndexedObject, TempObject, Attribute};
+use crate::object::{Attribute, IndexedObject, TempObject, TupleId};
 use crate::plan::{Source, Filter, Plan, Finisher, ApplyFn};
 use crate::schema::{AttributeRef, TableId};
 use crate::tuple::Tuple;
@@ -181,7 +181,7 @@ fn test_filters(filters: &[Filter], tuple: &Tuple) -> bool {
 
 enum ObjectView<'a> {
     Ref(Ref<'a, IndexedObject>),
-    TupleRef(Ref<'a, IndexedObject>, usize),
+    TupleRef(Ref<'a, IndexedObject>, TupleId),
     Val(TempObject),
     Empty,
 }
@@ -190,7 +190,7 @@ impl<'a> ObjectView<'a> {
     fn iter(&'a self) -> Box<dyn Iterator<Item = Tuple<'a>> + 'a> {
         match self {
             Self::Ref(o) => o.iter(),
-            Self::TupleRef(o, id) => Box::new(std::iter::once_with(|| o.get(*id).unwrap())),
+            Self::TupleRef(o, id) => Box::new(std::iter::once_with(|| o.get(*id))),
             Self::Val(o) => o.iter(),
             Self::Empty => Box::new(std::iter::empty()),
         }

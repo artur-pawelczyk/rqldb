@@ -13,13 +13,36 @@ use crate::{tuple::Tuple, schema::Relation, Type};
 
 type ByteTuple = Vec<u8>;
 
+#[derive(Copy, Clone)]
+pub(crate) struct TupleId(u32);
+
+impl std::ops::Index<TupleId> for Vec<ByteTuple> {
+    type Output = ByteTuple;
+
+    fn index(&self, index: TupleId) -> &Self::Output {
+        &self[(index.0 - 1) as usize]
+    }
+}
+
+impl std::ops::IndexMut<TupleId> for Vec<ByteTuple> {
+    fn index_mut(&mut self, index: TupleId) -> &mut Self::Output {
+        &mut self[(index.0 - 1) as usize]
+    }
+}
+
+impl From<usize> for TupleId {
+    fn from(value: usize) -> Self {
+        Self(<u32>::try_from(value).unwrap() + 1)
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct IndexedObject {
     id: usize,
     pub(crate) tuples: Vec<ByteTuple>,
     pub(crate) attrs: Vec<Attribute>,
     index: Index,
-    hash: HashMap<u64, Vec<usize>>,
+    hash: HashMap<u64, Vec<TupleId>>,
     removed_ids: HashSet<usize>,
     handler: Rc<RefCell<EventHandler>>,
 }
@@ -54,7 +77,7 @@ impl IndexedObject {
                     false
                 } else {
                     let new_id = self.tuples.len();
-                    self.add_to_index(key.bytes(), new_id);
+                    self.add_to_index(key.bytes(), new_id.into());
                     self.tuples.push(tuple.raw_bytes().to_vec());
                     true
                 }
@@ -64,7 +87,7 @@ impl IndexedObject {
                     false
                 } else {
                     let new_id = self.tuples.len();
-                    self.add_to_index(tuple.raw_bytes(), new_id);
+                    self.add_to_index(tuple.raw_bytes(), new_id.into());
                     self.tuples.push(tuple.raw_bytes().to_vec());
                     true
                 }
@@ -79,12 +102,12 @@ impl IndexedObject {
         added
     }
 
-    pub(crate) fn find_in_index(&self, bytes: &[u8]) -> Option<usize> {
+    pub(crate) fn find_in_index(&self, bytes: &[u8]) -> Option<TupleId> {
         match &self.index {
             Index::Attr(attr) => {
                 let matched_ids = self.hash.get(&hash(bytes))?;
                 matched_ids.iter().find(|id| {
-                    let tuple = self.tuple_by_id(**id).unwrap();
+                    let tuple = self.tuple_by_id(**id);
                     let elem = tuple.element(attr).unwrap();
                     elem.bytes() == bytes
                 }).copied()
@@ -92,21 +115,21 @@ impl IndexedObject {
             Index::Uniq => {
                 let matched_ids = self.hash.get(&hash(bytes))?;
                 matched_ids.iter().find(|id| {
-                    let tuple = self.tuple_by_id(**id).unwrap();
+                    let tuple = self.tuple_by_id(**id);
                     tuple.raw_bytes() == bytes
                 }).copied()
             }
         }
     }
 
-    fn add_to_index(&mut self, bytes: &[u8], id: usize) {
+    fn add_to_index(&mut self, bytes: &[u8], id: TupleId) {
         self.hash.entry(hash(bytes))
             .and_modify(|ids| { ids.push(id); })
             .or_insert_with(|| vec![id]);
     }
 
-    pub(crate) fn get(&self, id: usize) -> Option<Tuple> {
-        self.tuples.get(id).map(|bytes| Tuple::with_object(bytes, self))
+    pub(crate) fn get(&self, id: TupleId) -> Tuple {
+        Tuple::with_object(&self.tuples[id], self)
     }
 
     pub(crate) fn iter<'b>(&'b self) -> Box<dyn Iterator<Item = Tuple<'b>> + 'b> {
@@ -117,9 +140,8 @@ impl IndexedObject {
         )
     }
 
-    fn tuple_by_id(&self, id: usize) -> Option<Tuple> {
-        let bytes = self.tuples.get(id)?;
-        Some(Tuple::with_object(bytes, self))
+    fn tuple_by_id(&self, id: TupleId) -> Tuple {
+        Tuple::with_object(&self.tuples[id], self)
     }
 
     pub(crate) fn remove_tuples(&mut self, ids: &[usize]) {
@@ -163,8 +185,8 @@ impl IndexedObject {
                 let tuple = Tuple::from_bytes(raw_tuple, &self.attrs);
                 let hash = hash(tuple.element(key).unwrap().bytes());
                 self.hash.entry(hash)
-                    .and_modify(|ids| { ids.push(id); })
-                    .or_insert_with(|| vec![id]);
+                    .and_modify(|ids| { ids.push(id.into()); })
+                    .or_insert_with(|| vec![id.into()]);
             }
         }
     }
