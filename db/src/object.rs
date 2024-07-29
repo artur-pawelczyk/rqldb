@@ -114,8 +114,8 @@ impl IndexedObject {
     pub(crate) fn iter<'b>(&'b self) -> Box<dyn Iterator<Item = Tuple<'b>> + 'b> {
         Box::new(
             self.tuples.iter().enumerate()
-                .filter(|(id, _)| !self.removed_ids.contains(&id.into()))
-                .map(move |(_, bytes)| Tuple::with_object(bytes, self))
+                .map(move |(n, bytes)| Tuple::with_object(bytes, self).with_id(n))
+                .filter(|tuple| !self.removed_ids.contains(&tuple.id()))
         )
     }
 
@@ -409,7 +409,8 @@ mod test {
         assert_eq!(obj.iter().count(), 2);
 
         // TODO: Use Tuple::id
-        obj.remove_tuples(&[0.into()]);
+        let id = obj.iter().next().unwrap().id();
+        obj.remove_tuples(&[id]);
         assert_eq!(obj.iter().count(), 1);
     }
 
@@ -427,7 +428,8 @@ mod test {
         temp_obj.push_str(&["2", "second"]);
 
         let mut obj = IndexedObject::recover(temp_obj, relation);
-        obj.remove_tuples(&[0.into()]);
+        let id = obj.iter().next().unwrap().id();
+        obj.remove_tuples(&[id]);
 
         assert_eq!(obj.tuples.len(), 2);
 

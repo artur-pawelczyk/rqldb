@@ -94,7 +94,7 @@ impl Database {
         let join_sources: Vec<Ref<IndexedObject>> = plan.joins.iter().map(|join| join.source_object().borrow()).collect();
         let mut sink = self.create_sink(&plan);
 
-        for (idx, source_tuple) in source.iter().enumerate() {
+        for source_tuple in source.iter() {
             let mut tuple = source_tuple;
 
             for (join, source_object) in zip(plan.joins.iter(), join_sources.iter()) {
@@ -105,7 +105,7 @@ impl Database {
             }
 
             if test_filters(&plan.filters, &tuple) {
-                sink.accept_tuple(idx.into(), &tuple);
+                sink.accept_tuple(&tuple);
             }
         }
 
@@ -210,14 +210,18 @@ enum Sink<'a> {
 }
 
 impl<'a> Sink<'a> {
-    fn accept_tuple(&mut self, idx: TupleId, tuple: &Tuple) {
+    fn accept_tuple(&mut self, tuple: &Tuple) {
         match self {
             Self::Count(ref mut count) => *count += 1,
             Self::Sum(attr, ref mut sum) => *sum += tuple.element(attr).unwrap().as_number().unwrap(),
             Self::Max(attr, ref mut max) => *max = std::cmp::max(*max, tuple.element(attr).unwrap().as_number().unwrap()),
             Self::Return(attrs, ref mut results) => results.push(tuple_to_cells(attrs, tuple)),
             Self::Insert(object) => { object.add_tuple(tuple); },
-            Self::Delete(ref mut tuples) => tuples.push(idx),
+            Self::Delete(ref mut tuples) => {
+                let id = tuple.id();
+                debug_assert!(!id.is_anonymous());
+                tuples.push(id);
+            },
             Self::NoOp => {},
         }
     }

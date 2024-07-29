@@ -47,7 +47,7 @@ impl From<[u8; LinePointer::self_size()]> for LinePointer {
     fn from(value: [u8; LinePointer::self_size()]) -> Self {
         let a = read_u32(&value);
         let b = read_u32(&value[size_of::<LpIndex>()..]);
-        Self(a, b)        
+        Self(a, b)
     }
 }
 
@@ -76,6 +76,16 @@ impl std::error::Error for PageError {}
 
 #[derive(Copy, Clone, Hash, PartialEq, Eq, Debug)]
 pub(crate) struct TupleId(u32);
+
+impl TupleId {
+    pub(crate) fn anonymous() -> Self {
+        Self(0)
+    }
+
+    pub(crate) fn is_anonymous(&self) -> bool {
+        self.0 == 0
+    }
+}
 
 impl std::ops::Index<TupleId> for Vec<Vec<u8>> {
     type Output = Vec<u8>;

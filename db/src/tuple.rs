@@ -1,6 +1,7 @@
 use core::fmt;
 
 use crate::object::{Attribute, IndexedObject, NamedAttribute as _};
+use crate::page::TupleId;
 use crate::schema::Type;
 
 pub trait PositionalAttribute {
@@ -18,6 +19,7 @@ impl PositionalAttribute for usize {
 
 #[derive(Debug)]
 pub(crate) struct Tuple<'a> {
+    id: TupleId,
     raw: &'a [u8],
     attrs: &'a [Attribute],
     source_id: usize,
@@ -27,6 +29,7 @@ pub(crate) struct Tuple<'a> {
 impl<'a> Tuple<'a> {
     pub(crate) fn from_bytes(raw: &'a [u8], attrs: &'a [Attribute]) -> Self {
         Self {
+            id: TupleId::anonymous(),
             raw, attrs,
             rest: None,
             source_id: attrs.first().and_then(|a| a.object_id()).unwrap_or(0),
@@ -34,7 +37,15 @@ impl<'a> Tuple<'a> {
     }
 
     pub(crate) fn with_object(raw: &'a [u8], obj: &'a IndexedObject) -> Self {
-        Self { raw, attrs: &obj.attrs, source_id: obj.id(), rest: None }
+        Self { id: TupleId::anonymous(), raw, attrs: &obj.attrs, source_id: obj.id(), rest: None }
+    }
+
+    pub(crate) fn with_id(self, id: impl Into<TupleId>) -> Self {
+        Self { id: id.into(), ..self }
+    }
+
+    pub(crate) fn id(&self) -> TupleId {
+        self.id
     }
 
     pub(crate) fn raw_bytes(&self) -> &[u8] {
