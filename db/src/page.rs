@@ -108,10 +108,10 @@ impl<'a> PageMut<'a> {
     }
 
     pub(crate) fn push(&mut self, b: &[u8]) -> Result<TupleId, PageError> {
-        let lp = self.reserve_space(b.len())?;
+        let (id, lp) = self.reserve_space(b.len())?;
         self.contents[lp].copy_from_slice(b);
 
-        Ok(0.into())
+        Ok(id)
     }
 
     fn line_pointers(&'a self) -> impl Iterator<Item = LinePointer> + 'a {
@@ -121,7 +121,7 @@ impl<'a> PageMut<'a> {
         LinePointerIter(&self.contents[4..lp_end])
     }
 
-    fn reserve_space(&mut self, size: usize) -> Result<LinePointer, PageError> {
+    fn reserve_space(&mut self, size: usize) -> Result<(TupleId, LinePointer), PageError> {
         let (last_lp, tuple_start) = self.line_pointers().enumerate()
             .map(|(i, lp)| (i+1, lp.1))
             .last()
@@ -144,7 +144,7 @@ impl<'a> PageMut<'a> {
         let new_lp_count = (last_lp + 1) as u32;
         self.contents[LP_COUNT].copy_from_slice(&new_lp_count.to_le_bytes());
 
-        Ok(lp)
+        Ok((last_lp.into(), lp))
     }
 }
 
@@ -240,12 +240,17 @@ mod tests {
     #[test]
     fn test_get_tuple_by_id() -> Result<(), Box<dyn Error>> {
         let mut bytes = [0u8; PAGE_SIZE];
-        let tuple = [1, 0, 0, 0];
+        let tuple_1 = [1, 0, 0, 0];
+        let tuple_2 = [2, 0, 0, 0];
 
-        let tid = PageMut::new(&mut bytes).push(&tuple)?;
+        let tid_1 = PageMut::new(&mut bytes).push(&tuple_1)?;
+        let tid_2 = PageMut::new(&mut bytes).push(&tuple_2)?;
 
-        let actual_tuple = Page::new(&bytes).tuple_by_id(tid).unwrap();
-        assert_eq!(actual_tuple, tuple);
+        let actual_tuple = Page::new(&bytes).tuple_by_id(tid_1).unwrap();
+        assert_eq!(actual_tuple, tuple_1);
+
+        let actual_tuple = Page::new(&bytes).tuple_by_id(tid_2).unwrap();
+        assert_eq!(actual_tuple, tuple_2);
 
         Ok(())
     }
