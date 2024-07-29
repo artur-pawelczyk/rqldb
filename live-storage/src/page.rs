@@ -1,14 +1,18 @@
 use core::fmt;
-use std::ops::{Index, IndexMut};
+use std::{mem::size_of, ops::{Index, IndexMut, Range}};
 
 pub const PAGE_SIZE: usize = 8 * 1024;
 
 // TODO: u16 is probably enough
+type LpIndex = u32;
+type LpCountType = u32;
+const LP_COUNT: Range<usize> = 0..size_of::<LpCountType>();
+
 #[derive(Debug)]
-struct LinePointer(u32, u32);
+struct LinePointer(LpIndex, LpIndex);
 impl LinePointer {
     const fn self_size() -> usize {
-        std::mem::size_of::<u32>() * 2
+        size_of::<LpIndex>() * 2
     }
 }
 
@@ -30,19 +34,19 @@ impl IndexMut<LinePointer> for [u8] {
     }
 }
 
-impl From<&LinePointer> for [u8; 8] {
+impl From<&LinePointer> for [u8; LinePointer::self_size()] {
     fn from(value: &LinePointer) -> Self {
-        let mut a = [0u8; 8];
-        a[0..4].copy_from_slice(&value.0.to_le_bytes());
-        a[4..].copy_from_slice(&value.1.to_le_bytes());
+        let mut a = [0u8; LinePointer::self_size()];
+        a[0..size_of::<LpIndex>()].copy_from_slice(&value.0.to_le_bytes());
+        a[size_of::<LpIndex>()..].copy_from_slice(&value.1.to_le_bytes());
         a
     }
 }
 
-impl From<[u8; 8]> for LinePointer {
-    fn from(value: [u8; 8]) -> Self {
+impl From<[u8; LinePointer::self_size()]> for LinePointer {
+    fn from(value: [u8; LinePointer::self_size()]) -> Self {
         let a = read_u32(&value);
-        let b = read_u32(&value[4..]);
+        let b = read_u32(&value[size_of::<LpIndex>()..]);
         Self(a, b)        
     }
 }
@@ -52,7 +56,7 @@ impl TryFrom<&[u8]> for LinePointer {
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         let a = read_u32(value);
-        let b = read_u32(&value.index(4..));
+        let b = read_u32(&value.index(size_of::<LpIndex>()..));
         Ok(Self(a, b))
     }
 }
@@ -89,7 +93,7 @@ impl<'a> PageMut<'a> {
 
     fn line_pointers(&'a self) -> impl Iterator<Item = LinePointer> + 'a {
         let lp_count = read_u32(&self.contents);
-        let lp_end = lp_count as usize * LinePointer::self_size() + 4;
+        let lp_end = lp_count as usize * LinePointer::self_size() + LP_COUNT.len();
         debug_assert!(lp_count < 1024);
         LinePointerIter(&self.contents[4..lp_end])
     }
@@ -100,7 +104,7 @@ impl<'a> PageMut<'a> {
             .last()
             .unwrap_or((0, 0));
 
-        let lp_self_start = last_lp * LinePointer::self_size() + 4;
+        let lp_self_start = last_lp * LinePointer::self_size() + LP_COUNT.len();
         let lp_self_end = lp_self_start + LinePointer::self_size();
         let tuple_end = tuple_start + size as u32;
         if tuple_end as usize >= PAGE_SIZE - lp_self_end {
@@ -111,11 +115,11 @@ impl<'a> PageMut<'a> {
         debug_assert!(tuple_end <= 8*1024);
         let lp = LinePointer(tuple_start, tuple_end);
 
-        let lp_bytes = <[u8; 8]>::from(&lp);
+        let lp_bytes = <[u8; LinePointer::self_size()]>::from(&lp);
         self.contents[lp_self_start..lp_self_end].copy_from_slice(&lp_bytes);
 
         let new_lp_count = (last_lp + 1) as u32;
-        self.contents[0..4].copy_from_slice(&new_lp_count.to_le_bytes());
+        self.contents[LP_COUNT].copy_from_slice(&new_lp_count.to_le_bytes());
 
         Ok(lp)
     }
@@ -130,7 +134,7 @@ impl<'a> Page<'a> {
     pub(crate) fn new(contents: &'a [u8]) -> Self {
         debug_assert!(contents.len() == PAGE_SIZE);
         let tuple_count = read_u32(contents) as usize;
-        let contents = &contents[4..];
+        let contents = &contents[LP_COUNT.len()..];
         Self { contents, tuple_count }
     }
 }
@@ -188,4 +192,3 @@ impl Iterator for LinePointerIter<'_> {
         }
     }
 }
-
