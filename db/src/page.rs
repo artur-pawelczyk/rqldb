@@ -8,11 +8,17 @@ type LpIndex = u32;
 type LpCountType = u32;
 const LP_COUNT: Range<usize> = 0..size_of::<LpCountType>();
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct LinePointer(LpIndex, LpIndex);
 impl LinePointer {
     const fn self_size() -> usize {
         size_of::<LpIndex>() * 2
+    }
+
+    fn range(&self) -> Range<usize> {
+        let start = PAGE_SIZE - (self.1 as usize);
+        let end = PAGE_SIZE - (self.0 as usize);
+        start..end
     }
 }
 
@@ -20,6 +26,7 @@ impl Index<LinePointer> for [u8] {
     type Output = [u8];
 
     fn index(&self, index: LinePointer) -> &Self::Output {
+        // TODO: Replace with Self::range
         let start = self.len() - (index.1 as usize);
         let end = self.len() - (index.0 as usize);
         &self[start..end]
@@ -28,6 +35,7 @@ impl Index<LinePointer> for [u8] {
 
 impl IndexMut<LinePointer> for [u8] {
     fn index_mut(&mut self, index: LinePointer) -> &mut Self::Output {
+        // TODO: Replace with Self::range
         let start = PAGE_SIZE - (index.1 as usize);
         let end = PAGE_SIZE - (index.0 as usize);
         &mut self[start..end]
@@ -120,6 +128,28 @@ impl From<&TupleId> for u32 {
     }
 }
 
+struct Header {
+    id: TupleId,
+    deleted: bool,
+}
+
+impl Header {
+    const fn size() -> usize {
+        1
+    }
+
+    fn write(&self, out: &mut [u8]) {
+        let deleted: u8 = if self.deleted { 1 } else { 0 };
+        out[..Self::size()].copy_from_slice(&[deleted]);
+    }
+}
+
+impl From<TupleId> for Header {
+    fn from(id: TupleId) -> Self {
+        Self { id, deleted: false }
+    }
+}
+
 pub(crate) struct PageMut<'a> {
     pub(crate) contents: &'a mut [u8],
 }
@@ -131,9 +161,11 @@ impl<'a> PageMut<'a> {
     }
 
     pub(crate) fn push(&mut self, b: &[u8]) -> Result<TupleId, PageError> {
-        let (id, lp) = self.reserve_space(b.len())?;
-        self.contents[lp].copy_from_slice(b);
-
+        let (id, space) = self.reserve_space(b.len() + Header::size())?;
+        let header = Header::from(id);
+        header.write(space);
+        space[Header::size()..].copy_from_slice(b);
+        
         Ok(id)
     }
 
@@ -144,7 +176,7 @@ impl<'a> PageMut<'a> {
         LinePointerIter(&self.contents[4..lp_end])
     }
 
-    fn reserve_space(&mut self, size: usize) -> Result<(TupleId, LinePointer), PageError> {
+    fn reserve_space(&mut self, size: usize) -> Result<(TupleId, &mut [u8]), PageError> {
         let (last_lp, tuple_start) = self.line_pointers().enumerate()
             .map(|(i, lp)| (i+1, lp.1))
             .last()
@@ -167,7 +199,15 @@ impl<'a> PageMut<'a> {
         let new_lp_count = (last_lp + 1) as u32;
         self.contents[LP_COUNT].copy_from_slice(&new_lp_count.to_le_bytes());
 
-        Ok((last_lp.into(), lp))
+        Ok((last_lp.into(), &mut self.contents[lp]))
+    }
+
+    fn delete(&mut self, id: TupleId) {
+        let lp = self.line_pointers().nth(id.0 as usize - 1).unwrap(); // TODO: Remove the 'unwrap'
+        let mut header = Header::from(id);
+        header.deleted = true;
+        let tuple = &mut self.contents[lp];
+        header.write(&mut tuple[0..Header::size()]);
     }
 }
 
@@ -185,11 +225,8 @@ impl<'a> Page<'a> {
         Self { contents, tuple_count, current_tuple: 0 }
     }
 
-    fn tuple_by_id(&self, tid: TupleId) -> Option<&'a [u8]> {
+    fn tuple_by_id(&self, tid: TupleId) -> RawTuple<'a> {
         let n = (tid.0 - 1) as usize;
-        if self.tuple_count <= n {
-            return None;
-        }
 
         let mut lp_bytes = [0u8; LinePointer::self_size()];
         let lp_start = LinePointer::self_size() * n;
@@ -197,14 +234,10 @@ impl<'a> Page<'a> {
         lp_bytes.copy_from_slice(&self.contents[lp_start..lp_end]);
         let lp = LinePointer::from(lp_bytes);
 
-        Some(&self.contents[lp])
+        RawTuple { id: tid, contents: &self.contents[lp] }
     }
-}
 
-impl<'a> Iterator for Page<'a> {
-    type Item = RawTuple<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
+    fn next_internal(&mut self) -> Option<RawTuple<'a>> {
         if self.current_tuple >= self.tuple_count {
             return None;
         }
@@ -218,7 +251,24 @@ impl<'a> Iterator for Page<'a> {
 
         Some(RawTuple { id: TupleId(self.current_tuple as u32), contents: &self.contents[lp] })
     }
+}
 
+impl<'a> Iterator for Page<'a> {
+    type Item = RawTuple<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(t) = self.next_internal() {
+            if t.is_deleted() {
+                continue;
+            } else {
+                return Some(t)
+            }
+        }
+
+        None
+    }
+
+    // TODO: Remove; 'n' could be confused with TupleId, but it's not
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
         if self.tuple_count <= n {
             return None;
@@ -237,6 +287,16 @@ impl<'a> Iterator for Page<'a> {
 pub(crate) struct RawTuple<'a> {
     id: TupleId,
     contents: &'a [u8],
+}
+
+impl RawTuple<'_> {
+    fn contents(&self) -> &[u8] {
+        &self.contents[Header::size()..]
+    }
+
+    fn is_deleted(&self) -> bool {
+        if self.contents[0] == 0 { false } else { true }
+    }
 }
 
 fn read_u32(b: &[u8]) -> u32 {
@@ -275,11 +335,11 @@ mod tests {
         let tid_1 = PageMut::new(&mut bytes).push(&tuple_1)?;
         let tid_2 = PageMut::new(&mut bytes).push(&tuple_2)?;
 
-        let actual_tuple = Page::new(&bytes).tuple_by_id(tid_1).unwrap();
-        assert_eq!(actual_tuple, tuple_1);
+        let actual_tuple = Page::new(&bytes).tuple_by_id(tid_1);
+        assert_eq!(actual_tuple.contents(), tuple_1);
 
-        let actual_tuple = Page::new(&bytes).tuple_by_id(tid_2).unwrap();
-        assert_eq!(actual_tuple, tuple_2);
+        let actual_tuple = Page::new(&bytes).tuple_by_id(tid_2);
+        assert_eq!(actual_tuple.contents(), tuple_2);
 
         Ok(())
     }
@@ -296,6 +356,20 @@ mod tests {
         let returned_tuples = Page::new(&bytes).collect::<Vec<_>>();
         assert_eq!(returned_tuples[0].id, tid_1);
         assert_eq!(returned_tuples[1].id, tid_2);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_delete_tuple_from_page() -> Result<(), Box<dyn Error>> {
+        let mut buffer = [0u8; PAGE_SIZE];
+        let tuple = [1, 0, 0, 0];
+
+        let tid = PageMut::new(&mut buffer).push(&tuple)?;
+        PageMut::new(&mut buffer).push(&tuple)?;
+        PageMut::new(&mut buffer).delete(tid);
+
+        assert_eq!(Page::new(&buffer).count(), 1);
 
         Ok(())
     }
