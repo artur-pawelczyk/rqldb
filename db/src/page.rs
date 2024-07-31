@@ -173,6 +173,7 @@ impl<'a> PageMut<'a> {
 
 pub(crate) struct Page<'a> {
     contents: &'a [u8],
+    current_tuple: usize,
     tuple_count: usize,
 }
 
@@ -181,7 +182,7 @@ impl<'a> Page<'a> {
         debug_assert!(contents.len() == PAGE_SIZE);
         let tuple_count = read_u32(contents) as usize;
         let contents = &contents[LP_COUNT.len()..];
-        Self { contents, tuple_count }
+        Self { contents, tuple_count, current_tuple: 0 }
     }
 
     fn tuple_by_id(&self, tid: TupleId) -> Option<&'a [u8]> {
@@ -201,10 +202,10 @@ impl<'a> Page<'a> {
 }
 
 impl<'a> Iterator for Page<'a> {
-    type Item = &'a [u8];
+    type Item = RawTuple<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.tuple_count <= 0 {
+        if self.current_tuple >= self.tuple_count {
             return None;
         }
 
@@ -213,9 +214,9 @@ impl<'a> Iterator for Page<'a> {
         let lp = LinePointer::from(lp_bytes);
 
         self.contents = &self.contents[LinePointer::self_size()..];
-        self.tuple_count -= 1;
+        self.current_tuple += 1;
 
-        Some(&self.contents[lp])
+        Some(RawTuple { id: TupleId(self.current_tuple as u32), contents: &self.contents[lp] })
     }
 
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
@@ -229,8 +230,13 @@ impl<'a> Iterator for Page<'a> {
         lp_bytes.copy_from_slice(&self.contents[lp_start..lp_end]);
         let lp = LinePointer::from(lp_bytes);
 
-        Some(&self.contents[lp])
+        Some(RawTuple { id: TupleId::anonymous(), contents: &self.contents[lp] })
     }
+}
+
+pub(crate) struct RawTuple<'a> {
+    id: TupleId,
+    contents: &'a [u8],
 }
 
 fn read_u32(b: &[u8]) -> u32 {
@@ -274,6 +280,22 @@ mod tests {
 
         let actual_tuple = Page::new(&bytes).tuple_by_id(tid_2).unwrap();
         assert_eq!(actual_tuple, tuple_2);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_iter_raw_tuple() -> Result<(), Box<dyn Error>> {
+        let mut bytes = [0u8; PAGE_SIZE];
+        let tuple_1 = [1, 0, 0, 0];
+        let tuple_2 = [2, 0, 0, 0];
+
+        let tid_1 = PageMut::new(&mut bytes).push(&tuple_1)?;
+        let tid_2 = PageMut::new(&mut bytes).push(&tuple_2)?;
+
+        let returned_tuples = Page::new(&bytes).collect::<Vec<_>>();
+        assert_eq!(returned_tuples[0].id, tid_1);
+        assert_eq!(returned_tuples[1].id, tid_2);
 
         Ok(())
     }
