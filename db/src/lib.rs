@@ -9,6 +9,8 @@ pub mod plan;
 pub mod schema;
 pub mod tokenize;
 pub mod tuple;
+
+#[allow(dead_code)]
 mod page;
 
 use core::fmt;

@@ -10,7 +10,7 @@ use crate::event::EventHandler;
 use crate::schema::AttributeRef;
 use crate::tuple::PositionalAttribute;
 use crate::{tuple::Tuple, schema::Relation, Type};
-use crate::page::{TupleId, PAGE_SIZE};
+use crate::page::TupleId;
 
 type ByteTuple = Vec<u8>;
 
@@ -18,7 +18,6 @@ type ByteTuple = Vec<u8>;
 pub(crate) struct IndexedObject {
     id: usize,
     pub(crate) tuples: Vec<ByteTuple>,
-    pages: Vec<[u8; PAGE_SIZE]>,
     pub(crate) attrs: Vec<Attribute>,
     index: Index,
     hash: HashMap<u64, Vec<TupleId>>,

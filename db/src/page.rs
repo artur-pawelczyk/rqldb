@@ -95,6 +95,12 @@ impl TupleId {
     }
 }
 
+impl fmt::Display for TupleId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "TupleId({})", self.0)
+    }
+}
+
 impl std::ops::Index<TupleId> for Vec<Vec<u8>> {
     type Output = Vec<u8>;
 
@@ -225,7 +231,7 @@ impl<'a> Page<'a> {
         Self { contents, tuple_count, current_tuple: 0 }
     }
 
-    fn tuple_by_id(&self, tid: TupleId) -> RawTuple<'a> {
+    pub(crate) fn tuple_by_id(&self, tid: TupleId) -> RawTuple<'a> {
         let n = (tid.0 - 1) as usize;
 
         let mut lp_bytes = [0u8; LinePointer::self_size()];
@@ -289,8 +295,12 @@ pub(crate) struct RawTuple<'a> {
     contents: &'a [u8],
 }
 
-impl RawTuple<'_> {
-    fn contents(&self) -> &[u8] {
+impl<'a> RawTuple<'a> {
+    pub(crate) fn id(&self) -> TupleId {
+        self.id
+    }
+
+    pub(crate) fn contents(self) -> &'a [u8] {
         &self.contents[Header::size()..]
     }
 
