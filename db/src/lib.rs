@@ -12,6 +12,8 @@ pub mod tuple;
 
 #[allow(dead_code)]
 mod page;
+#[allow(dead_code)]
+mod heap;
 
 use core::fmt;
 use std::cmp::Ordering;

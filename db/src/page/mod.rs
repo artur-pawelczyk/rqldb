@@ -227,7 +227,7 @@ impl<'a> Iterator for Page<'a> {
         None
     }
 
-    // TODO: Remove; 'n' could be confused with TupleId, but it's not
+    // TODO: Remove or fix: this returnes deleted tuples, unline 'next'
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
         if self.tuple_count <= n {
             return None;
