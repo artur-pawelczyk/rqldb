@@ -160,7 +160,7 @@ impl<'a> PageMut<'a> {
         Ok((last_lp.into(), &mut self.contents[lp]))
     }
 
-    fn delete(&mut self, id: TupleId) {
+    pub(crate) fn delete(&mut self, id: TupleId) {
         let lp = self.line_pointers().nth(id.into()).unwrap(); // TODO: Remove the 'unwrap'
         let mut header = Header::from(id);
         header.deleted = true;
