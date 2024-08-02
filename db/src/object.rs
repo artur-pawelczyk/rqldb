@@ -386,8 +386,6 @@ impl<'a> RawObjectView<'a> {
 
 #[cfg(test)]
 mod test {
-    use std::hash::{DefaultHasher, Hash, Hasher};
-
     use super::*;
     use crate::schema::Schema;
 

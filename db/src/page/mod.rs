@@ -161,7 +161,7 @@ impl<'a> PageMut<'a> {
     }
 
     fn delete(&mut self, id: TupleId) {
-        let lp = self.line_pointers().nth(id.0 as usize - 1).unwrap(); // TODO: Remove the 'unwrap'
+        let lp = self.line_pointers().nth(id.into()).unwrap(); // TODO: Remove the 'unwrap'
         let mut header = Header::from(id);
         header.deleted = true;
         let tuple = &mut self.contents[lp];
@@ -184,7 +184,7 @@ impl<'a> Page<'a> {
     }
 
     pub(crate) fn tuple_by_id(&self, tid: TupleId) -> RawTuple<'a> {
-        let n = (tid.0 - 1) as usize;
+        let n = usize::from(tid);
 
         let mut lp_bytes = [0u8; LinePointer::self_size()];
         let lp_start = LinePointer::self_size() * n;
@@ -207,7 +207,8 @@ impl<'a> Page<'a> {
         self.contents = &self.contents[LinePointer::self_size()..];
         self.current_tuple += 1;
 
-        Some(RawTuple { id: TupleId(self.current_tuple as u32), contents: &self.contents[lp] })
+        let id = TupleId { block: 0, offset: self.current_tuple as u32 };
+        Some(RawTuple { id, contents: &self.contents[lp] })
     }
 }
 
