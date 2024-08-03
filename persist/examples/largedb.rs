@@ -29,7 +29,6 @@ fn main() {
         }
     }
 
-    println!("Saving...");
-    let mut file = TempFilePersist::new();
-    file.write(&db).unwrap();
+    println!("Queriying...");
+    db.execute_query(&Query::scan("document")).unwrap();
 }

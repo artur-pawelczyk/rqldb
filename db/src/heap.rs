@@ -1,8 +1,12 @@
-use crate::page::{Page, PageMut, RawTuple, TupleId, PAGE_SIZE};
+use std::{cell::RefCell, rc::Rc};
+
+use crate::{event::EventHandler, object::ObjectId, page::{BlockId, Page, PageMut, RawTuple, TupleId, PAGE_SIZE}};
 
 #[derive(Default)]
 pub(crate) struct Heap {
+    obj: Option<ObjectId>,
     pages: Vec<u8>,
+    handler: Rc<RefCell<EventHandler>>,
 }
 
 impl Heap {
@@ -13,13 +17,23 @@ impl Heap {
 
         loop {
             let last_page_start = self.pages.len() - PAGE_SIZE;
-            let mut page = PageMut::new(self.allocated_pages() as u32 - 1, &mut self.pages[last_page_start..]);
+            let block = self.allocated_pages() as u32 - 1;
+            let mut page = PageMut::new(block, &mut self.pages[last_page_start..]);
             if let Ok(id) = page.push(tuple) {
+                self.emit_event(block);
                 return id;
             } else {
                 self.expand();
             }
         }
+    }
+
+    pub(crate) fn with_handler(self, handler: Rc<RefCell<EventHandler>>) -> Self {
+        Self { handler, ..self }
+    }
+
+    pub(crate) fn with_object_id(self, id: ObjectId) -> Self {
+        Self { obj: Some(id), ..self }
     }
 
     pub(crate) fn tuple_by_id<'a>(&'a self, id: TupleId) -> RawTuple<'a> {
@@ -33,6 +47,7 @@ impl Heap {
         let page_end = page_start + PAGE_SIZE;
         PageMut::new(self.allocated_pages() as u32 - 1, &mut self.pages[page_start..page_end])
             .delete(id);
+        self.emit_event(id.block);
     }
 
     fn expand(&mut self) {
@@ -49,6 +64,14 @@ impl Heap {
 
     fn allocated_pages(&self) -> usize {
         self.pages.len() / PAGE_SIZE
+    }
+
+    fn emit_event(&self, block: BlockId) {
+        if let Some(id) = self.obj {
+            let page_start = block as usize * PAGE_SIZE;
+            let page_end = page_start + PAGE_SIZE;
+            self.handler.borrow().emit_page_modified(id, block, &self.pages[page_start..page_end]);
+        }
     }
 }
 

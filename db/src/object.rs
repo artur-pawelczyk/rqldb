@@ -13,9 +13,11 @@ use crate::tuple::PositionalAttribute;
 use crate::{tuple::Tuple, schema::Relation, Type};
 use crate::page::TupleId;
 
+pub type ObjectId = usize;
+
 #[derive(Default)]
 pub(crate) struct IndexedObject {
-    id: usize,
+    id: ObjectId,
     pages: Heap,
     pub(crate) attrs: Vec<Attribute>,
     index: Index,
@@ -29,6 +31,7 @@ impl IndexedObject {
 
         Self {
             id: table.id,
+            pages: Heap::default().with_object_id(table.id),
             attrs: table.attributes().map(Attribute::from).collect(),
             index: key.map(Index::Attr).unwrap_or(Index::Uniq),
             ..Default::default()
@@ -36,11 +39,12 @@ impl IndexedObject {
     }
 
     pub(crate) fn with_handler(mut self, handler: Rc<RefCell<EventHandler>>) -> Self {
+        self.pages = self.pages.with_handler(Rc::clone(&handler));
         self.handler = handler;
         self
     }
 
-    pub(crate) fn id(&self) -> usize {
+    pub(crate) fn id(&self) -> ObjectId {
         self.id
     }
 
@@ -433,6 +437,7 @@ mod test {
         assert_eq!(obj.iter().count(), 1);
     }
 
+    // TODO: Uncomment or remove
     // #[test]
     // fn test_vaccum() {
     //     let mut schema = Schema::default();

@@ -1,8 +1,10 @@
 use std::{fmt, ops::{Index, IndexMut}};
 
+pub type BlockId = u32;
+
 #[derive(Copy, Clone, Hash, PartialEq, Eq, Debug)]
 pub(crate) struct TupleId {
-    pub(crate) block: u32,
+    pub(crate) block: BlockId,
     pub(crate) offset: u32,
 }
 

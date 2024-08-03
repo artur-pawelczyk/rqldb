@@ -3,7 +3,7 @@ mod tuple_id;
 use core::fmt;
 use std::{mem::size_of, ops::{Index, IndexMut, Range}};
 
-pub(crate) use tuple_id::TupleId;
+pub(crate) use tuple_id::{BlockId, TupleId};
 
 pub const PAGE_SIZE: usize = 8 * 1024;
 
