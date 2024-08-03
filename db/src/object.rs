@@ -7,6 +7,7 @@ use std::{collections::{HashSet, HashMap}, cell::Ref};
 
 use crate::bytes::write_as_bytes;
 use crate::event::EventHandler;
+use crate::heap::Heap;
 use crate::schema::AttributeRef;
 use crate::tuple::PositionalAttribute;
 use crate::{tuple::Tuple, schema::Relation, Type};
@@ -15,7 +16,7 @@ use crate::page::{Page, PageMut, TupleId, PAGE_SIZE};
 #[derive(Default)]
 pub(crate) struct IndexedObject {
     id: usize,
-    pages: Vec<[u8; PAGE_SIZE]>,
+    pages: Heap,
     pub(crate) attrs: Vec<Attribute>,
     index: Index,
     hash: HashMap<u64, Vec<TupleId>>,
@@ -50,14 +51,14 @@ impl IndexedObject {
             Index::Attr(key_pos) => {
                 let key = tuple.element(key_pos).unwrap();
                 if let Some(id) = self.find_in_index(key.bytes()) {
-                    PageMut::new(0, &mut self.pages[0]).delete(id);
+                    self.pages.delete(id);
                     self.remove_from_index(id);
 
-                    let new_id = PageMut::new(0, &mut self.pages[0]).push(tuple.raw_bytes()).unwrap();
+                    let new_id = self.pages.push(tuple.raw_bytes());
                     self.add_to_index(tuple.raw_bytes(), new_id);
                     false
                 } else {
-                    let id = self.add_to_last_page(tuple.raw_bytes());
+                    let id = self.pages.push(tuple.raw_bytes());
                     self.add_to_index(key.bytes(), id);
                     true
                 }
@@ -66,7 +67,7 @@ impl IndexedObject {
                 if self.find_in_index(tuple.raw_bytes()).is_some() {
                     false
                 } else {
-                    let id = self.add_to_last_page(tuple.raw_bytes());
+                    let id = self.pages.push(tuple.raw_bytes());
                     self.add_to_index(tuple.raw_bytes(), id);
                     true
                 }
@@ -81,21 +82,12 @@ impl IndexedObject {
         added
     }
 
-    fn add_to_last_page(&mut self, b: &[u8]) -> TupleId {
-        if self.pages.is_empty() {
-            self.pages.push([0; PAGE_SIZE]);
-        }
-
-        let last = self.pages.len() - 1;
-        PageMut::new(0, &mut self.pages[last]).push(b).unwrap()
-    }
-
     pub(crate) fn find_in_index(&self, bytes: &[u8]) -> Option<TupleId> {
         match &self.index {
             Index::Attr(attr) => {
                 let matched_ids = self.hash.get(&hash(bytes))?;
                 matched_ids.iter().find(|id| {
-                    let tuple = self.tuple_by_id(**id);
+                    let tuple = self.get(**id);
                     let elem = tuple.element(attr).unwrap();
                     elem.bytes() == bytes
                 }).copied()
@@ -103,7 +95,7 @@ impl IndexedObject {
             Index::Uniq => {
                 let matched_ids = self.hash.get(&hash(bytes))?;
                 matched_ids.iter().find(|id| {
-                    let tuple = self.tuple_by_id(**id);
+                    let tuple = self.get(**id);
                     tuple.raw_bytes() == bytes
                 }).copied()
             }
@@ -123,29 +115,19 @@ impl IndexedObject {
     }
 
     pub(crate) fn get(&self, id: TupleId) -> Tuple {
-        let page = Page::new(0, &self.pages[0]);
-        let tuple = page.tuple_by_id(id);
+        let tuple = self.pages.tuple_by_id(id);
         let contents = tuple.contents();
         Tuple::with_object(contents, self)
     }
 
     pub(crate) fn iter<'b>(&'b self) -> Box<dyn Iterator<Item = Tuple<'b>> + 'b> {
-        if let Some(page) = self.pages.first() {
-            Box::new(Page::new(0, page)
-                     .filter(|tuple| !self.removed_ids.contains(&tuple.id()))
-                     .map(|tuple| {
-                         let id = tuple.id();
-                         Tuple::with_object(tuple.contents(), self).with_id(id)
-                     })
-            )
-        } else {
-            Box::new(std::iter::empty())
-        }
-    }
-
-    fn tuple_by_id(&self, id: TupleId) -> Tuple {
-        let page = Page::new(0, &self.pages[0]);
-        Tuple::with_object(page.tuple_by_id(id).contents(), self).with_id(id)
+        Box::new(self.pages.tuples()
+                 .filter(|tuple| !self.removed_ids.contains(&tuple.id()))
+                 .map(|tuple| {
+                     let id = tuple.id();
+                     Tuple::with_object(tuple.contents(), self).with_id(id)
+                 })
+        )
     }
 
     pub(crate) fn remove_tuples(&mut self, ids: &[TupleId]) {
@@ -170,7 +152,6 @@ impl IndexedObject {
         } else {
             Self {
                 id: table.id,
-                pages: Vec::new(),
                 attrs: table.attributes().map(Attribute::from).collect(),
                 index: Default::default(),
                 ..Default::default()
@@ -186,27 +167,25 @@ impl IndexedObject {
     }
 
     fn reindex(&mut self) {
+        // TODO: Reindex on Index::Uniq also
         if let Index::Attr(key) = &self.index {
             self.hash.clear();
-            if let Some(page) = self.pages.first() {
-                for raw_tuple in Page::new(0, page) {
-                    let id = raw_tuple.id();
-                    let tuple = Tuple::from_bytes(raw_tuple.contents(), &self.attrs);
-                    let hash = hash(tuple.element(key).unwrap().bytes());
-                    self.hash.entry(hash)
-                        .and_modify(|ids| { ids.push(id); })
-                        .or_insert_with(|| vec![id]);
-                }
+            for tuple in self.pages.tuples() {
+                let id = tuple.id();
+                let tuple = Tuple::from_bytes(tuple.contents(), &self.attrs);
+                let hash = hash(tuple.element(key).unwrap().bytes());
+                self.hash.entry(hash)
+                    .and_modify(|ids| { ids.push(id); })
+                    .or_insert_with(|| vec![id]);
             }
         }
     }
 
     pub(crate) fn vaccum(&mut self) {
-        let old = std::mem::replace(&mut self.pages[0], [0u8; PAGE_SIZE]);
-        let mut new = PageMut::new(0, &mut self.pages[0]);
-        for tuple in Page::new(0, &old) {
+        let old_heap = std::mem::take(&mut self.pages);
+        for tuple in old_heap.tuples() {
             if !self.removed_ids.contains(&tuple.id()) {
-                new.push(&tuple.contents()).unwrap();
+                self.pages.push(&tuple.contents());
             }
         }
 
@@ -399,12 +378,11 @@ pub struct RawObjectView<'a> {
 
 impl<'a> RawObjectView<'a> {
     pub fn count(&self) -> usize {
-        self.object.pages.iter().map(|b| Page::new(0, b).count()).sum()
+        self.object.pages.tuples().count()
     }
 
     pub fn raw_tuples(&'a self) -> impl Iterator<Item = Vec<u8>> + 'a {
-        self.object.pages.iter()
-            .flat_map(|b| Page::new(0, b))
+        self.object.pages.tuples()
             .map(|tuple| tuple.contents().to_vec())
     }
 
