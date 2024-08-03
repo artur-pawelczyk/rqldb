@@ -40,7 +40,11 @@ impl Heap {
     }
 
     pub(crate) fn tuples<'a>(&'a self) -> impl Iterator<Item = RawTuple<'a>> + 'a {
-        HeapIter { pages: &self.pages, tuple_n: 0, block: 0 }
+        self.pages().flatten()
+    }
+
+    fn pages<'a>(&'a self) -> impl Iterator<Item = Page<'a>> {
+        PageIter(0, &self.pages)
     }
 
     fn allocated_pages(&self) -> usize {
@@ -48,29 +52,20 @@ impl Heap {
     }
 }
 
-struct HeapIter<'a> {
-    pages: &'a [u8],
-    block: u32,
-    tuple_n: usize,
-}
+struct PageIter<'a>(u32, &'a [u8]);
 
-impl<'a> Iterator for HeapIter<'a> {
-    type Item = RawTuple<'a>;
+impl<'a> Iterator for PageIter<'a> {
+    type Item = Page<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        while self.pages.len() >= PAGE_SIZE {
-            // TODO: Page::nth has a linear, so HeapIter will be slow
-            if let Some(tuple) = Page::new(self.block, &self.pages[..PAGE_SIZE]).nth(self.tuple_n) {
-                self.tuple_n += 1;
-                return Some(tuple);
-            } else {
-                self.pages = &self.pages[PAGE_SIZE..];
-                self.block += 1;
-                self.tuple_n = 0;
-            }
+        if self.1.len() >= PAGE_SIZE {
+            let page = Page::new(self.0, &self.1[..PAGE_SIZE]);
+            self.0 += 1;
+            self.1 = &self.1[PAGE_SIZE..];
+            Some(page)
+        } else {
+            None
         }
-
-        None
     }
 }
 
