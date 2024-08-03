@@ -109,13 +109,14 @@ impl From<TupleId> for Header {
 }
 
 pub(crate) struct PageMut<'a> {
+    block_id: u32,
     pub(crate) contents: &'a mut [u8],
 }
 
 impl<'a> PageMut<'a> {
-    pub(crate) fn new(contents: &'a mut [u8]) -> Self {
+    pub(crate) fn new(block_id: u32, contents: &'a mut [u8]) -> Self {
         debug_assert!(contents.len() == PAGE_SIZE);
-        Self { contents }
+        Self { block_id, contents }
     }
 
     pub(crate) fn push(&mut self, b: &[u8]) -> Result<TupleId, PageError> {
@@ -157,7 +158,7 @@ impl<'a> PageMut<'a> {
         let new_lp_count = (last_lp + 1) as u32;
         self.contents[LP_COUNT].copy_from_slice(&new_lp_count.to_le_bytes());
 
-        Ok((last_lp.into(), &mut self.contents[lp]))
+        Ok((TupleId { block: self.block_id, offset: last_lp as u32 + 1 }, &mut self.contents[lp]))
     }
 
     pub(crate) fn delete(&mut self, id: TupleId) {
@@ -170,17 +171,18 @@ impl<'a> PageMut<'a> {
 }
 
 pub(crate) struct Page<'a> {
+    block_id: u32,
     contents: &'a [u8],
     current_tuple: usize,
     tuple_count: usize,
 }
 
 impl<'a> Page<'a> {
-    pub(crate) fn new(contents: &'a [u8]) -> Self {
+    pub(crate) fn new(block_id: u32, contents: &'a [u8]) -> Self {
         debug_assert!(contents.len() == PAGE_SIZE);
         let tuple_count = read_u32(contents) as usize;
         let contents = &contents[LP_COUNT.len()..];
-        Self { contents, tuple_count, current_tuple: 0 }
+        Self { block_id, contents, tuple_count, current_tuple: 0 }
     }
 
     pub(crate) fn tuple_by_id(&self, tid: TupleId) -> RawTuple<'a> {
@@ -207,7 +209,7 @@ impl<'a> Page<'a> {
         self.contents = &self.contents[LinePointer::self_size()..];
         self.current_tuple += 1;
 
-        let id = TupleId { block: 0, offset: self.current_tuple as u32 };
+        let id = TupleId { block: self.block_id, offset: self.current_tuple as u32 };
         Some(RawTuple { id, contents: &self.contents[lp] })
     }
 }
@@ -225,21 +227,6 @@ impl<'a> Iterator for Page<'a> {
         }
 
         None
-    }
-
-    // TODO: Remove or fix: this returnes deleted tuples, unline 'next'
-    fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        if self.tuple_count <= n {
-            return None;
-        }
-
-        let mut lp_bytes = [0u8; LinePointer::self_size()];
-        let lp_start = LinePointer::self_size() * n;
-        let lp_end = lp_start + LinePointer::self_size();
-        lp_bytes.copy_from_slice(&self.contents[lp_start..lp_end]);
-        let lp = LinePointer::from(lp_bytes);
-
-        Some(RawTuple { id: TupleId::anonymous(), contents: &self.contents[lp] })
     }
 }
 
@@ -295,13 +282,13 @@ mod tests {
         let tuple_1 = [1, 0, 0, 0];
         let tuple_2 = [2, 0, 0, 0];
 
-        let tid_1 = PageMut::new(&mut bytes).push(&tuple_1)?;
-        let tid_2 = PageMut::new(&mut bytes).push(&tuple_2)?;
+        let tid_1 = PageMut::new(0, &mut bytes).push(&tuple_1)?;
+        let tid_2 = PageMut::new(0, &mut bytes).push(&tuple_2)?;
 
-        let actual_tuple = Page::new(&bytes).tuple_by_id(tid_1);
+        let actual_tuple = Page::new(0, &bytes).tuple_by_id(tid_1);
         assert_eq!(actual_tuple.contents(), tuple_1);
 
-        let actual_tuple = Page::new(&bytes).tuple_by_id(tid_2);
+        let actual_tuple = Page::new(0, &bytes).tuple_by_id(tid_2);
         assert_eq!(actual_tuple.contents(), tuple_2);
 
         Ok(())
@@ -313,10 +300,10 @@ mod tests {
         let tuple_1 = [1, 0, 0, 0];
         let tuple_2 = [2, 0, 0, 0];
 
-        let tid_1 = PageMut::new(&mut bytes).push(&tuple_1)?;
-        let tid_2 = PageMut::new(&mut bytes).push(&tuple_2)?;
+        let tid_1 = PageMut::new(0, &mut bytes).push(&tuple_1)?;
+        let tid_2 = PageMut::new(0, &mut bytes).push(&tuple_2)?;
 
-        let returned_tuples = Page::new(&bytes).collect::<Vec<_>>();
+        let returned_tuples = Page::new(0, &bytes).collect::<Vec<_>>();
         assert_eq!(returned_tuples[0].id, tid_1);
         assert_eq!(returned_tuples[1].id, tid_2);
 
@@ -328,11 +315,11 @@ mod tests {
         let mut buffer = [0u8; PAGE_SIZE];
         let tuple = [1, 0, 0, 0];
 
-        let tid = PageMut::new(&mut buffer).push(&tuple)?;
-        PageMut::new(&mut buffer).push(&tuple)?;
-        PageMut::new(&mut buffer).delete(tid);
+        let tid = PageMut::new(0, &mut buffer).push(&tuple)?;
+        PageMut::new(0, &mut buffer).push(&tuple)?;
+        PageMut::new(0, &mut buffer).delete(tid);
 
-        assert_eq!(Page::new(&buffer).count(), 1);
+        assert_eq!(Page::new(0, &buffer).count(), 1);
 
         Ok(())
     }

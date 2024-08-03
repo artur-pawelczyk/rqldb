@@ -50,10 +50,10 @@ impl IndexedObject {
             Index::Attr(key_pos) => {
                 let key = tuple.element(key_pos).unwrap();
                 if let Some(id) = self.find_in_index(key.bytes()) {
-                    PageMut::new(&mut self.pages[0]).delete(id);
+                    PageMut::new(0, &mut self.pages[0]).delete(id);
                     self.remove_from_index(id);
 
-                    let new_id = PageMut::new(&mut self.pages[0]).push(tuple.raw_bytes()).unwrap();
+                    let new_id = PageMut::new(0, &mut self.pages[0]).push(tuple.raw_bytes()).unwrap();
                     self.add_to_index(tuple.raw_bytes(), new_id);
                     false
                 } else {
@@ -87,7 +87,7 @@ impl IndexedObject {
         }
 
         let last = self.pages.len() - 1;
-        PageMut::new(&mut self.pages[last]).push(b).unwrap()
+        PageMut::new(0, &mut self.pages[last]).push(b).unwrap()
     }
 
     pub(crate) fn find_in_index(&self, bytes: &[u8]) -> Option<TupleId> {
@@ -123,7 +123,7 @@ impl IndexedObject {
     }
 
     pub(crate) fn get(&self, id: TupleId) -> Tuple {
-        let page = Page::new(&self.pages[0]);
+        let page = Page::new(0, &self.pages[0]);
         let tuple = page.tuple_by_id(id);
         let contents = tuple.contents();
         Tuple::with_object(contents, self)
@@ -131,7 +131,7 @@ impl IndexedObject {
 
     pub(crate) fn iter<'b>(&'b self) -> Box<dyn Iterator<Item = Tuple<'b>> + 'b> {
         if let Some(page) = self.pages.first() {
-            Box::new(Page::new(page)
+            Box::new(Page::new(0, page)
                      .filter(|tuple| !self.removed_ids.contains(&tuple.id()))
                      .map(|tuple| {
                          let id = tuple.id();
@@ -144,7 +144,7 @@ impl IndexedObject {
     }
 
     fn tuple_by_id(&self, id: TupleId) -> Tuple {
-        let page = Page::new(&self.pages[0]);
+        let page = Page::new(0, &self.pages[0]);
         Tuple::with_object(page.tuple_by_id(id).contents(), self).with_id(id)
     }
 
@@ -189,7 +189,7 @@ impl IndexedObject {
         if let Index::Attr(key) = &self.index {
             self.hash.clear();
             if let Some(page) = self.pages.first() {
-                for raw_tuple in Page::new(page) {
+                for raw_tuple in Page::new(0, page) {
                     let id = raw_tuple.id();
                     let tuple = Tuple::from_bytes(raw_tuple.contents(), &self.attrs);
                     let hash = hash(tuple.element(key).unwrap().bytes());
@@ -203,8 +203,8 @@ impl IndexedObject {
 
     pub(crate) fn vaccum(&mut self) {
         let old = std::mem::replace(&mut self.pages[0], [0u8; PAGE_SIZE]);
-        let mut new = PageMut::new(&mut self.pages[0]);
-        for tuple in Page::new(&old) {
+        let mut new = PageMut::new(0, &mut self.pages[0]);
+        for tuple in Page::new(0, &old) {
             if !self.removed_ids.contains(&tuple.id()) {
                 new.push(&tuple.contents()).unwrap();
             }
@@ -399,12 +399,12 @@ pub struct RawObjectView<'a> {
 
 impl<'a> RawObjectView<'a> {
     pub fn count(&self) -> usize {
-        self.object.pages.iter().map(|b| Page::new(b).count()).sum()
+        self.object.pages.iter().map(|b| Page::new(0, b).count()).sum()
     }
 
     pub fn raw_tuples(&'a self) -> impl Iterator<Item = Vec<u8>> + 'a {
         self.object.pages.iter()
-            .flat_map(|b| Page::new(b))
+            .flat_map(|b| Page::new(0, b))
             .map(|tuple| tuple.contents().to_vec())
     }
 

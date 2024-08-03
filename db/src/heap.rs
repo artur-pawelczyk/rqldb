@@ -1,4 +1,4 @@
-use crate::page::{Page, PageMut, RawTuple, PAGE_SIZE};
+use crate::page::{Page, PageMut, RawTuple, TupleId, PAGE_SIZE};
 
 #[derive(Default)]
 pub(crate) struct Heap {
@@ -6,20 +6,33 @@ pub(crate) struct Heap {
 }
 
 impl Heap {
-    pub(crate) fn push(&mut self, tuple: &[u8]) {
+    pub(crate) fn push(&mut self, tuple: &[u8]) -> TupleId {
         if self.pages.is_empty() {
             self.expand();
         }
 
         loop {
             let last_page_start = self.pages.len() - PAGE_SIZE;
-            let mut page = PageMut::new(&mut self.pages[last_page_start..]);
-            if page.push(tuple).is_ok() {
-                break;
+            let mut page = PageMut::new(self.allocated_pages() as u32 - 1, &mut self.pages[last_page_start..]);
+            if let Ok(id) = page.push(tuple) {
+                return id;
             } else {
                 self.expand();
             }
         }
+    }
+
+    pub(crate) fn tuple_by_id<'a>(&'a self, id: TupleId) -> RawTuple<'a> {
+        let page_start = id.block as usize * PAGE_SIZE;
+        let page_end = page_start + PAGE_SIZE;
+        Page::new(id.block, &self.pages[page_start..page_end]).tuple_by_id(id)
+    }
+
+    pub(crate) fn delete(&mut self, id: TupleId) {
+        let page_start = id.block as usize * PAGE_SIZE;
+        let page_end = page_start + PAGE_SIZE;
+        PageMut::new(self.allocated_pages() as u32 - 1, &mut self.pages[page_start..page_end])
+            .delete(id);
     }
 
     fn expand(&mut self) {
@@ -27,10 +40,9 @@ impl Heap {
     }
 
     pub(crate) fn tuples<'a>(&'a self) -> impl Iterator<Item = RawTuple<'a>> + 'a {
-        HeapIter { pages: &self.pages, tuple_n: 0 }
+        HeapIter { pages: &self.pages, tuple_n: 0, block: 0 }
     }
 
-    #[cfg(test)]
     fn allocated_pages(&self) -> usize {
         self.pages.len() / PAGE_SIZE
     }
@@ -38,6 +50,7 @@ impl Heap {
 
 struct HeapIter<'a> {
     pages: &'a [u8],
+    block: u32,
     tuple_n: usize,
 }
 
@@ -46,11 +59,13 @@ impl<'a> Iterator for HeapIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         while self.pages.len() >= PAGE_SIZE {
-            if let Some(tuple) = Page::new(&self.pages[..PAGE_SIZE]).nth(self.tuple_n) {
+            // TODO: Page::nth has a linear, so HeapIter will be slow
+            if let Some(tuple) = Page::new(self.block, &self.pages[..PAGE_SIZE]).nth(self.tuple_n) {
                 self.tuple_n += 1;
                 return Some(tuple);
             } else {
                 self.pages = &self.pages[PAGE_SIZE..];
+                self.block += 1;
                 self.tuple_n = 0;
             }
         }
@@ -86,22 +101,41 @@ mod tests {
 
     #[test]
     fn test_heap_larger_than_page() -> Result<(), Box<dyn Error>> {
-        let tuple = large_tuple::<1024>();
-
         let mut heap = Heap::default();
-        for _ in 0..10 {
-            heap.push(&tuple);
-        }
+        let ids = (1..=10)
+            .map(|i| heap.push(&large_tuple::<1024>(i)))
+            .collect::<Vec<_>>();
 
         assert!(heap.allocated_pages() > 1);
         assert_eq!(heap.tuples().count(), 10);
 
+        let first = heap.tuple_by_id(ids[0]).contents();
+        let last = heap.tuple_by_id(ids[9]).contents();
+        assert_eq!(first[0], 1);
+        assert_eq!(last[0], 10);
+
         Ok(())
     }
 
-    pub(crate) fn large_tuple<const N: usize>() -> [u8; N] {
+    #[test]
+    fn test_delete_tuple_from_heap() -> Result<(), Box<dyn Error>> {
+        let mut heap = Heap::default();
+
+        let ids = (0..10)
+            .map(|i| heap.push(&large_tuple::<1024>(i)))
+            .collect::<Vec<_>>();
+        assert_eq!(heap.tuples().count(), 10);
+
+        heap.delete(ids[0]);
+        let ids_after = heap.tuples().map(|t| t.id()).collect::<Vec<_>>();
+        assert_eq!(ids_after[..], ids[1..]);
+
+        Ok(())
+    }
+
+    pub(crate) fn large_tuple<const N: usize>(value: u8) -> [u8; N] {
         let mut v = [0; N];
-        v[0] = 123;
+        v[0] = value;
         v
     }
 }
