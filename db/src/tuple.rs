@@ -170,20 +170,6 @@ impl<'a> PartialEq for Element<'a> {
 
 }
 
-pub struct TupleIter {
-    contents: Vec<u8>,
-    pos: usize,
-}
-
-impl Iterator for TupleIter {
-    type Item = u8;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.pos += 1;
-        self.contents.get(self.pos - 1).cloned()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use lazy_static::lazy_static;
