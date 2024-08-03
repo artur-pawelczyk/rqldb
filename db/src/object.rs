@@ -3,7 +3,7 @@ use std::fmt;
 use std::hash::{DefaultHasher, Hash as _, Hasher};
 use std::iter::zip;
 use std::rc::Rc;
-use std::{collections::{HashSet, HashMap}, cell::Ref};
+use std::{collections::HashMap, cell::Ref};
 
 use crate::bytes::write_as_bytes;
 use crate::event::EventHandler;
@@ -20,7 +20,6 @@ pub(crate) struct IndexedObject {
     pub(crate) attrs: Vec<Attribute>,
     index: Index,
     hash: HashMap<u64, Vec<TupleId>>,
-    removed_ids: HashSet<TupleId>, // TODO: Remove this; use PageMut::delete
     handler: Rc<RefCell<EventHandler>>,
 }
 
@@ -122,7 +121,6 @@ impl IndexedObject {
 
     pub(crate) fn iter<'b>(&'b self) -> Box<dyn Iterator<Item = Tuple<'b>> + 'b> {
         Box::new(self.pages.tuples()
-                 .filter(|tuple| !self.removed_ids.contains(&tuple.id()))
                  .map(|tuple| {
                      let id = tuple.id();
                      Tuple::with_object(tuple.contents(), self).with_id(id)
@@ -134,7 +132,7 @@ impl IndexedObject {
         let handler = self.handler.borrow();
         for id in ids {
             handler.emit_delete_tuple(id.into());
-            self.removed_ids.insert(*id);
+            self.pages.delete(*id);
         }
     }
 
@@ -184,12 +182,9 @@ impl IndexedObject {
     pub(crate) fn vaccum(&mut self) {
         let old_heap = std::mem::take(&mut self.pages);
         for tuple in old_heap.tuples() {
-            if !self.removed_ids.contains(&tuple.id()) {
-                self.pages.push(&tuple.contents());
-            }
+            self.pages.push(&tuple.contents());
         }
 
-        self.removed_ids.clear();
         self.reindex();
     }
 
