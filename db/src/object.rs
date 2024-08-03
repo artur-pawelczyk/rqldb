@@ -11,7 +11,7 @@ use crate::heap::Heap;
 use crate::schema::AttributeRef;
 use crate::tuple::PositionalAttribute;
 use crate::{tuple::Tuple, schema::Relation, Type};
-use crate::page::{Page, PageMut, TupleId, PAGE_SIZE};
+use crate::page::TupleId;
 
 #[derive(Default)]
 pub(crate) struct IndexedObject {

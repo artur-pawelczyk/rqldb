@@ -8,7 +8,7 @@ pub(crate) fn write_object<W: Write>(writer: &mut W, object: &RawObjectView) -> 
     writer.write_all(&size(object.count()))?;
     for tuple in object.raw_tuples() {
         writer.write_all(&size(tuple.len()))?;
-        writer.write_all(tuple)?;
+        writer.write_all(&tuple)?;
    }
 
     Ok(())

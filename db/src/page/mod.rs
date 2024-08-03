@@ -18,12 +18,6 @@ impl LinePointer {
     const fn self_size() -> usize {
         size_of::<LpIndex>() * 2
     }
-
-    fn range(&self) -> Range<usize> {
-        let start = PAGE_SIZE - (self.1 as usize);
-        let end = PAGE_SIZE - (self.0 as usize);
-        start..end
-    }
 }
 
 impl Index<LinePointer> for [u8] {
@@ -87,7 +81,6 @@ impl fmt::Display for PageError {
 impl std::error::Error for PageError {}
 
 struct Header {
-    id: TupleId,
     deleted: bool,
 }
 
@@ -102,9 +95,9 @@ impl Header {
     }
 }
 
-impl From<TupleId> for Header {
-    fn from(id: TupleId) -> Self {
-        Self { id, deleted: false }
+impl Default for Header {
+    fn default() -> Self {
+        Self { deleted: false }
     }
 }
 
@@ -121,7 +114,7 @@ impl<'a> PageMut<'a> {
 
     pub(crate) fn push(&mut self, b: &[u8]) -> Result<TupleId, PageError> {
         let (id, space) = self.reserve_space(b.len() + Header::size())?;
-        let header = Header::from(id);
+        let header = Header::default();
         header.write(space);
         space[Header::size()..].copy_from_slice(b);
         
@@ -163,7 +156,7 @@ impl<'a> PageMut<'a> {
 
     pub(crate) fn delete(&mut self, id: TupleId) {
         let lp = self.line_pointers().nth(id.into()).unwrap(); // TODO: Remove the 'unwrap'
-        let mut header = Header::from(id);
+        let mut header = Header::default();
         header.deleted = true;
         let tuple = &mut self.contents[lp];
         header.write(&mut tuple[0..Header::size()]);
