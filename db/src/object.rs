@@ -165,16 +165,28 @@ impl IndexedObject {
     }
 
     fn reindex(&mut self) {
-        // TODO: Reindex on Index::Uniq also
-        if let Index::Attr(key) = &self.index {
-            self.hash.clear();
-            for tuple in self.pages.tuples() {
-                let id = tuple.id();
-                let tuple = Tuple::from_bytes(tuple.contents(), &self.attrs);
-                let hash = hash(tuple.element(key).unwrap().bytes());
-                self.hash.entry(hash)
-                    .and_modify(|ids| { ids.push(id); })
-                    .or_insert_with(|| vec![id]);
+        match &self.index {
+            Index::Attr(key) => {
+                self.hash.clear();
+                for tuple in self.pages.tuples() {
+                    let id = tuple.id();
+                    let tuple = Tuple::from_bytes(tuple.contents(), &self.attrs);
+                    let hash = hash(tuple.element(key).unwrap().bytes());
+                    self.hash.entry(hash)
+                        .and_modify(|ids| { ids.push(id); })
+                        .or_insert_with(|| vec![id]);
+                }
+            },
+            Index::Uniq => {
+                self.hash.clear();
+                for tuple in self.pages.tuples() {
+                    let id = tuple.id();
+                    let tuple = Tuple::from_bytes(tuple.contents(), &self.attrs);
+                    let hash = hash(tuple.raw_bytes());
+                    self.hash.entry(hash)
+                        .and_modify(|ids| { ids.push(id); })
+                        .or_insert_with(|| vec![id]);
+                }
             }
         }
     }
