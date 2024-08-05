@@ -9,8 +9,7 @@ pub mod plan;
 pub mod schema;
 pub mod tokenize;
 pub mod tuple;
-
-mod page;
+pub mod page;
 mod heap;
 
 use core::fmt;

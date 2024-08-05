@@ -1,9 +1,6 @@
 mod heap;
 mod page;
 
-#[cfg(test)]
-mod test_util;
-
 use std::{fs::{create_dir_all, File}, io, path::{Path, PathBuf}};
 
 use heap::Heap;
@@ -58,11 +55,12 @@ impl LiveStorage {
         });
 
         let dir = self.dir.clone();
-        db.on_add_tuple(move |obj_id, bytes| {
+        db.on_page_modified(move |obj_id, block, bytes| {
             let mut path = dir.clone();
             path.push(&obj_id.to_string());
-            let mut heap = Heap::open(&path).unwrap();
-            heap.push(bytes).unwrap();
+            let mut heap = Heap::open(&path)?;
+            heap.write_page(block, bytes)?;
+            Ok(())
         });
 
         Ok(db)
