@@ -45,6 +45,28 @@ fn benchmark_insert(c: &mut Criterion) {
     }));
 }
 
+fn benchmark_delete(c: &mut Criterion) {
+    fn prepare_db() -> Database {
+        let db = create_database(DbType::PrimaryIndex);
+        for i in 1..100_000 {
+            db.execute_query(&Query::tuple(TupleBuilder::new()
+                                           .inferred("id", &i.to_string())
+                                           .inferred("type", "12")
+                                           .inferred("title", "example_doc")
+                                           .inferred("content", "the content")
+            ).insert_into("document")).unwrap();
+        }
+
+        db
+    }
+
+    c.bench_function("delete", |b| {
+        b.iter_batched(|| prepare_db(), |db| {
+            db.execute_query(&Query::scan("document").delete()).unwrap();
+        }, criterion::BatchSize::PerIteration);
+    });
+}
+
 fn benchmark_insert_without_index(c: &mut Criterion) {
     c.bench_function("insert no index", |b| b.iter_with_setup(|| {
         let db = create_database(DbType::NoIndex);
@@ -155,6 +177,7 @@ fn benchmark_query_to_string(c: &mut Criterion) {
 
 criterion_group!(benches,
                  benchmark_insert,
+                 benchmark_delete,
                  benchmark_insert_without_index,
                  benchmark_count,
                  benchmark_read_results,
