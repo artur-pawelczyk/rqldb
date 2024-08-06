@@ -55,7 +55,7 @@ impl IndexedObject {
                 let key = tuple.element(key_pos).unwrap();
                 if let Some(id) = self.find_in_index(key.bytes()) {
                     self.pages.delete(id);
-                    self.remove_from_index(id);
+                    self.remove_from_index(key.bytes(), id);
 
                     let new_id = self.pages.push(tuple.raw_bytes());
                     self.add_to_index(tuple.raw_bytes(), new_id);
@@ -112,10 +112,9 @@ impl IndexedObject {
     }
 
     // TODO: This is too slow
-    fn remove_from_index(&mut self, id: TupleId) {
-        for v in self.hash.values_mut() {
-            v.retain(|x| id != *x);
-        }
+    fn remove_from_index(&mut self, bytes: &[u8], id: TupleId) {
+        self.hash.entry(hash(bytes))
+            .and_modify(|v| v.retain(|x| id != *x));
     }
 
     pub(crate) fn get(&self, id: TupleId) -> Tuple {
