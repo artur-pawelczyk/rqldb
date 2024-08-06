@@ -3,7 +3,7 @@ use std::{fmt, io};
 use std::hash::{DefaultHasher, Hash as _, Hasher};
 use std::iter::zip;
 use std::rc::Rc;
-use std::{collections::HashMap, cell::Ref};
+use std::collections::HashMap;
 
 use crate::bytes::write_as_bytes;
 use crate::event::EventHandler;
@@ -202,6 +202,7 @@ impl IndexedObject {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn vaccum(&mut self) {
         let old_heap = std::mem::take(&mut self.pages);
         for tuple in old_heap.tuples() {
@@ -386,34 +387,6 @@ impl PartialEq<str> for &Attribute {
 impl PartialEq<AttributeRef> for Attribute {
     fn eq(&self, a: &AttributeRef) -> bool {
         &self.reference == a
-    }
-}
-
-pub struct RawObjectView<'a> {
-    pub(crate) object: Ref<'a, IndexedObject>,
-    pub(crate) rel: &'a Relation,
-}
-
-impl<'a> RawObjectView<'a> {
-    pub fn count(&self) -> usize {
-        self.object.pages.tuples().count()
-    }
-
-    pub fn raw_tuples(&'a self) -> impl Iterator<Item = Vec<u8>> + 'a {
-        self.object.pages.tuples()
-            .map(|tuple| tuple.contents().to_vec())
-    }
-
-    pub fn name(&self) -> &str {
-        self.rel.name()
-    }
-
-    pub fn types(&self) -> Vec<Type> {
-        self.rel.types()
-    }
-
-    pub fn schema(&self) -> &Relation {
-        self.rel
     }
 }
 

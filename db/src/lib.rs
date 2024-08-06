@@ -25,7 +25,6 @@ pub use crate::schema::Type;
 pub use crate::db::Database;
 pub use crate::dsl::{Query, Operator, Definition};
 pub use crate::parse::{parse_definition, parse_query};
-pub use crate::object::RawObjectView;
 pub use crate::event::EventSource;
 
 pub struct QueryResults {

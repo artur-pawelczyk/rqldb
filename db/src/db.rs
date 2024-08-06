@@ -5,14 +5,15 @@ use std::iter::zip;
 use std::rc::Rc;
 
 use crate::dump::{dump_values, dump_create};
-use crate::event::{EventHandler};
+
+use crate::event::EventHandler;
 use crate::object::{Attribute, IndexedObject, ObjectId, TempObject};
 use crate::page::TupleId;
 use crate::plan::{Source, Filter, Plan, Finisher, ApplyFn};
 use crate::schema::{AttributeRef, TableId};
 use crate::tuple::Tuple;
 use crate::{schema::Schema, QueryResults, plan::compute_plan};
-use crate::{dsl, Query, RawObjectView, ResultAttribute};
+use crate::{dsl, Query, ResultAttribute};
 
 type Result<T> = std::result::Result<T, String>;
 
@@ -136,17 +137,6 @@ impl Database {
     pub(crate) fn object(&self, id: impl TableId) -> Option<&SharedObject> {
         let rel = self.schema.find_relation(id)?;
         self.objects.get(rel.id)
-    }
-
-    pub fn raw_object<'a>(&'a self, name: &str) -> Option<RawObjectView<'a>> {
-        let rel = self.schema.find_relation(name)?;
-        let o = self.objects.get(rel.id)?;
-        o.borrow_mut().vaccum();
-        Some(RawObjectView{ rel, object: o.borrow() })
-    }
-
-    pub fn raw_objects(&self) -> Vec<RawObjectView> {
-        self.schema.relations.iter().flat_map(|rel| self.raw_object(rel.name())).collect()
     }
 
     pub fn schema(&self) -> &Schema {
