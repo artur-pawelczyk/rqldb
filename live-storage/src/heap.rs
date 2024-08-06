@@ -1,7 +1,6 @@
-use std::{fs::File, io::{self, Read, Seek, SeekFrom, Write}, path::Path};
+use std::{fs::File, io::{self, Seek, SeekFrom, Write}, path::Path};
 
-use crate::page::{Page, PAGE_SIZE};
-use rqldb::page::BlockId;
+use rqldb::page::{BlockId, PAGE_SIZE};
 
 pub(crate) struct Heap {
     file: File,
@@ -22,37 +21,6 @@ impl Heap {
 
         Ok(())
     }
-
-    // TODO: Remove
-    pub(crate) fn tuples<'a>(&'a self) -> impl Iterator<Item = Vec<u8>> + 'a {
-        HeapIter { file: &self.file, tuple_n: 0, buf: [0u8; PAGE_SIZE] }
-    }
-}
-
-struct HeapIter<'a> {
-    file: &'a File,
-    buf: [u8; PAGE_SIZE],
-    tuple_n: usize,
-}
-
-impl<'a> Iterator for HeapIter<'a> {
-    type Item = Vec<u8>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-
-        loop {
-            if self.tuple_n == 0 {
-                self.file.read_exact(&mut self.buf).ok()?;
-            }
-
-            if let Some(tuple) = Page::new(&self.buf).nth(self.tuple_n) {
-                self.tuple_n += 1;
-                return Some(tuple.to_vec()); // TODO: Avoid this allocation
-            } else {
-                self.tuple_n = 0;
-            }
-        }
-    }
 }
 
 #[cfg(test)]
@@ -60,13 +28,6 @@ mod tests {
     use std::{error::Error, path::PathBuf};
 
     use super::*;
-
-    #[test]
-    fn test_empty_heap() -> Result<(), Box<dyn Error>> {
-        let heap = Heap::open(&temp_heap_file()?)?;
-        assert_eq!(heap.tuples().count(), 0);
-        Ok(())
-    }
 
     #[test]
     fn test_write_heap() -> Result<(), Box<dyn Error>> {

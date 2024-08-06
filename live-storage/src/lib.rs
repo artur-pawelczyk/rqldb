@@ -1,10 +1,9 @@
 mod heap;
-mod page;
 
 use std::{fs::{create_dir_all, File}, io, path::{Path, PathBuf}};
 
 use heap::Heap;
-use rqldb::{object::TempObject, schema::Schema, Database, EventSource};
+use rqldb::{schema::Schema, Database, EventSource};
 use rqldb_persist::{read_schema, write_schema};
 
 pub struct LiveStorage {
@@ -32,13 +31,8 @@ impl LiveStorage {
 
         for rel in db.schema().relations.clone() {
             if let Some(file_path) = self.object_file(rel.id) {
-                let heap = Heap::open(&file_path)?;
-                let mut object = TempObject::from_relation(&rel);
-                for tuple in heap.tuples() {
-                    object.push(&tuple);
-                }
-
-                db.recover_object(rel.id, object);
+                let file = File::options().read(true).open(&file_path)?;
+                db.read_object(rel.id, file).unwrap();
             }
         }
 

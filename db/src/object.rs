@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::fmt;
+use std::{fmt, io};
 use std::hash::{DefaultHasher, Hash as _, Hasher};
 use std::iter::zip;
 use std::rc::Rc;
@@ -138,6 +138,12 @@ impl IndexedObject {
             handler.emit_delete_tuple(id.into());
             self.pages.delete(*id);
         }
+    }
+
+    pub(crate) fn read(&mut self, r: impl io::Read) -> io::Result<()> {
+        self.pages.read(r)?;
+        self.reindex();
+        Ok(())
     }
 
     pub(crate) fn recover(snapshot: TempObject, table: &Relation) -> Self {

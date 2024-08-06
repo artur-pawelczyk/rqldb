@@ -1,11 +1,12 @@
 use core::fmt;
 use std::cell::{RefCell, Ref, RefMut};
+use std::io;
 use std::iter::zip;
 use std::rc::Rc;
 
 use crate::dump::{dump_values, dump_create};
 use crate::event::{EventHandler};
-use crate::object::{Attribute, IndexedObject, TempObject};
+use crate::object::{Attribute, IndexedObject, ObjectId, TempObject};
 use crate::page::TupleId;
 use crate::plan::{Source, Filter, Plan, Finisher, ApplyFn};
 use crate::schema::{AttributeRef, TableId};
@@ -150,6 +151,12 @@ impl Database {
 
     pub fn schema(&self) -> &Schema {
         &self.schema
+    }
+
+    pub fn read_object(&mut self, id: ObjectId, r: impl io::Read) -> Result<()> {
+        let obj = self.objects.get(id).ok_or_else(|| format!("No such object: {id}"))?;
+        obj.borrow_mut().read(r).map_err(|_| format!("IO error"))?;
+        Ok(())
     }
 
     pub fn recover_object(&mut self, id: usize, snapshot: TempObject) {

@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, io, rc::Rc};
 
 use crate::{event::EventHandler, object::ObjectId, page::{BlockId, Page, PageMut, RawTuple, TupleId, PAGE_SIZE}};
 
@@ -56,6 +56,12 @@ impl Heap {
 
     pub(crate) fn tuples<'a>(&'a self) -> impl Iterator<Item = RawTuple<'a>> + 'a {
         self.pages().flatten()
+    }
+
+    pub(crate) fn read(&mut self, mut r: impl io::Read) -> io::Result<()> {
+        r.read_to_end(&mut self.pages)?;
+        debug_assert!(self.pages.len() % PAGE_SIZE == 0);
+        Ok(())
     }
 
     fn pages<'a>(&'a self) -> impl Iterator<Item = Page<'a>> {
