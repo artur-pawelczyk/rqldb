@@ -111,6 +111,7 @@ impl IndexedObject {
             .or_insert_with(|| vec![id]);
     }
 
+    // TODO: This is too slow
     fn remove_from_index(&mut self, id: TupleId) {
         for v in self.hash.values_mut() {
             v.retain(|x| id != *x);
