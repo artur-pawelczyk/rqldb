@@ -1,13 +1,11 @@
-use std::{error::Error, fmt, io, path::Path};
+use std::{fmt, io};
 
 use rqldb::{parse_definition, parse_query, Database, QueryResults, SortOrder};
 use rqldb_live_storage::LiveStorage;
-use rqldb_persist::{FilePersist, Persist, Error as PersistError};
 
 use crate::table::Table;
 
 pub(crate) struct Shell {
-    persist: Box<dyn Persist>,
     db: Database,
     result_printer: Box<dyn ResultPrinter>,
     sort: Option<(Box<str>, SortOrder)>,
@@ -17,7 +15,6 @@ pub(crate) struct Shell {
 impl Default for Shell {
     fn default() -> Self {
         Self {
-            persist: Box::new(NoOpPersist),
             db: Database::default(),
             result_printer: Box::new(TablePrinter),
             sort: None,
@@ -36,15 +33,6 @@ impl Shell {
         })
     }
     
-    pub(crate) fn db_file(self, s: &str) -> Self {
-        let instance = Self {
-            persist: Box::new(FilePersist::new(Path::new(s))),
-            ..self
-        };
-
-        instance.restore().unwrap()
-    }
-
     #[cfg(test)]
     fn simple_output(self) -> Self {
         Self {
@@ -56,9 +44,7 @@ impl Shell {
     pub(crate) fn handle_input(&mut self, input: &str, output: &mut impl fmt::Write) {
         if input.is_empty() {
         } else if let Some((cmd, args)) = maybe_read_command(input) {
-            if cmd == "save" {
-                self.persist.write(&self.db).unwrap();
-            } else if cmd == "define" {
+            if cmd == "define" {
                 let command = match parse_definition(args) {
                     Ok(x) => x,
                     Err(error) => { write!(output, "{}", error).unwrap(); return; }
@@ -120,15 +106,6 @@ impl Shell {
         ctx
     }
 
-    fn restore(self) -> Result<Self, Box<dyn Error>> {
-        let new_db = self.persist.read(self.db)?;
-        Ok(Self {
-            db: new_db,
-            persist: self.persist,
-            ..Default::default()
-        })
-    }
-
     fn dump_relation(&self, name: &str, output: &mut impl fmt::Write) {
         if let Err(e) = self.db.dump(name, output) {
             println!("{e}");
@@ -153,17 +130,6 @@ fn read_sort_args(args: &str) -> Option<(Box<str>, SortOrder)> {
         }
     } else {
         None
-    }
-}
-
-struct NoOpPersist;
-impl Persist for NoOpPersist {
-    fn write(&mut self, _: &Database) -> Result<(), PersistError> {
-        Ok(())
-    }
-
-    fn read(&self, db: Database) -> Result<Database, PersistError> {
-        Ok(db)
     }
 }
 

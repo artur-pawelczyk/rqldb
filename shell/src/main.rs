@@ -39,8 +39,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         .map(|s| Shell::with_db_dir(s))
         .unwrap_or_else(|| Ok(Shell::default()))?;
 
-    if let Some(s) = args.db_file {
-        shell = shell.db_file(&s);
+    if args.db_file.is_some() {
+        panic!("Database file is no longer supported. Use -d to specify a directory");
     }
 
     if let Some(path) = args.init {
