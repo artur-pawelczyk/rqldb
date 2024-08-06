@@ -1,4 +1,5 @@
-use std::{io::{self, Read, Write}, sync::Arc};
+use core::fmt;
+use std::io::{self, Read, Write};
 
 use rqldb::{schema::Schema, Type};
 
@@ -71,8 +72,20 @@ pub(crate) enum Error {
     IOError(io::Error),
     SerializationError(Box<dyn std::error::Error>),
     DeserializationError(Box<dyn std::error::Error>),
-    BsonIOError(Arc<io::Error>),
     UnexpectedValueError,
+}
+
+impl std::error::Error for Error {}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::IOError(e) => write!(f, "{e}"),
+            Self::SerializationError(e) => write!(f, "Serialization error: {e}"),
+            Self::DeserializationError(e) => write!(f, "Deserialization error: {e}"),
+            Self::UnexpectedValueError => write!(f, "Unexpected value while deserializing schema"),
+        }
+    }
 }
 
 impl From<io::Error> for Error {

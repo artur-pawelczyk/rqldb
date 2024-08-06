@@ -1,6 +1,6 @@
-use std::{env::{self, Args}, fmt::Arguments, fs::{read_dir, ReadDir}, time::SystemTime};
+use std::{env, fs::read_dir, time::SystemTime};
 
-use rqldb::{Database, Definition, Type, Query, dsl::TupleBuilder};
+use rqldb::{Definition, Type, Query, dsl::TupleBuilder};
 use rqldb_live_storage::LiveStorage;
 
 fn main() {
