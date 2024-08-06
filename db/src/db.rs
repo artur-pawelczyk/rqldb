@@ -276,7 +276,7 @@ fn tuple_to_cells(attrs: &[Attribute], tuple: &Tuple) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{bytes::IntoBytes as _, dsl::{Definition, Operator, Query, TupleBuilder}, Type};
+    use crate::{bytes::IntoBytes as _, dsl::{Definition, Operator, Query, TupleBuilder}, EventSource, Type};
 
     #[test]
     fn query_not_existing_relation() {
@@ -510,24 +510,26 @@ mod tests {
     #[test]
     fn recover_object() {
         let mut source_db = Database::default();
-        source_db.define(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
-        let source_obj = source_db.object("document").unwrap();
-
+        source_db.define(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT));        
+        let contents = Rc::new(RefCell::new(Vec::<u8>::new()));
+        source_db.on_page_modified({
+            let contents = Rc::clone(&contents);
+            move |_, _, bytes| {
+                contents.borrow_mut().extend(bytes);
+                Ok(())
+            }
+        });
+        source_db.execute_query(&Query::tuple(TupleBuilder::new()
+                                              .inferred("id", "1")
+                                              .inferred("content", "name")).insert_into("document")).unwrap();
+        
         let mut target_db = Database::default();
         target_db.define(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
-        let target_obj = target_db.object("document").unwrap();
+        let object = target_db.object("document").unwrap().borrow().id();
+        target_db.read_object(object, contents.borrow().as_slice()).unwrap();
 
-        source_db.execute_plan(Plan::insert(source_obj, &["1", "one"])).unwrap();
-        let raw_object = source_db.raw_object("document").unwrap();
-        let mut temp_object = TempObject::from_object(&target_obj.borrow());
-        for tuple in raw_object.raw_tuples() {
-            temp_object.push(&tuple);
-        }
-
-        target_db.recover_object(0, temp_object);
-        let target_obj = target_db.object("document").unwrap();
-        let all = target_db.execute_plan(Plan::scan(target_obj)).unwrap();
-        assert_eq!(all.tuples().count(), 1);
+        let all = target_db.execute_query(&Query::scan("document")).unwrap();
+        assert_eq!(all.tuples().count(), 1);        
     }
 
     #[test]
