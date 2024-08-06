@@ -1,10 +1,11 @@
 mod heap;
+mod schema;
 
 use std::{fs::{create_dir_all, File}, io, path::{Path, PathBuf}};
 
 use heap::Heap;
 use rqldb::{schema::Schema, Database, EventSource};
-use rqldb_persist::{read_schema, write_schema};
+use schema::{read_schema, write_schema};
 
 pub struct LiveStorage {
     dir: PathBuf,

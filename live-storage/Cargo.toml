@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 rqldb = { path = "../db" }
-rqldb-persist = { path = "../persist/" }
+bson = "2.9.0"
 
 [dev-dependencies]
 tempfile = "3.10.1"

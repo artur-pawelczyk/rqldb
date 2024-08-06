@@ -757,18 +757,9 @@ dependencies = [
 name = "rqldb-live-storage"
 version = "0.1.0"
 dependencies = [
- "rqldb",
- "rqldb-persist",
- "tempfile",
-]
-
-[[package]]
-name = "rqldb-persist"
-version = "0.1.0"
-dependencies = [
  "bson",
- "criterion",
  "rqldb",
+ "tempfile",
 ]
 
 [[package]]
@@ -778,7 +769,6 @@ dependencies = [
  "clap 3.2.25",
  "rqldb",
  "rqldb-live-storage",
- "rqldb-persist",
  "rustyline",
 ]
 

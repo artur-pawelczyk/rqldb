@@ -3,6 +3,5 @@ resolver = "2"
 members = [
         "db",
         "shell",
-        "persist",
         "live-storage",
 ]
