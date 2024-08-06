@@ -147,34 +147,6 @@ impl IndexedObject {
         Ok(())
     }
 
-    pub(crate) fn recover(snapshot: TempObject, table: &Relation) -> Self {
-        let mut obj = if let Some(key_col) = table.indexed_column() {
-            let key = Attribute::from(key_col);
-            let index = Index::Attr(key);
-
-            Self {
-                id: table.id,
-                attrs: table.attributes().map(Attribute::from).collect(),
-                index,
-                ..Default::default()
-            }
-        } else {
-            Self {
-                id: table.id,
-                attrs: table.attributes().map(Attribute::from).collect(),
-                index: Default::default(),
-                ..Default::default()
-            }
-        };
-
-        for tuple in snapshot.iter() {
-            obj.add_tuple(&tuple);
-        }
-
-        obj.reindex();
-        obj
-    }
-
     fn reindex(&mut self) {
         match &self.index {
             Index::Attr(key) => {
@@ -388,62 +360,4 @@ impl PartialEq<AttributeRef> for Attribute {
     fn eq(&self, a: &AttributeRef) -> bool {
         &self.reference == a
     }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use crate::schema::Schema;
-
-    #[test]
-    fn test_delete_tuples() {
-        let mut schema = Schema::default();
-        schema.create_table("example")
-            .column("id", Type::NUMBER)
-            .column("name", Type::TEXT)
-            .add();
-        let relation = schema.find_relation("example").unwrap();
-
-        let mut temp_obj = TempObject::from_relation(relation);
-        temp_obj.push_str(&["1", "first"]);
-        temp_obj.push_str(&["2", "second"]);
-
-        let mut obj = IndexedObject::recover(temp_obj, relation);
-        assert_eq!(obj.iter().count(), 2);
-
-        // TODO: Use Tuple::id
-        let id = obj.iter().next().unwrap().id();
-        obj.remove_tuples(&[id]);
-        assert_eq!(obj.iter().count(), 1);
-    }
-
-    // TODO: Uncomment or remove
-    // #[test]
-    // fn test_vaccum() {
-    //     let mut schema = Schema::default();
-    //     schema.create_table("example")
-    //         .column("id", Type::NUMBER)
-    //         .column("name", Type::TEXT)
-    //         .add();
-    //     let relation = schema.find_relation("example").unwrap();
-
-    //     let mut temp_obj = TempObject::from_relation(relation);
-    //     temp_obj.push_str(&["1", "first"]);
-    //     temp_obj.push_str(&["2", "second"]);
-
-    //     let mut obj = IndexedObject::recover(temp_obj, relation);
-    //     let id = obj.iter().next().unwrap().id();
-    //     obj.remove_tuples(&[id]);
-
-    //     assert_eq!(obj.tuples.len(), 2);
-
-    //     obj.vaccum();
-
-    //     let mut hasher = DefaultHasher::new();
-    //     obj.tuples[0].hash(&mut hasher);
-    //     hasher.finish();
-
-    //     assert_eq!(obj.tuples.len(), 1);
-    //     assert_eq!(obj.iter().count(), 1);
-    // }
 }

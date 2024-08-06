@@ -149,12 +149,6 @@ impl Database {
         Ok(())
     }
 
-    pub fn recover_object(&mut self, id: usize, snapshot: TempObject) {
-        let table = self.schema.find_relation(id).unwrap();
-        let new_obj = IndexedObject::recover(snapshot, table);
-        let _ = std::mem::replace(&mut self.objects[id], Rc::new(RefCell::new(new_obj)));
-    }
-
     pub fn dump(&self, name: &str, writer: &mut impl fmt::Write) -> Result<()> {
         let rel = self.schema.find_relation(name).unwrap();
         writeln!(writer, ".define {}", dump_create(rel)).map_err(|_| "Stdio error")?;
