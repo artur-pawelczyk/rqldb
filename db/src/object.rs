@@ -48,8 +48,7 @@ impl IndexedObject {
         self.id
     }
 
-    // TODO: Remove the return value
-    pub(crate) fn add_tuple(&mut self, tuple: &Tuple) -> bool {
+    pub(crate) fn add_tuple(&mut self, tuple: &Tuple) {
         let added = match &self.index {
             Index::Attr(key_pos) => {
                 let key = tuple.element(key_pos).unwrap();
@@ -81,8 +80,6 @@ impl IndexedObject {
        if added {
             self.handler.borrow().emit_add_tuple(self.id, tuple.raw_bytes());
         }
-
-        added
     }
 
     pub(crate) fn find_in_index(&self, bytes: &[u8]) -> Option<TupleId> {
@@ -111,7 +108,6 @@ impl IndexedObject {
             .or_insert_with(|| vec![id]);
     }
 
-    // TODO: This is too slow
     fn remove_from_index(&mut self, bytes: &[u8], id: TupleId) {
         self.hash.entry(hash(bytes))
             .and_modify(|v| v.retain(|x| id != *x));

@@ -24,7 +24,6 @@ impl Index<LinePointer> for [u8] {
     type Output = [u8];
 
     fn index(&self, index: LinePointer) -> &Self::Output {
-        // TODO: Replace with Self::range
         let start = self.len() - (index.1 as usize);
         let end = self.len() - (index.0 as usize);
         &self[start..end]
@@ -33,7 +32,6 @@ impl Index<LinePointer> for [u8] {
 
 impl IndexMut<LinePointer> for [u8] {
     fn index_mut(&mut self, index: LinePointer) -> &mut Self::Output {
-        // TODO: Replace with Self::range
         let start = PAGE_SIZE - (index.1 as usize);
         let end = PAGE_SIZE - (index.0 as usize);
         &mut self[start..end]
@@ -155,7 +153,12 @@ impl<'a> PageMut<'a> {
     }
 
     pub(crate) fn delete(&mut self, id: TupleId) {
-        let lp = self.line_pointers().nth(id.into()).unwrap(); // TODO: Remove the 'unwrap'
+        let lp = self.line_pointers().nth(id.into());
+        if lp.is_none() {
+            return;
+        }
+
+        let lp = lp.unwrap();
         let mut header = Header::default();
         header.deleted = true;
         let tuple = &mut self.contents[lp];
@@ -251,7 +254,12 @@ impl Iterator for LinePointerIter<'_> {
     type Item = LinePointer;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(lp_bytes) = self.0.get(0..LinePointer::self_size()) {
+        self.nth(0)
+    }
+
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        let start = n * LinePointer::self_size();
+        if let Some(lp_bytes) = self.0.get(start..LinePointer::self_size()) {
             let lp = LinePointer::try_from(lp_bytes).unwrap();
             debug_assert!(lp.0 <= 8*1024);
             debug_assert!(lp.1 <= 8*1024);
