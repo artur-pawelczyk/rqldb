@@ -1,13 +1,12 @@
 use std::{env, fs::read_dir, time::SystemTime};
 
-use rqldb::{Definition, Type, Query, dsl::TupleBuilder};
+use rqldb::{dsl::TupleBuilder, Database, Definition, Query, Type};
 use rqldb_live_storage::LiveStorage;
 
 fn main() {
-    let db_dir = env::args().nth(1).expect("A path argument is required");
-    read_dir(&db_dir).expect("The argument should be a directory");
-
-    let mut db = LiveStorage::new(&db_dir).create_db().unwrap();
+    let mut db = db_dir_argument()
+        .map(|p| LiveStorage::new(&p).create_db().unwrap())
+        .unwrap_or(Database::default());
 
     if db.schema().find_relation("document").is_none() {
         db.define(&Definition::relation("document")
@@ -37,4 +36,10 @@ fn main() {
 
     println!("Queriying...");
     db.execute_query(&Query::scan("document")).unwrap();
+}
+
+fn db_dir_argument() -> Option<String> {
+    let path = env::args().nth(1)?;
+    read_dir(&path).ok()?;
+    Some(path)
 }
