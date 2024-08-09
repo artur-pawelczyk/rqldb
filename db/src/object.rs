@@ -225,18 +225,6 @@ impl TempObject {
         Self { values: vec![], attrs }
     }
 
-    pub(crate) fn from_object(obj: &IndexedObject) -> Self {
-        Self { values: vec![], attrs: obj.attrs.clone() }
-    }
-
-    pub(crate) fn build_tuple(self) -> TupleBuilder {
-        let raw = (0..self.attrs.len()).map(|_| Vec::new()).collect();
-        TupleBuilder {
-            obj: self,
-            raw,
-        }
-    }
-
     pub fn push(&mut self, raw_tuple: &[u8]) {
         self.values.push(raw_tuple.to_vec());
     }
@@ -265,24 +253,6 @@ impl TempObject {
     #[cfg(test)]
     pub(crate) fn attributes(&self) -> impl Iterator<Item = &Attribute> {
         self.attrs.iter()
-    }
-}
-
-pub(crate) struct TupleBuilder {
-    obj: TempObject,
-    raw: Vec<Vec<u8>>,
-}
-
-impl TupleBuilder {
-    pub(crate) fn add(&mut self, attr_ref: &AttributeRef, val: &str) {
-        let attr = self.obj.attrs.iter().find(|a| *a == attr_ref).unwrap();
-        let mut container = &mut self.raw[attr.pos()];
-        write_as_bytes(attr.kind(), val, &mut container).expect("Cannot fail with vec");
-    }
-
-    pub(crate) fn build(mut self) -> TempObject {
-        self.obj.values.push(self.raw.iter().flatten().copied().collect());
-        self.obj
     }
 }
 

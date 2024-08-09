@@ -1,4 +1,5 @@
 use crate::bytes::into_bytes;
+use crate::bytes::write_as_bytes;
 use crate::db::SharedObject;
 use crate::Database;
 use crate::Operator;
@@ -99,7 +100,7 @@ impl Join {
 pub(crate) enum Source {
     TableScan(SharedObject),
     Tuple(BTreeMap<Attribute, String>),
-    ReferencedTuple(SharedObject, HashMap<AttributeRef, String>),
+    ReferencedTuple(SharedObject, Vec<u8>),
     IndexScan(SharedObject, Vec<u8>),
     #[default]
     Nil,
@@ -272,17 +273,18 @@ fn compute_finisher<'query>(source: QuerySource<'query>, db: &Database, query: &
                 let relation = db.schema().find_relation(*name).ok_or("No such target table")?;
                 let obj = db.object(*name).ok_or_else(|| format!("Target relation {name} not found"))?;
                 let finisher = Finisher::Insert(Rc::clone(obj));
-                let mut values = HashMap::new();
+                let mut values = Vec::<u8>::new();
                 for attr in relation.attributes() {
                     if let Some((_, val)) = input_map.get(attr.name()) {
-                        values.insert(attr.reference(), val.to_string());
+                        write_as_bytes(attr.kind(), val, &mut values).map_err(|_| format!("encoding error"))?;
                     } else if let Some((_, val)) = input_map.get(attr.short_name()) {
-                        values.insert(attr.reference(), val.to_string());
+                        write_as_bytes(attr.kind(), val, &mut values).map_err(|_| format!("encoding error"))?;
                     } else {
                         return Err(format!("Missing attribute in source {}", attr.name()));
                     }
 
                 }
+
                 let source = Source::ReferencedTuple(Rc::clone(obj), values);
                 Ok(Plan { source, finisher, ..Default::default() })
             } else {

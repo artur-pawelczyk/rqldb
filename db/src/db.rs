@@ -75,13 +75,8 @@ impl Database {
                 temp_object.push_str(&values);
                 ObjectView::Val(temp_object)
             },
-            Source::ReferencedTuple(obj, ref map) => {
-                let temp_object = TempObject::from_object(&obj.borrow());
-                let mut tuple = temp_object.build_tuple();
-                for (k, v) in map {
-                    tuple.add(k, v);
-                }
-                ObjectView::Val(tuple.build())
+            Source::ReferencedTuple(obj, values) => {
+                ObjectView::Tuple(obj.borrow().attributes().cloned().collect(), values.to_vec())
             },
             Source::IndexScan(obj, val) => {
                 if let Some(tuple_id) = obj.borrow().find_in_index(val) {
@@ -175,6 +170,7 @@ enum ObjectView<'a> {
     Ref(Ref<'a, IndexedObject>),
     TupleRef(Ref<'a, IndexedObject>, TupleId),
     Val(TempObject),
+    Tuple(Vec<Attribute>, Vec<u8>),
     Empty,
 }
 
@@ -184,6 +180,10 @@ impl<'a> ObjectView<'a> {
             Self::Ref(o) => o.iter(),
             Self::TupleRef(o, id) => Box::new(std::iter::once_with(|| o.get(*id))),
             Self::Val(o) => o.iter(),
+            Self::Tuple(attrs, b) => Box::new(std::iter::once(Tuple::from_bytes(b, &attrs))),
+            //     let attributes = o.borrow().attributes().cloned().collect::<Vec<_>>();
+            //     Box::new(std::iter::once_with(move || Tuple::from_bytes(b, &attributes)))
+            // },
             Self::Empty => Box::new(std::iter::empty()),
         }
     }
