@@ -299,7 +299,10 @@ mod tests {
             .attribute("content", Type::TEXT);
         db.define(&command);
 
-        let insert_query = Query::tuple(&[("id", "1"), ("content", "something")]).insert_into("document");
+        let insert_query = Query::build_tuple()
+            .inferred("id", "1")
+            .inferred("content", "something")
+            .build().insert_into("document");
         let insert_result = db.execute_query(&insert_query);
         assert!(insert_result.is_ok());
 

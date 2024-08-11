@@ -34,6 +34,10 @@ impl<'a> Query<'a> {
         }
     }
 
+    pub fn build_tuple() -> TupleBuilder<'a> {
+        TupleBuilder::new()
+    }
+
     pub fn join(mut self, left: &'a str, right: &'a str) -> Self {
         self.join_sources.push(JoinSource{ left, right });
         self
@@ -237,6 +241,10 @@ impl<'a> TupleBuilder<'a> {
         Self::default()
     }
 
+    pub fn build(self) -> Query<'a> {
+        Query::tuple(self)
+    }
+
     pub fn typed(mut self, kind: AttrKind, name: &'a str, value: &'a str) -> Self {
         self.0.push(TupleAttr { name: Box::from(name), kind, value });
         self
@@ -433,7 +441,7 @@ mod tests {
 
     #[test]
     fn source_is_tuple() {
-        let query = Query::tuple(&[("id", "1"), ("value", "example_value")]).insert_into("example");
+        let query = Query::build_tuple().inferred("id", "1").inferred("value", "example_value").build().insert_into("example");
         assert_eq!(query.to_string(), "tuple id = 1 value = example_value | insert_into example");
     }
 
@@ -482,7 +490,6 @@ mod tests {
     #[test]
     fn quotes() {
         let query = Query::tuple(&[("id", "1"), ("value", "foo bar")]).insert_into("example");
-
         assert_eq!("tuple id = 1 value = \"foo bar\" | insert_into example", query.to_string());
     }
 }
