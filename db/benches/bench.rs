@@ -1,23 +1,13 @@
+use std::iter;
+
 use criterion::{criterion_group, criterion_main, Criterion, black_box};
 use rqldb::{*, dsl::TupleBuilder};
 
 enum DbType { PrimaryIndex, NoIndex }
 
 fn create_database(t: DbType) -> Database {
-    let mut db = Database::default();
-    let mut def = Definition::relation("document");
-    match t {
-        DbType::PrimaryIndex => { def = def.indexed_attribute("id", Type::NUMBER); },
-        DbType::NoIndex => { def = def.attribute("id", Type::NUMBER); },
-    }
-
-    def = def.attribute("type", Type::NUMBER)
-        .attribute("title", Type::TEXT)
-        .attribute("content", Type::TEXT);
-
-    db.define(&def);
-
-    db
+    Database::default()
+        .add_document_relation(t)
 }
 
 fn query_single_number(db: &Database, query: &Query, elem: &str) -> Option<i32> {
@@ -138,6 +128,32 @@ fn benchmark_count(c: &mut Criterion) {
     c.bench_function("count", |b| b.iter(|| query_single_number(&db, &count_query, "count")));
 }
 
+fn benchmark_join(c: &mut Criterion) {
+    let db = Database::default()
+        .add_document_relation(DbType::PrimaryIndex)
+        .add_type_relation();
+
+    let types = 1..=10;
+    for id in types.clone() {
+        db.execute_query(&Query::build_tuple()
+                         .inferred("id", &id.to_string())
+                         .inferred("name", "something")
+                         .build().insert_into("type")).unwrap();
+    }
+
+    for (doc_id, type_id) in iter::zip(0..1_000_000, types.cycle()) {
+        db.execute_query(&Query::build_tuple()
+                         .inferred("id", &doc_id.to_string())
+                         .inferred("title", "something")
+                         .inferred("type", &type_id.to_string())
+                         .inferred("content", "the content")
+                         .build().insert_into("document")).unwrap();
+    }
+
+    let query = Query::scan("document").join("document.type", "type.id");
+    c.bench_function("join", |b| b.iter(|| db.execute_query(&query).unwrap()));
+}
+
 fn benchmark_read_results(c: &mut Criterion) {
     let db = create_database(DbType::PrimaryIndex);
 
@@ -180,6 +196,7 @@ criterion_group!(benches,
                  benchmark_delete,
                  benchmark_insert_without_index,
                  benchmark_count,
+                 benchmark_join,
                  benchmark_read_results,
                  benchmark_parse,
                  benchmark_filter,
@@ -188,3 +205,33 @@ criterion_group!(benches,
 );
 
 criterion_main!(benches);
+
+trait DatabaseFixture {
+    fn add_document_relation(self, t: DbType) -> Self;
+    fn add_type_relation(self) -> Self;
+}
+
+impl DatabaseFixture for Database {
+    fn add_document_relation(mut self, t: DbType) -> Self {
+        let mut def = Definition::relation("document");
+        match t {
+            DbType::PrimaryIndex => { def = def.indexed_attribute("id", Type::NUMBER); },
+            DbType::NoIndex => { def = def.attribute("id", Type::NUMBER); },
+        }
+
+        def = def.attribute("type", Type::NUMBER)
+            .attribute("title", Type::TEXT)
+            .attribute("content", Type::TEXT);
+
+        self.define(&def);
+
+        self
+    }
+
+    fn add_type_relation(mut self) -> Self {
+        self.define(&Definition::relation("type")
+                    .attribute("id", Type::NUMBER)
+                    .attribute("name", Type::TEXT));
+        self
+    }
+}
