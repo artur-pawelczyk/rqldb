@@ -25,7 +25,7 @@ fn benchmark_insert(c: &mut Criterion) {
     }, |(db, ids)| {
         for id in ids {
             let query = Query::tuple(TupleBuilder::new()
-                                     .inferred("id", &id)
+                                     .inferred("id", id)
                                      .inferred("type", "12")
                                      .inferred("title", "example_doc")
                                      .inferred("content", "the content")
@@ -40,7 +40,7 @@ fn benchmark_delete(c: &mut Criterion) {
         let db = create_database(DbType::PrimaryIndex);
         for i in 1..100_000 {
             db.execute_query(&Query::tuple(TupleBuilder::new()
-                                           .inferred("id", &i.to_string())
+                                           .inferred("id", i)
                                            .inferred("type", "12")
                                            .inferred("title", "example_doc")
                                            .inferred("content", "the content")
@@ -66,7 +66,7 @@ fn benchmark_insert_without_index(c: &mut Criterion) {
     }, |(db, ids)| {
         for id in ids {
             let query = Query::tuple(TupleBuilder::new()
-                                     .inferred("id", &id)
+                                     .inferred("id", id)
                                      .inferred("type", "12")
                                      .inferred("title", "example_doc")
                                      .inferred("content", "the content")
@@ -79,9 +79,8 @@ fn benchmark_insert_without_index(c: &mut Criterion) {
 fn benchmark_filter(c: &mut Criterion) {
     let db = create_database(DbType::PrimaryIndex);
     for i in 1..100000 {
-        let id = i.to_string();
         let query = Query::tuple(TupleBuilder::new()
-                                 .inferred("id", &id)
+                                 .inferred("id", i)
                                  .inferred("type", "12")
                                  .inferred("title", "example_doc")
                                  .inferred("content", "the content")
@@ -96,9 +95,8 @@ fn benchmark_filter(c: &mut Criterion) {
 fn benchmark_index_search(c: &mut Criterion) {
     let db = create_database(DbType::PrimaryIndex);
     for i in 1..100000 {
-        let id = i.to_string();
         let query = Query::tuple(TupleBuilder::new()
-                                 .inferred("id", &id)
+                                 .inferred("id", i)
                                  .inferred("type", "12")
                                  .inferred("title", "example_doc")
                                  .inferred("content", "the content")
@@ -114,9 +112,8 @@ fn benchmark_count(c: &mut Criterion) {
     let db = create_database(DbType::PrimaryIndex);
 
     for i in 0..1_000_000 {
-        let id = i.to_string();
         let query = Query::tuple(TupleBuilder::new()
-                                 .inferred("id", &id)
+                                 .inferred("id", i)
                                  .inferred("type", "2")
                                  .inferred("title", "example_doc")
                                  .inferred("content", "the content")
@@ -136,16 +133,16 @@ fn benchmark_join(c: &mut Criterion) {
     let types = 1..=10;
     for id in types.clone() {
         db.execute_query(&Query::build_tuple()
-                         .inferred("id", &id.to_string())
+                         .inferred("id", id)
                          .inferred("name", "something")
                          .build().insert_into("type")).unwrap();
     }
 
     for (doc_id, type_id) in iter::zip(0..1_000_000, types.cycle()) {
         db.execute_query(&Query::build_tuple()
-                         .inferred("id", &doc_id.to_string())
+                         .inferred("id", doc_id)
                          .inferred("title", "something")
-                         .inferred("type", &type_id.to_string())
+                         .inferred("type", type_id)
                          .inferred("content", "the content")
                          .build().insert_into("document")).unwrap();
     }
@@ -158,9 +155,8 @@ fn benchmark_read_results(c: &mut Criterion) {
     let db = create_database(DbType::PrimaryIndex);
 
     for i in 0..1_000_000 {
-        let id = i.to_string();
         let query = Query::tuple(TupleBuilder::new()
-                                 .inferred("id", &id)
+                                 .inferred("id", i)
                                  .inferred("type", "2")
                                  .inferred("title", "example_doc")
                                  .inferred("content", "the content")

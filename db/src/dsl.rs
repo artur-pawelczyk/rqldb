@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, fmt, str::FromStr};
+use std::{borrow::Cow, collections::BTreeMap, fmt, str::FromStr};
 
 use crate::{schema::Type, parse::ParseError};
 
@@ -136,8 +136,8 @@ pub enum Source<'a> {
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct TupleAttr<'a> {
     pub kind: Option<Type>,
-    pub name: Box<str>,
-    pub value: &'a str,
+    pub name: &'a str,
+    pub value: Cow<'a, str>,
 }
 
 pub trait IntoTuple<'a> {
@@ -146,19 +146,19 @@ pub trait IntoTuple<'a> {
 
 impl<'a> IntoTuple<'a> for &[(&'a str, &'a str)] {
     fn into_tuple(self) -> Vec<TupleAttr<'a>> {
-        self.iter().fold(TupleBuilder::new(), |b, (k, v)| b.inferred(k, v)).into_tuple()
+        self.iter().map(|(k, v)| TupleAttr { kind: None, name: k, value: Cow::Borrowed(v) }).collect()
     }
 }
 
 impl<'a> IntoTuple<'a> for &'a [(&'a str, String)] {
     fn into_tuple(self) -> Vec<TupleAttr<'a>> {
-        self.iter().fold(TupleBuilder::new(), |b, (k, v)| b.inferred(k, v)).into_tuple()
+        self.iter().map(|(k, v)| TupleAttr { kind: None, name: k, value: Cow::Borrowed(v) }).collect()
     }
 }
 
 impl<'a, const N: usize> IntoTuple<'a> for &[(&'a str, &'a str); N] {
     fn into_tuple(self) -> Vec<TupleAttr<'a>> {
-        self.iter().fold(TupleBuilder::new(), |b, (k, v)| b.inferred(k, v)).into_tuple()        
+        self.iter().map(|(k, v)| TupleAttr { kind: None, name: k, value: Cow::Borrowed(v) }).collect()
     }
 }
 
@@ -182,13 +182,13 @@ impl<'a> IntoTuple<'a> for &Vec<TupleAttr<'a>> {
 
 impl<'a> IntoTuple<'a> for &'a BTreeMap<&str, String> {
     fn into_tuple(self) -> Vec<TupleAttr<'a>> {
-        self.iter().fold(TupleBuilder::new(), |b, (k, v)| b.inferred(k, v)).into_tuple()
+        self.iter().map(|(k, v)| TupleAttr { kind: None, name: k, value: Cow::Borrowed(v) }).collect()
     }
 }
 
 impl<'a> IntoTuple<'a> for &'a BTreeMap<&str, &str> {
     fn into_tuple(self) -> Vec<TupleAttr<'a>> {
-        self.iter().fold(TupleBuilder::new(), |b, (k, v)| b.inferred(k, v)).into_tuple()
+        self.iter().map(|(k, v)| TupleAttr { kind: None, name: k, value: Cow::Borrowed(v) }).collect()
     }
 }
 
@@ -204,14 +204,40 @@ impl<'a> TupleBuilder<'a> {
         Query::tuple(self)
     }
 
-    pub fn typed(mut self, kind: Type, name: &'a str, value: &'a str) -> Self {
-        self.0.push(TupleAttr { name: Box::from(name), kind: Some(kind), value });
+    pub fn typed(mut self, kind: Type, name: &'a str, value: impl Encode<'a>) -> Self {
+        self.0.push(TupleAttr { name, kind: Some(kind), value: value.encode() });
         self
     }
     
-    pub fn inferred(mut self, name: &'a str, value: &'a str) -> Self {
-        self.0.push(TupleAttr { name: Box::from(name), kind: None, value });
+    pub fn inferred(mut self, name: &'a str, value: impl Encode<'a>) -> Self {
+        self.0.push(TupleAttr { name, kind: None, value: value.encode() });
         self
+    }
+}
+
+pub trait Encode<'a>
+where Self: Sized
+{
+    fn encode(self) -> Cow<'a, str> {
+        todo!()
+    }
+}
+
+impl<'a> Encode<'a> for &'a str {
+    fn encode(self) -> Cow<'a, str> {
+        Cow::Borrowed(self)
+    }
+}
+
+impl<'a> Encode<'a> for String {
+    fn encode(self) -> Cow<'a, str> {
+        Cow::Owned(self)
+    }
+}
+
+impl<'a> Encode<'a> for u32 {
+    fn encode(self) -> Cow<'a, str> {
+        Cow::Owned(self.to_string())
     }
 }
 

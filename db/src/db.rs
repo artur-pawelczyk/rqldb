@@ -336,7 +336,7 @@ mod tests {
         for i in 1..20 {
             let id = i.to_string();
             let content = format!("example{}", i);
-            let query = Query::tuple(TupleBuilder::new().inferred("id", &id).inferred("content", &content)).insert_into("document");
+            let query = Query::tuple(TupleBuilder::new().inferred("id", id).inferred("content", content)).insert_into("document");
             db.execute_query(&query).expect("Insert");
         }
 
@@ -399,11 +399,10 @@ mod tests {
                           .attribute("size", Type::NUMBER));
 
         for i in 1..=10 {
-            let s = i.to_string();
             let query = Query::tuple(TupleBuilder::new()
-                                     .inferred("id", &s)
+                                     .inferred("id", i)
                                      .inferred("content", "example")
-                                     .inferred("size", &s)
+                                     .inferred("size", i)
             ).insert_into("document");
            db.execute_query(&query).expect("Insert");
         }
@@ -429,9 +428,8 @@ mod tests {
         db.define(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
 
         for i in 1..21 {
-            let s = i.to_string();
             let query = Query::tuple(TupleBuilder::new()
-                                     .inferred("id", &s)
+                                     .inferred("id", i)
                                      .inferred("content", "example")
             ).insert_into("document");
             db.execute_query(&query).expect("Insert");
@@ -524,12 +522,11 @@ mod tests {
         let mut db = Database::default();
         db.define(&Definition::relation("document").indexed_attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
 
-        for i in 1..20 {
-            let id = i.to_string();
-            let content = format!("example{}", i);
+        for id in 1..20 {
+            let content = format!("example{}", id);
             let query = Query::tuple(TupleBuilder::new()
-                                     .inferred("id", &id)
-                                     .inferred("content", &content)
+                                     .inferred("id", id)
+                                     .inferred("content", content)
             ).insert_into("document");
             db.execute_query(&query).expect("Insert");
         }

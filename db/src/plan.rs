@@ -218,7 +218,7 @@ fn compute_source<'query>(dsl_source: &'query dsl::Source) -> Result<QuerySource
             let tuple = values.iter().map(|attr| {
                 let name = attr.name.as_ref();
                 let kind = attr.kind.unwrap_or(Type::NONE);
-                let value = attr.value;
+                let value = attr.value.as_ref();
                 (name, (kind, value))
             }).collect();
             Ok(QuerySource::Tuple(tuple))

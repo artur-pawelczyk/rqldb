@@ -18,13 +18,12 @@ fn main() {
 
     let mut last_time = SystemTime::now();
     for i in 0..5_000_000 {
-        let id = i.to_string();
         let title = format!("title {i}");
         let content = format!("content {i}");
         let query = Query::tuple(TupleBuilder::new()
-                                 .inferred("id", &id)
-                                 .inferred("title", &title)
-                                 .inferred("content", &content)
+                                 .inferred("id", i)
+                                 .inferred("title", title)
+                                 .inferred("content", content)
         ).insert_into("document");
         db.execute_query(&query).unwrap();
 
