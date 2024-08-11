@@ -1,4 +1,4 @@
-use crate::dsl::{Definition, Query, Operator, AttrKind, TupleAttr, TupleBuilder, IntoTuple};
+use crate::dsl::{Definition, Query, Operator, TupleAttr, TupleBuilder, IntoTuple};
 use crate::schema::Type;
 use crate::tokenize::{Token, Tokenizer, TokenizerError};
 
@@ -152,7 +152,7 @@ fn read_tuple<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Vec<TupleAttr<'a>>, P
             Token::Pipe(_) => break,
             Token::End(_) => break,
             Token::SymbolWithType(value_or_name, kind, pos) => {
-                let kind = AttrKind::from_str(kind).map_err(|_| ParseError{ msg: "Unknown type", pos })?;
+                let kind = Type::from_str(kind).map_err(|_| ParseError{ msg: "Unknown type", pos })?;
                 match tokenizer.next()? {
                     Token::Op("=", _) => {
                         if let Token::Symbol(value, _) = tokenizer.next()? {

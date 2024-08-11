@@ -217,7 +217,7 @@ fn compute_source<'query>(dsl_source: &'query dsl::Source) -> Result<QuerySource
         dsl::Source::Tuple(values) => {
             let tuple = values.iter().map(|attr| {
                 let name = attr.name.as_ref();
-                let kind: Type = attr.kind.into();
+                let kind = attr.kind.unwrap_or(Type::NONE);
                 let value = attr.value;
                 (name, (kind, value))
             }).collect();
@@ -373,7 +373,7 @@ mod tests {
 
     use super::*;
     use crate::bytes::IntoBytes as _;
-    use crate::dsl::{AttrKind, TupleBuilder};
+    use crate::dsl::TupleBuilder;
     use crate::dsl::Operator::{EQ, GT};
     use crate::object::TempObject;
     use crate::schema::{Schema, Type};
@@ -508,8 +508,8 @@ mod tests {
 
         let query = dsl::Query::tuple(
             TupleBuilder::new()
-                .typed(AttrKind::Number, "id", "1")
-                .typed(AttrKind::Text, "name", "some text")
+                .typed(Type::NUMBER, "id", "1")
+                .typed(Type::TEXT, "name", "some text")
         ).filter("id", Operator::EQ, "1");
         let result = compute_plan(&db, &query);
 

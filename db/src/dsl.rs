@@ -133,50 +133,9 @@ pub enum Source<'a> {
     Tuple(Vec<TupleAttr<'a>>),
 }
 
-#[non_exhaustive]
-#[derive(PartialEq, Eq, Debug, Default, Copy, Clone)]
-// TODO: Should it be replaced with lib::Type?
-pub enum AttrKind {
-    #[default] Infer,
-    Number,
-    Text,
-}
-
-impl FromStr for AttrKind {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "NUMBER" => Ok(Self::Number),
-            "TEXT" => Ok(Self::Text),
-            _ => Err(()),
-        }
-    }
-}
-
-impl From<AttrKind> for Type {
-    fn from(kind: AttrKind) -> Self {
-        match kind {
-            AttrKind::Number => Self::NUMBER,
-            AttrKind::Text => Self::TEXT,
-            _ => Self::NONE,
-        }
-    }
-}
-
-impl fmt::Display for AttrKind {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::Infer => write!(f, "INFER"),
-            Self::Number => write!(f, "NUMBER"),
-            Self::Text => write!(f, "TEXT"),
-        }
-    }
-}
-
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct TupleAttr<'a> {
-    pub kind: AttrKind,
+    pub kind: Option<Type>,
     pub name: Box<str>,
     pub value: &'a str,
 }
@@ -245,13 +204,13 @@ impl<'a> TupleBuilder<'a> {
         Query::tuple(self)
     }
 
-    pub fn typed(mut self, kind: AttrKind, name: &'a str, value: &'a str) -> Self {
-        self.0.push(TupleAttr { name: Box::from(name), kind, value });
+    pub fn typed(mut self, kind: Type, name: &'a str, value: &'a str) -> Self {
+        self.0.push(TupleAttr { name: Box::from(name), kind: Some(kind), value });
         self
     }
     
     pub fn inferred(mut self, name: &'a str, value: &'a str) -> Self {
-        self.0.push(TupleAttr { name: Box::from(name), kind: AttrKind::Infer, value });
+        self.0.push(TupleAttr { name: Box::from(name), kind: None, value });
         self
     }
 }
@@ -343,10 +302,10 @@ fn write_attrs(f: &mut fmt::Formatter, attrs: &[TupleAttr<'_>]) -> fmt::Result {
     let mut i = attrs.iter().peekable();
     while let Some(attr) = i.next() {
         if attr.name.chars().next().map(|c| !c.is_numeric()).unwrap_or(false) {
-            if attr.kind == AttrKind::Infer {
-                write!(f, "{} = ", attr.name)?;
+            if let Some(kind) = attr.kind {
+                write!(f, "{}::{} = ", attr.name, kind)?;
             } else {
-                write!(f, "{}::{} = ", attr.name, attr.kind)?;
+                write!(f, "{} = ", attr.name)?;
             }
         }
 

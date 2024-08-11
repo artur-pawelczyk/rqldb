@@ -1,6 +1,6 @@
 use std::{fmt, str::FromStr};
 
-use crate::{dsl::AttrKind, object::Attribute, tuple::PositionalAttribute};
+use crate::{object::Attribute, tuple::PositionalAttribute};
 
 #[derive(Default, PartialEq)]
 pub struct Schema {
@@ -232,16 +232,6 @@ impl FromStr for Type {
             "UINT16" => Ok(Type::BYTE(16)),
             "UINT32" => Ok(Type::BYTE(32)),
             _ => Err(()),
-        }
-    }
-}
-
-impl Into<AttrKind> for Type {
-    fn into(self) -> AttrKind {
-        match self {
-            Self::NUMBER => AttrKind::Number,
-            Self::TEXT => AttrKind::Text,
-            _ => unimplemented!(),
         }
     }
 }
