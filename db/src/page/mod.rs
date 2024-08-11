@@ -7,8 +7,7 @@ pub use tuple_id::{BlockId, TupleId};
 
 pub const PAGE_SIZE: usize = 8 * 1024;
 
-// TODO: u16 is probably enough
-type LpIndex = u32;
+type LpIndex = u16;
 type LpCountType = u32;
 const LP_COUNT: Range<usize> = 0..size_of::<LpCountType>();
 
@@ -49,8 +48,8 @@ impl From<&LinePointer> for [u8; LinePointer::self_size()] {
 
 impl From<[u8; LinePointer::self_size()]> for LinePointer {
     fn from(value: [u8; LinePointer::self_size()]) -> Self {
-        let a = read_u32(&value);
-        let b = read_u32(&value[size_of::<LpIndex>()..]);
+        let a = read_u16(&value);
+        let b = read_u16(&value[size_of::<LpIndex>()..]);
         Self(a, b)
     }
 }
@@ -59,8 +58,8 @@ impl TryFrom<&[u8]> for LinePointer {
     type Error = ();
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        let a = read_u32(value);
-        let b = read_u32(&value.index(size_of::<LpIndex>()..));
+        let a = read_u16(value);
+        let b = read_u16(&value.index(size_of::<LpIndex>()..));
         Ok(Self(a, b))
     }
 }
@@ -134,7 +133,7 @@ impl<'a> PageMut<'a> {
 
         let lp_self_start = last_lp * LinePointer::self_size() + LP_COUNT.len();
         let lp_self_end = lp_self_start + LinePointer::self_size();
-        let tuple_end = tuple_start + size as u32;
+        let tuple_end = tuple_start + size as u16;
         if tuple_end as usize >= PAGE_SIZE - lp_self_end {
             return Err(PageError::PageFull);
         }
@@ -249,6 +248,10 @@ fn read_u32(b: &[u8]) -> u32 {
     u32::from_le_bytes(<[u8; 4]>::try_from(&b[0..4]).unwrap())
 }
 
+fn read_u16(b: &[u8]) -> u16 {
+    u16::from_le_bytes(<[u8; 2]>::try_from(&b[0..2]).unwrap())
+}
+
 struct LinePointerIter<'a>(&'a [u8]);
 impl Iterator for LinePointerIter<'_> {
     type Item = LinePointer;
@@ -259,7 +262,8 @@ impl Iterator for LinePointerIter<'_> {
 
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
         let start = n * LinePointer::self_size();
-        if let Some(lp_bytes) = self.0.get(start..LinePointer::self_size()) {
+        let end = start + LinePointer::self_size();
+        if let Some(lp_bytes) = self.0.get(start..end) {
             let lp = LinePointer::try_from(lp_bytes).unwrap();
             debug_assert!(lp.0 <= 8*1024);
             debug_assert!(lp.1 <= 8*1024);
