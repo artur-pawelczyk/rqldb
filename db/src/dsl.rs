@@ -349,6 +349,32 @@ fn write_attrs(f: &mut fmt::Formatter, attrs: &[TupleAttr<'_>]) -> fmt::Result {
     Ok(())
 }
 
+pub struct Insert<'a, T>
+{
+    target: &'a str,
+    tuple: T,
+}
+
+impl<'a> Insert<'a, ()> {
+    pub fn insert_into(target: &'a str) -> Self {
+        Self { target, tuple: () }
+    }
+
+    pub fn tuple<T>(self, tuple: T) -> Insert<'a, Vec<TupleAttr<'a>>>
+    where T: IntoTuple<'a>,
+    {
+        Insert { tuple: tuple.into_tuple(), target: self.target }
+    }
+}
+
+impl<'a> fmt::Display for Insert<'a, Vec<TupleAttr<'a>>> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} ", self.target)?;
+        write_attrs(f, &self.tuple)?;
+        Ok(())
+    }
+}
+
 #[derive(Eq, PartialEq, Debug)]
 pub struct Definition {
     pub name: String,
@@ -461,6 +487,12 @@ mod tests {
 
         let delete_one = Query::scan("example").filter("example.id", EQ, "1").delete();
         assert_eq!(delete_one.to_string(), "scan example | filter example.id = 1 | delete");
+    }
+
+    #[test]
+    fn insert() {
+        let insert = Insert::insert_into("example").tuple(TupleBuilder::new().inferred("id", "1"));
+        assert_eq!("example id = 1", insert.to_string());
     }
 
     #[test]
