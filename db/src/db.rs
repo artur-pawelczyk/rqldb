@@ -4,10 +4,11 @@ use std::io;
 use std::iter::zip;
 use std::rc::Rc;
 
+use crate::bytes::write_as_bytes;
 use crate::dump::{dump_values, dump_create};
 
 use crate::event::EventHandler;
-use crate::object::{Attribute, IndexedObject, ObjectId, TempObject};
+use crate::object::{Attribute, IndexedObject, NamedAttribute, ObjectId, TempObject};
 use crate::page::TupleId;
 use crate::plan::{Source, Filter, Plan, Finisher, ApplyFn};
 use crate::schema::{AttributeRef, TableId};
@@ -60,7 +61,39 @@ impl Database {
     }
 
     pub fn execute_query(&self, query: &dsl::Query) -> Result<QueryResults> {
-        self.execute_plan(compute_plan(self, query)?)
+        if let dsl::Finisher::Insert(target) = query.finisher {
+            if let dsl::Source::Tuple(tuple) = &query.source {
+                let cmd = dsl::Insert::insert_into(target).tuple(tuple);
+                self.insert(&cmd)?;
+                Ok(QueryResults::empty())
+            } else {
+                unimplemented!()
+            }
+        } else {
+            self.execute_plan(compute_plan(self, query)?)
+        }
+    }
+
+    pub fn insert(&self, cmd: &dsl::Insert<'_, Vec<dsl::TupleAttr<'_>>>) -> Result<()> {
+        let mut target = self.object(cmd.target)
+            .ok_or_else(|| format!("Relation {} not found", cmd.target))?
+            .borrow_mut();
+
+        let mut byte_tuple = Vec::new();
+        for attr in target.attributes() {
+            let elem = cmd.tuple
+                .iter().find(|elem| elem.name == attr.name.as_ref() || elem.name == attr.short_name())
+                .ok_or_else(|| format!("Attribute {} is missing", attr.name))?;
+
+            write_as_bytes(attr.kind, &elem.value, &mut byte_tuple)
+                .map_err(|_| format!("Error encoding value for attribute {}", attr.name))?;
+        }
+
+        // TODO: Avoid this allocation. Maybe have IndexedObject::add_tuple take u8 slice
+        let attrs = target.attributes().cloned().collect::<Vec<_>>();
+        target.add_tuple(&Tuple::from_bytes(&byte_tuple, &attrs));
+
+        Ok(())
     }
 
     fn execute_plan(&self, plan: Plan) -> Result<QueryResults> {

@@ -351,8 +351,8 @@ fn write_attrs(f: &mut fmt::Formatter, attrs: &[TupleAttr<'_>]) -> fmt::Result {
 
 pub struct Insert<'a, T>
 {
-    target: &'a str,
-    tuple: T,
+    pub(crate) target: &'a str,
+    pub(crate) tuple: T,
 }
 
 impl<'a> Insert<'a, ()> {
