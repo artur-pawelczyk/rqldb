@@ -170,6 +170,32 @@ impl<'a> PartialEq for Element<'a> {
 
 }
 
+pub(crate) trait ByteTuple {
+    type Element;
+
+    fn next_element(self, kind: Type) -> (Self::Element, Self);
+}
+
+impl<'a> ByteTuple for &'a [u8] {
+    type Element = &'a [u8];
+
+    fn next_element(self, kind: Type) -> (Self::Element, Self) {
+        let end = kind.size(&self);
+        (&self[..end], &self[end..])
+    }
+}
+
+pub(crate) fn element_at_pos<T: ByteTuple>(mut tuple: T, attrs: &[Attribute], n: usize) -> T::Element {
+    let mut last = None;
+    for attr in attrs.iter().take(n+1) {
+        let e = tuple.next_element(attr.kind());
+        last = Some(e.0);
+        tuple = e.1
+    }
+
+    last.unwrap()
+}
+
 #[cfg(test)]
 mod tests {
     use lazy_static::lazy_static;

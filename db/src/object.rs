@@ -9,7 +9,7 @@ use crate::bytes::write_as_bytes;
 use crate::event::EventHandler;
 use crate::heap::Heap;
 use crate::schema::AttributeRef;
-use crate::tuple::PositionalAttribute;
+use crate::tuple::{element_at_pos, PositionalAttribute};
 use crate::{tuple::Tuple, schema::Relation, Type};
 use crate::page::TupleId;
 
@@ -48,29 +48,29 @@ impl IndexedObject {
         self.id
     }
 
-    pub(crate) fn add_tuple(&mut self, tuple: &Tuple) {
+    pub(crate) fn add_tuple(&mut self, tuple: &[u8]) {
         let added = match &self.index {
-            Index::Attr(key_pos) => {
-                let key = tuple.element(key_pos).unwrap();
-                if let Some(id) = self.find_in_index(key.bytes()) {
+            Index::Attr(key_attr) => {
+                let key = element_at_pos(tuple, &self.attrs, key_attr.pos());
+                if let Some(id) = self.find_in_index(key) {
                     self.pages.delete(id);
-                    self.remove_from_index(key.bytes(), id);
+                    self.remove_from_index(key, id);
 
-                    let new_id = self.pages.push(tuple.raw_bytes());
-                    self.add_to_index(tuple.raw_bytes(), new_id);
+                    let new_id = self.pages.push(tuple);
+                    self.add_to_index(tuple, new_id);
                     false
                 } else {
-                    let id = self.pages.push(tuple.raw_bytes());
-                    self.add_to_index(key.bytes(), id);
+                    let id = self.pages.push(tuple);
+                    self.add_to_index(key, id);
                     true
                 }
             },
             Index::Uniq => {
-                if self.find_in_index(tuple.raw_bytes()).is_some() {
+                if self.find_in_index(tuple).is_some() {
                     false
                 } else {
-                    let id = self.pages.push(tuple.raw_bytes());
-                    self.add_to_index(tuple.raw_bytes(), id);
+                    let id = self.pages.push(tuple);
+                    self.add_to_index(tuple, id);
                     true
                 }
                 
@@ -78,7 +78,7 @@ impl IndexedObject {
         };
  
        if added {
-            self.handler.borrow().emit_add_tuple(self.id, tuple.raw_bytes());
+            self.handler.borrow().emit_add_tuple(self.id, tuple);
         }
     }
 

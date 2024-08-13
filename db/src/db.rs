@@ -89,9 +89,7 @@ impl Database {
                 .map_err(|_| format!("Error encoding value for attribute {}", attr.name))?;
         }
 
-        // TODO: Avoid this allocation. Maybe have IndexedObject::add_tuple take u8 slice
-        let attrs = target.attributes().cloned().collect::<Vec<_>>();
-        target.add_tuple(&Tuple::from_bytes(&byte_tuple, &attrs));
+        target.add_tuple(&byte_tuple);
 
         Ok(())
     }
@@ -240,7 +238,7 @@ impl<'a> Sink<'a> {
             Self::Sum(attr, ref mut sum) => *sum += tuple.element(attr).unwrap().as_number().unwrap(),
             Self::Max(attr, ref mut max) => *max = std::cmp::max(*max, tuple.element(attr).unwrap().as_number().unwrap()),
             Self::Return(attrs, ref mut results) => results.push(tuple_to_cells(attrs, tuple)),
-            Self::Insert(object) => { object.add_tuple(tuple); },
+            Self::Insert(object) => { object.add_tuple(tuple.raw_bytes()); },
             Self::Delete(ref mut tuples) => {
                 let id = tuple.id();
                 debug_assert!(!id.is_anonymous());
