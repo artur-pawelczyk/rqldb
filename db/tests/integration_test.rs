@@ -1,4 +1,4 @@
-use rqldb::parse::parse_delete;
+use rqldb::parse::{parse_delete, parse_insert};
 use rqldb::{parse_query, parse_definition};
 use rqldb::db::Database;
 
@@ -13,16 +13,16 @@ type::NUMBER
 published::BOOLEAN").unwrap());
     db.define(&parse_definition("relation type id::NUMBER name::TEXT").unwrap());
 
-    let insert = parse_query("tuple id = 1 name = artictle | insert_into type").unwrap();
-    db.execute_query(&insert).unwrap();
-    let insert = parse_query("tuple id = 2 name = blog | insert_into type").unwrap();
-    db.execute_query(&insert).unwrap();
-    let insert = parse_query("tuple id = 3 name = book | insert_into type").unwrap();
-    db.execute_query(&insert).unwrap();
-    let insert = parse_query("tuple id = 1 title = title1 content = content1 type = 2 published = true | insert_into document").unwrap();
-    db.execute_query(&insert).unwrap();
-    let insert = parse_query("tuple id = 2 title = title2 content = content2 type = 2 published = false | insert_into document").unwrap();
-    db.execute_query(&insert).unwrap();
+    let insert = parse_insert("type id = 1 name = artictle").unwrap();
+    db.insert(&insert).unwrap();
+    let insert = parse_insert("type id = 2 name = blog").unwrap();
+    db.insert(&insert).unwrap();
+    let insert = parse_insert("type id = 3 name = book | insert_into type").unwrap();
+    db.insert(&insert).unwrap();
+    let insert = parse_insert("document id = 1 title = title1 content = content1 type = 2 published = true").unwrap();
+    db.insert(&insert).unwrap();
+    let insert = parse_insert("document id = 2 title = title2 content = content2 type = 2 published = false").unwrap();
+    db.insert(&insert).unwrap();
 
     db
 }
@@ -80,8 +80,8 @@ fn test_single_join() {
 fn test_update() {
     let db = prepare_db();
 
-    let insert = parse_query("tuple id = 1 title = updated_title content = content type = 2 published = true | insert_into document").unwrap();
-    db.execute_query(&insert).unwrap();
+    let insert = parse_insert("document id = 1 title = updated_title content = content type = 2 published = true").unwrap();
+    db.insert(&insert).unwrap();
 
     let query = parse_query("scan document | filter document.id = 1").unwrap();
     let result = db.execute_query(&query).unwrap();

@@ -141,10 +141,10 @@ mod tests {
         db.define(&Definition::relation("document")
                   .indexed_attribute("id", Type::NUMBER)
                   .attribute("name", Type::TEXT));
-        db.execute_query(&Query::tuple(TupleBuilder::new()
+        db.insert(&Query::tuple(TupleBuilder::new()
                                        .inferred("id", "1")
                                        .inferred("name", "example one"))
-                         .insert_into("document"))?;
+                  .insert_into("document"))?;
 
         let storage = storage.reopen();
         let db = storage.create_db()?;

@@ -22,7 +22,7 @@ pub(crate) fn dump_values<'a>(rel: &str, values: QueryResults, writer: &mut impl
         }
 
         let insert_query = Query::tuple(&map).insert_into(rel);
-        writeln!(writer, "{}", insert_query).unwrap();
+        writeln!(writer, ".insert {}", insert_query).unwrap();
     }
 }
 
@@ -58,10 +58,10 @@ mod tests {
         expected_tuple.insert("example.id", "1");
         expected_tuple.insert("example.content", "first");
         let creation_query = Query::tuple(&expected_tuple).insert_into("example");
-        db.execute_query(&creation_query).unwrap();
+        db.insert(&creation_query).unwrap();
 
         let mut dump = String::new();
         dump_values("example", db.execute_query(&Query::scan("example")).unwrap(), &mut dump);
-        assert_eq!(dump.trim(), creation_query.to_string());
+        assert_eq!(dump.trim(), format!(".insert {}", creation_query));
     }
 }

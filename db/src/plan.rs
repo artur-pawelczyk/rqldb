@@ -530,22 +530,6 @@ mod tests {
     }
 
     #[test]
-    fn test_source_types_for_insert() {
-        let mut schema = Schema::default();
-        schema.create_table("example").column("id", Type::NUMBER).column("content", Type::TEXT).column("title", Type::TEXT).add();
-        let db = Database::with_schema(schema);
-
-        let query = dsl::Query::tuple(&[("id", "1"), ("content", "the-content"), ("title", "title")]).insert_into("example");
-        let result = compute_plan(&db, &query).unwrap();
-        assert_eq!(source_attributes(&result.source), vec![Type::NUMBER, Type::TEXT, Type::TEXT]);
-        assert_eq!(attribute_names(&result.final_attributes()), BTreeSet::from(["example.id", "example.content", "example.title"]));
-
-        let query = dsl::Query::tuple(&[("id", "1"), ("content", "the-content")]).insert_into("example");
-        let wrong_tuple_len = compute_plan(&db, &query);
-        assert!(wrong_tuple_len.is_err());
-    }
-
-    #[test]
     fn test_compute_finisher() {
         let mut schema = Schema::default();
         schema.create_table("example").column("id", Type::NUMBER).column("content", Type::TEXT).add();
@@ -556,11 +540,6 @@ mod tests {
             .unwrap().finisher;
         assert!(matches!(finisher, Finisher::Return));
 
-        let query = dsl::Query::tuple(&[("id", "1"), ("content", "the content")]).insert_into("example");
-        let finisher = compute_plan(&db, &query)
-            .unwrap().finisher;
-        assert!(matches!(finisher, Finisher::Insert{..}));
-
         let query = dsl::Query::scan("example").count();
         let finisher = compute_plan(&db, &query)
             .unwrap().finisher;
@@ -570,23 +549,6 @@ mod tests {
         let finisher = compute_plan(&db, &query)
             .unwrap().finisher;
         assert!(matches!(finisher, Finisher::Apply(ApplyFn::Sum, _)));
-
-        let query = dsl::Query::tuple(&[("id", "1")]).insert_into("not-a-table");
-        let failure = compute_plan(&db, &query);
-        assert!(failure.is_err());
-    }
-
-    #[test]
-    fn test_match_types_for_insert() {
-        let mut schema = Schema::default();
-        schema.create_table("example").column("id", Type::NUMBER).column("content", Type::TEXT).add();
-        let db = Database::with_schema(schema);
-
-        let query = dsl::Query::tuple(&[("id", "1"), ("content", "aaa")]).insert_into("example");
-        let plan = compute_plan(&db, &query).unwrap();
-
-        assert!(matches!(plan.source.attributes()[0], Attribute { kind: Type::NUMBER, .. }));
-        assert!(matches!(plan.source.attributes()[1], Attribute { kind: Type::TEXT, .. }));
     }
 
     #[test]

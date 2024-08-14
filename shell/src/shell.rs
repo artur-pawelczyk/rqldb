@@ -246,7 +246,7 @@ mod tests {
         shell.db.define(&Definition::relation("document")
                         .indexed_attribute("id", Type::NUMBER)
                         .attribute("content", Type::TEXT));
-        shell.db.execute_query(&Query::tuple(&[("id", "1"), ("content", "example")])
+        shell.db.insert(&Query::tuple(&[("id", "1"), ("content", "example")])
                                .insert_into("document")).unwrap();
 
         let mut s = String::new();
@@ -264,9 +264,9 @@ document.content = example".trim());
                         .attribute("content", Type::TEXT)
                         .attribute("size", Type::NUMBER));
 
-        shell.db.execute_query(&Query::tuple(&[("id", "1"), ("content", "example"), ("size", "123")])
+        shell.db.insert(&Query::tuple(&[("id", "1"), ("content", "example"), ("size", "123")])
                                .insert_into("document")).unwrap();
-        shell.db.execute_query(&Query::tuple(&[("id", "2"), ("content", "example"), ("size", "2")])
+        shell.db.insert(&Query::tuple(&[("id", "2"), ("content", "example"), ("size", "2")])
                                .insert_into("document")).unwrap();
 
 
@@ -301,7 +301,7 @@ document.size = 2".trim());
         shell.db.define(&Definition::relation("document")
                         .indexed_attribute("id", Type::NUMBER)
                         .attribute("content", Type::TEXT));
-        shell.db.execute_query(&Query::tuple(&[("id", "1"), ("content", "example")])
+        shell.db.insert(&Query::tuple(&[("id", "1"), ("content", "example")])
                                .insert_into("document")).unwrap();
 
         let mut s = String::new();
@@ -319,7 +319,7 @@ document.size = 2".trim());
 
         for i in 0..100 {
             let id = i.to_string();
-            shell.db.execute_query(&Query::tuple(&[("id", id.as_str())]).insert_into("document")).unwrap();
+            shell.db.insert(&Query::tuple(&[("id", id.as_str())]).insert_into("document")).unwrap();
         }
 
         let mut s = String::new();

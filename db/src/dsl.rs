@@ -1,6 +1,6 @@
 use std::{borrow::Cow, collections::BTreeMap, fmt, str::FromStr};
 
-use crate::{schema::Type, parse::ParseError};
+use crate::{parse::ParseError, schema::Type};
 
 #[derive(Debug, Default, Eq, PartialEq)]
 pub struct Query<'a> {
@@ -63,9 +63,12 @@ impl<'a> Query<'a> {
         self
     }
 
-    pub fn insert_into(mut self, name: &'a str) -> Self {
-        self.finisher = Finisher::Insert(name);
-        self
+    pub fn insert_into(self, name: &'a str) -> Insert<Vec<TupleAttr<'a>>> {
+        if let Source::Tuple(tuple) = self.source {
+            Insert { target: name, tuple }
+        } else {
+            panic!("Cannot create such query")
+        }
     }
 
     pub fn count(mut self) -> Self {
@@ -349,6 +352,7 @@ fn write_attrs(f: &mut fmt::Formatter, attrs: &[TupleAttr<'_>]) -> fmt::Result {
     Ok(())
 }
 
+#[derive(Debug)]
 pub struct Insert<'a, T>
 {
     pub(crate) target: &'a str,
@@ -460,8 +464,8 @@ mod tests {
 
     #[test]
     fn source_is_tuple() {
-        let query = Query::build_tuple().inferred("id", "1").inferred("value", "example_value").build().insert_into("example");
-        assert_eq!(query.to_string(), "tuple id = 1 value = example_value | insert_into example");
+        let query = Query::build_tuple().inferred("id", "1").inferred("value", "example_value").build().filter("id", Operator::EQ, "1");
+        assert_eq!(query.to_string(), "tuple id = 1 value = example_value | filter id = 1 | select_all");
     }
 
     #[test]
@@ -514,7 +518,7 @@ mod tests {
 
     #[test]
     fn quotes() {
-        let query = Query::tuple(&[("id", "1"), ("value", "foo bar")]).insert_into("example");
-        assert_eq!("tuple id = 1 value = \"foo bar\" | insert_into example", query.to_string());
+        let query = Query::tuple(&[("id", "1"), ("value", "foo bar")]).filter("id", Operator::EQ, "1");
+        assert_eq!("tuple id = 1 value = \"foo bar\" | filter id = 1 | select_all", query.to_string());
     }
 }

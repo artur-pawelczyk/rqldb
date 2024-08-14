@@ -98,7 +98,7 @@ mod tests {
 
         assert!(created_tuple.borrow().is_empty());
 
-        db.execute_query(&Query::tuple(TupleBuilder::new()
+        db.insert(&Query::tuple(TupleBuilder::new()
                                        .inferred("id", "1")
                                        .inferred("name", "example")).insert_into("document"))?;
 
@@ -112,7 +112,7 @@ mod tests {
         db.define(&Definition::relation("document")
                   .attribute("id", Type::NUMBER)
                   .attribute("name", Type::TEXT));
-        db.execute_query(&Query::tuple(TupleBuilder::new()
+        db.insert(&Query::tuple(TupleBuilder::new()
                                        .inferred("id", "1")
                                        .inferred("name", "example")).insert_into("document"))?;
 
@@ -153,7 +153,7 @@ mod tests {
             }
         });
 
-        db.execute_query(&Query::tuple(TupleBuilder::new()
+        db.insert(&Query::tuple(TupleBuilder::new()
                                        .inferred("id", "1")
                                        .inferred("name", "example")).insert_into("document"))?;
        
@@ -170,7 +170,7 @@ mod tests {
                   .attribute("id", Type::NUMBER)
                   .attribute("name", Type::TEXT));
 
-        db.execute_query(&Query::tuple(TupleBuilder::new()
+        db.insert(&Query::tuple(TupleBuilder::new()
                                        .inferred("id", "1")
                                        .inferred("name", "example")).insert_into("document"))?;
 

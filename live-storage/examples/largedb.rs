@@ -25,7 +25,7 @@ fn main() {
                                  .inferred("title", title)
                                  .inferred("content", content)
         ).insert_into("document");
-        db.execute_query(&query).unwrap();
+        db.insert(&query).unwrap();
 
         if i % 100_000 == 0 {
             println!("Inserted {} tuples; took {:?}", i, SystemTime::now().duration_since(last_time).unwrap());

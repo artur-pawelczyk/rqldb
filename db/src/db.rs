@@ -61,17 +61,7 @@ impl Database {
     }
 
     pub fn execute_query(&self, query: &dsl::Query) -> Result<QueryResults> {
-        if let dsl::Finisher::Insert(target) = query.finisher {
-            if let dsl::Source::Tuple(tuple) = &query.source {
-                let cmd = dsl::Insert::insert_into(target).tuple(tuple);
-                self.insert(&cmd)?;
-                Ok(QueryResults::empty())
-            } else {
-                unimplemented!()
-            }
-        } else {
-            self.execute_plan(compute_plan(self, query)?)
-        }
+        self.execute_plan(compute_plan(self, query)?)
     }
 
     pub fn insert(&self, cmd: &dsl::Insert<'_, Vec<dsl::TupleAttr<'_>>>) -> Result<()> {
@@ -367,7 +357,7 @@ mod tests {
             .inferred("id", "1")
             .inferred("content", "something")
             .build().insert_into("document");
-        let insert_result = db.execute_query(&insert_query);
+        let insert_result = db.insert(&insert_query);
         assert!(insert_result.is_ok());
 
         let query = Query::scan("document").select_all();
@@ -388,7 +378,7 @@ mod tests {
             .attribute("content", Type::TEXT);
         db.define(&command);
 
-        let result = db.execute_query(&Query::tuple(&[("id", "not-a-number"), ("id", "random-text")]).insert_into("document"));
+        let result = db.insert(&Query::tuple(&[("id", "not-a-number"), ("id", "random-text")]).insert_into("document"));
         assert!(result.is_err());
     }
 
@@ -401,7 +391,7 @@ mod tests {
             let id = i.to_string();
             let content = format!("example{}", i);
             let query = Query::tuple(TupleBuilder::new().inferred("id", id).inferred("content", content)).insert_into("document");
-            db.execute_query(&query).expect("Insert");
+            db.insert(&query).expect("Insert");
         }
 
         let mut result = db.execute_query(&Query::scan("document").filter("document.id", Operator::EQ, "5")).unwrap();
@@ -422,9 +412,9 @@ mod tests {
         db.define(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT).attribute("type_id", Type::NUMBER));
         db.define(&Definition::relation("type").attribute("id", Type::NUMBER).attribute("name", Type::TEXT));
 
-        db.execute_query(&Query::tuple(&[("id", "1"), ("content", "example"), ("type_id", "2")]).insert_into("document")).unwrap();
-        db.execute_query(&Query::tuple(&[("id", "1"), ("name", "type_a")]).insert_into("type")).unwrap();
-        db.execute_query(&Query::tuple(&[("id", "2"), ("name", "type_b")]).insert_into("type")).unwrap();
+        db.insert(&Query::tuple(&[("id", "1"), ("content", "example"), ("type_id", "2")]).insert_into("document")).unwrap();
+        db.insert(&Query::tuple(&[("id", "1"), ("name", "type_a")]).insert_into("type")).unwrap();
+        db.insert(&Query::tuple(&[("id", "2"), ("name", "type_b")]).insert_into("type")).unwrap();
 
         let result = db.execute_query(&Query::scan("document").join("document.type_id", "type.id")).unwrap();
         assert_eq!(
@@ -445,9 +435,9 @@ mod tests {
         db.define(&Definition::relation("type").indexed_attribute("id", Type::NUMBER).attribute("name", Type::TEXT));
         db.define(&Definition::relation("author").indexed_attribute("name", Type::TEXT).attribute("displayname", Type::TEXT));
 
-        db.execute_query(&Query::tuple(&[("id", "1"), ("type_id", "1"), ("author", "admin")]).insert_into("document")).unwrap();
-        db.execute_query(&Query::tuple(&[("id", "1"), ("name", "page")]).insert_into("type")).unwrap();
-        db.execute_query(&Query::tuple(&[("name", "admin"), ("displayname", "the author")]).insert_into("author")).unwrap();
+        db.insert(&Query::tuple(&[("id", "1"), ("type_id", "1"), ("author", "admin")]).insert_into("document")).unwrap();
+        db.insert(&Query::tuple(&[("id", "1"), ("name", "page")]).insert_into("type")).unwrap();
+        db.insert(&Query::tuple(&[("name", "admin"), ("displayname", "the author")]).insert_into("author")).unwrap();
 
         let result = db.execute_query(&Query::scan("document").join("document.type_id", "type.id").join("document.author", "author.name")).unwrap();
         let tuple = result.tuples().next().unwrap();
@@ -468,7 +458,7 @@ mod tests {
                                      .inferred("content", "example")
                                      .inferred("size", i)
             ).insert_into("document");
-           db.execute_query(&query).expect("Insert");
+           db.insert(&query).expect("Insert");
         }
 
         let sum_result = db.execute_query(&Query::scan("document").apply("sum", &["document.size"])).unwrap();
@@ -496,7 +486,7 @@ mod tests {
                                      .inferred("id", i)
                                      .inferred("content", "example")
             ).insert_into("document");
-            db.execute_query(&query).expect("Insert");
+            db.insert(&query).expect("Insert");
         }
 
         let result = db.execute_query(&Query::scan("document").count()).unwrap();
@@ -511,7 +501,7 @@ mod tests {
     fn delete() {
         let mut db = Database::default();
         db.define(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
-        db.execute_query(&Query::tuple(&[("id", "1"), ("content", "the content")]).insert_into("document")).unwrap();
+        db.insert(&Query::tuple(&[("id", "1"), ("content", "the content")]).insert_into("document")).unwrap();
 
         let tuple_delete = db.delete(&Query::tuple(&[("id", "1")]).delete());
         assert!(tuple_delete.is_err());
@@ -531,8 +521,8 @@ mod tests {
         db.define(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
 
         let insert_query = Query::tuple(&[("id", "1"), ("content", "the content")]).insert_into("document");
-        db.execute_query(&insert_query).unwrap();
-        db.execute_query(&insert_query).unwrap();
+        db.insert(&insert_query).unwrap();
+        db.insert(&insert_query).unwrap();
 
         let count_query = Query::scan("document").count();
         let result = db.execute_query(&count_query).unwrap();
@@ -568,7 +558,7 @@ mod tests {
                 Ok(())
             }
         });
-        source_db.execute_query(&Query::tuple(TupleBuilder::new()
+        source_db.insert(&Query::tuple(TupleBuilder::new()
                                               .inferred("id", "1")
                                               .inferred("content", "name")).insert_into("document")).unwrap();
         
@@ -592,7 +582,7 @@ mod tests {
                                      .inferred("id", id)
                                      .inferred("content", content)
             ).insert_into("document");
-            db.execute_query(&query).expect("Insert");
+            db.insert(&query).expect("Insert");
         }
 
         let result = db.execute_query(&Query::scan_index("document.id", Operator::EQ, "5")).unwrap();
@@ -615,11 +605,11 @@ mod tests {
         let mut db = Database::default();
         db.define(&Definition::relation("first").indexed_attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
         db.define(&Definition::relation("second").attribute("num", Type::NUMBER));
-        db.execute_query(&Query::tuple(&[("id", "1"), ("content", "one")]).insert_into("first")).unwrap();
+        db.insert(&Query::tuple(&[("id", "1"), ("content", "one")]).insert_into("first")).unwrap();
 
         let expected = concat!(
             ".define relation first id::NUMBER::KEY content::TEXT\n",
-            "tuple first.content = one first.id = 1 | insert_into first\n",
+            ".insert first first.content = one first.id = 1\n",
             ".define relation second num::NUMBER\n",
         );
 
