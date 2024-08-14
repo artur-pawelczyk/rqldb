@@ -221,9 +221,7 @@ impl<'a> TupleBuilder<'a> {
 pub trait Encode<'a>
 where Self: Sized
 {
-    fn encode(self) -> Cow<'a, str> {
-        todo!()
-    }
+    fn encode(self) -> Cow<'a, str>;
 }
 
 impl<'a> Encode<'a> for &'a str {
@@ -365,6 +363,19 @@ impl<'a> Insert<'a, ()> {
     {
         Insert { tuple: tuple.into_tuple(), target: self.target }
     }
+
+    pub fn element(self, name: &'a str, value: impl Encode<'a>) -> Insert<'a, Vec<TupleAttr<'a>>> {
+        let elem = TupleAttr { kind: None, name, value: value.encode() };
+        Insert { target: self.target, tuple: vec![elem] }
+    }
+}
+
+impl<'a> Insert<'a, Vec<TupleAttr<'a>>> {
+   pub fn element(mut self, name: &'a str, value: impl Encode<'a>) -> Insert<'a, Vec<TupleAttr<'a>>> {
+       let elem = TupleAttr { kind: None, name, value: value.encode() };
+       self.tuple.push(elem);
+       self
+    }
 }
 
 impl<'a> fmt::Display for Insert<'a, Vec<TupleAttr<'a>>> {
@@ -499,8 +510,8 @@ mod tests {
 
     #[test]
     fn insert() {
-        let insert = Insert::insert_into("example").tuple(TupleBuilder::new().inferred("id", "1"));
-        assert_eq!("example id = 1", insert.to_string());
+        let insert = Insert::insert_into("example").element("id", 1).element("name", "something");
+        assert_eq!("example id = 1 name = something", insert.to_string());
     }
 
     #[test]

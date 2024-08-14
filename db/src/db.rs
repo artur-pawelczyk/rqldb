@@ -150,6 +150,7 @@ impl Database {
                 if let Some(join_source) = source_object.iter().find(|bytes| bytes.element(join.joiner_key()) == key) {
                     tuple = tuple.extend(join_source);
                 }
+                // TODO: Shouldn't a tuple be skipped when join doesn't find a match?
             }
 
             if test_filters(&plan.filters, &tuple) {
