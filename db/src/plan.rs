@@ -1,5 +1,4 @@
 use crate::bytes::into_bytes;
-use crate::bytes::write_as_bytes;
 use crate::db::SharedObject;
 use crate::Database;
 use crate::Operator;
@@ -26,20 +25,6 @@ pub(crate) struct Plan {
 }
 
 impl Plan {
-    #[cfg(test)]
-    pub fn insert(obj: &SharedObject, values: &[&str]) -> Self {
-        let attributes: Vec<_> = obj.borrow().attributes().cloned().collect();
-        let contents = std::iter::zip(attributes.iter(), values.iter())
-            .map(|(a, s)| (a.clone(), String::from(*s)))
-            .collect();
-
-        Self{
-            source: Source::Tuple(contents),
-            finisher: Finisher::Insert(Rc::clone(obj)),
-            ..Plan::default()
-        }
-   }
-
     #[cfg(test)]
     pub fn scan(obj: &SharedObject) -> Self {
         Self{
@@ -100,7 +85,6 @@ impl Join {
 pub(crate) enum Source {
     TableScan(SharedObject),
     Tuple(BTreeMap<Attribute, String>),
-    ReferencedTuple(SharedObject, Vec<u8>),
     IndexScan(SharedObject, Vec<u8>),
     #[default]
     Nil,
@@ -110,7 +94,6 @@ impl Source {
     pub fn attributes(&self) -> Vec<Attribute> {
         match &self {
             Self::Tuple(values) => values.keys().cloned().collect(),
-            Self::ReferencedTuple(obj, _) => obj.borrow().attributes().cloned().collect(),
             Self::TableScan(obj) => obj.borrow().attributes().cloned().collect(),
             Self::IndexScan(obj, _) => obj.borrow().attributes().cloned().collect(),
             _ => vec![]
@@ -172,8 +155,6 @@ impl Source {
 #[derive(Default, Debug)]
 pub(crate) enum Finisher {
     Return,
-    Insert(SharedObject),
-    Delete(SharedObject),
     Count,
     Apply(ApplyFn, AttributeRef),
     #[default]
@@ -268,29 +249,6 @@ fn compute_filters(plan: Plan, query: &dsl::Query) -> Result<Plan> {
 
 fn compute_finisher<'query>(source: QuerySource<'query>, db: &Database, query: &'query dsl::Query) -> Result<Plan> {
     match &query.finisher {
-        dsl::Finisher::Insert(name) => {
-            if let QuerySource::Tuple(input_map) = source {
-                let relation = db.schema().find_relation(*name).ok_or("No such target table")?;
-                let obj = db.object(*name).ok_or_else(|| format!("Target relation {name} not found"))?;
-                let finisher = Finisher::Insert(Rc::clone(obj));
-                let mut values = Vec::<u8>::new();
-                for attr in relation.attributes() {
-                    if let Some((_, val)) = input_map.get(attr.name()) {
-                        write_as_bytes(attr.kind(), val, &mut values).map_err(|_| format!("encoding error"))?;
-                    } else if let Some((_, val)) = input_map.get(attr.short_name()) {
-                        write_as_bytes(attr.kind(), val, &mut values).map_err(|_| format!("encoding error"))?;
-                    } else {
-                        return Err(format!("Missing attribute in source {}", attr.name()));
-                    }
-
-                }
-
-                let source = Source::ReferencedTuple(Rc::clone(obj), values);
-                Ok(Plan { source, finisher, ..Default::default() })
-            } else {
-                panic!()
-            }
-        },
         dsl::Finisher::AllColumns => Ok(Plan{ finisher: Finisher::Return, source: source.into_source(db)?, ..Default::default() }),
         dsl::Finisher::Count => Ok(Plan{ finisher: Finisher::Count, source: source.into_source(db)?, ..Default::default() }),
         dsl::Finisher::Apply(f, args) => {
@@ -301,16 +259,7 @@ fn compute_finisher<'query>(source: QuerySource<'query>, db: &Database, query: &
                 .unwrap_or(Err("apply: No such attribute"))?;
             Ok(Plan{ finisher, source: source.into_source(db)?, ..Default::default() })
         },
-        dsl::Finisher::Delete => {
-            let finisher = match &query.source {
-                dsl::Source::TableScan(name) => db.object(*name)
-                    .map(|obj| Finisher::Delete(Rc::clone(obj)))
-                    .ok_or("No such relation found for delete operation"),
-                _ => Err("Illegal delete operation"),
-            }?;
-            Ok(Plan{ finisher, source: source.into_source(db)?, ..Default::default() })
-        }
-        _ => todo!(),
+        _ => unimplemented!(),
     }
 }
 

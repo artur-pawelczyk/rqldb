@@ -12,10 +12,6 @@ impl TupleId {
     pub(crate) fn anonymous() -> Self {
         Self { block: 0, offset: 0 }
     }
-
-    pub(crate) fn is_anonymous(&self) -> bool {
-        self.offset == 0
-    }
 }
 
 impl fmt::Display for TupleId {

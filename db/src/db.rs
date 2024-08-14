@@ -1,5 +1,5 @@
 use core::fmt;
-use std::cell::{RefCell, Ref, RefMut};
+use std::cell::{RefCell, Ref};
 use std::io;
 use std::iter::zip;
 use std::rc::Rc;
@@ -129,9 +129,6 @@ impl Database {
                 temp_object.push_str(&values);
                 ObjectView::Val(temp_object)
             },
-            Source::ReferencedTuple(obj, values) => {
-                ObjectView::Tuple(obj.borrow().attributes().cloned().collect(), values.to_vec())
-            },
             Source::IndexScan(obj, val) => {
                 if let Some(tuple_id) = obj.borrow().find_in_index(val) {
                     ObjectView::TupleRef(obj.borrow(), tuple_id)
@@ -160,15 +157,10 @@ impl Database {
             }
         }
 
-        drop(source);
-        if let Finisher::Delete(obj) = &plan.finisher {
-            sink.accept_object(obj.borrow_mut());
-        }
-
         Ok(sink.into_results())
     }
 
-    fn create_sink<'a>(&'a self, plan: &'a Plan) -> Sink<'a> {
+    fn create_sink(&self, plan: &Plan) -> Sink {
         match &plan.finisher {
             Finisher::Return => Sink::Return(plan.final_attributes(), vec![]),
             Finisher::Apply(f, attr) => match f {
@@ -177,8 +169,6 @@ impl Database {
                 _ => Sink::NoOp,
             }
             Finisher::Count => Sink::Count(0),
-            Finisher::Insert(obj) => Sink::Insert(obj.borrow_mut()),
-            Finisher::Delete(_) => Sink::Delete(vec![]),
             Finisher::Nil => Sink::NoOp,
         }
     }
@@ -224,7 +214,6 @@ enum ObjectView<'a> {
     Ref(Ref<'a, IndexedObject>),
     TupleRef(Ref<'a, IndexedObject>, TupleId),
     Val(TempObject),
-    Tuple(Vec<Attribute>, Vec<u8>),
     Empty,
 }
 
@@ -234,46 +223,28 @@ impl<'a> ObjectView<'a> {
             Self::Ref(o) => o.iter(),
             Self::TupleRef(o, id) => Box::new(std::iter::once_with(|| o.get(*id))),
             Self::Val(o) => o.iter(),
-            Self::Tuple(attrs, b) => Box::new(std::iter::once(Tuple::from_bytes(b, &attrs))),
-            //     let attributes = o.borrow().attributes().cloned().collect::<Vec<_>>();
-            //     Box::new(std::iter::once_with(move || Tuple::from_bytes(b, &attributes)))
-            // },
             Self::Empty => Box::new(std::iter::empty()),
         }
     }
 }
 
 #[derive(Debug)]
-enum Sink<'a> {
+enum Sink {
     Count(usize),
     Sum(AttributeRef, i32),
     Max(AttributeRef, i32),
     Return(Vec<Attribute>, Vec<Vec<u8>>),
-    Insert(RefMut<'a, IndexedObject>),
-    Delete(Vec<TupleId>),
     NoOp,
 }
 
-impl<'a> Sink<'a> {
+impl Sink {
     fn accept_tuple(&mut self, tuple: &Tuple) {
         match self {
             Self::Count(ref mut count) => *count += 1,
             Self::Sum(attr, ref mut sum) => *sum += tuple.element(attr).unwrap().as_number().unwrap(),
             Self::Max(attr, ref mut max) => *max = std::cmp::max(*max, tuple.element(attr).unwrap().as_number().unwrap()),
             Self::Return(attrs, ref mut results) => results.push(tuple_to_cells(attrs, tuple)),
-            Self::Insert(object) => { object.add_tuple(tuple.raw_bytes()); },
-            Self::Delete(ref mut tuples) => {
-                let id = tuple.id();
-                debug_assert!(!id.is_anonymous());
-                tuples.push(id);
-            },
             Self::NoOp => {},
-        }
-    }
-
-    fn accept_object(&mut self, mut object: RefMut<IndexedObject>) {
-        if let Self::Delete(ids) = self {
-            object.remove_tuples(ids);
         }
     }
 
@@ -288,8 +259,6 @@ impl<'a> Sink<'a> {
                     results,
                 }
             }
-            Self::Insert(_) => QueryResults::empty(),
-            Self::Delete(_) => QueryResults::empty(),
             Self::NoOp => QueryResults::empty(),
         }
     }
@@ -537,8 +506,14 @@ mod tests {
         db.define(&Definition::relation("document").indexed_attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
         let obj = db.object("document").unwrap();
 
-        db.execute_plan(Plan::insert(obj, &["1", "orig content"])).unwrap();
-        db.execute_plan(Plan::insert(obj, &["1", "new content"])).unwrap();
+        db.insert(&Query::build_tuple()
+                  .inferred("id", "1")
+                  .inferred("content", "original content")
+                  .build().insert_into("document")).unwrap();
+        db.insert(&Query::build_tuple()
+                  .inferred("id", "1")
+                  .inferred("content", "new content")
+                  .build().insert_into("document")).unwrap();
 
         let result = db.execute_plan(Plan::scan(obj)).unwrap();
         let mut tuples = result.tuples();

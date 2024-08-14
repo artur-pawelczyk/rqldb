@@ -292,9 +292,7 @@ pub enum Finisher<'a> {
     AllColumns,
     Columns(Vec<&'a str>),
     Apply(&'a str, Vec<&'a str>),
-    Insert(&'a str),
     Count,
-    Delete,
 }
 
 impl<'a> fmt::Display for Finisher<'a> {
@@ -303,9 +301,7 @@ impl<'a> fmt::Display for Finisher<'a> {
             Finisher::AllColumns => write!(f, "select_all"),
             Finisher::Columns(rows) => { write!(f, "select ")?; write_tokens(f, rows) },
             Finisher::Apply(fun, a) => { write!(f, "apply {} ", fun)?; write_tokens(f, a) }
-            Finisher::Insert(name) => write!(f, "insert_into {}", name),
             Finisher::Count => write!(f, "count"),
-            Finisher::Delete => write!(f, "delete"),
         }
     }
 }
