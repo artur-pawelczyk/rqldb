@@ -249,11 +249,6 @@ impl TempObject {
     pub fn len(&self) -> usize {
         self.values.len()
     }
-
-    #[cfg(test)]
-    pub(crate) fn attributes(&self) -> impl Iterator<Item = &Attribute> {
-        self.attrs.iter()
-    }
 }
 
 pub trait NamedAttribute: PositionalAttribute {

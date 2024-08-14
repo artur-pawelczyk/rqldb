@@ -303,39 +303,30 @@ pub enum SortOrder { #[default] SmallestFirst, LargestFirst }
 
 #[cfg(test)]
 mod tests {
-    use self::object::TempObject;
-    use self::schema::Schema;
+    use dsl::Insert;
 
     use super::*;
 
     #[test]
-    fn test_sort_results() {
-        let mut schema = Schema::default();
-        schema.create_table("document")
-            .column("id", Type::NUMBER)
-            .column("size", Type::NUMBER)
-            .add();
+    fn test_sort_results() -> Result<(), Box<dyn Error>> {
+        let mut db = Database::default();
+        db.define(&Definition::relation("document")
+                  .attribute("id", Type::NUMBER)
+                  .attribute("size", Type::NUMBER));
 
-        let mut obj = TempObject::from_relation(schema.find_relation("document").unwrap());
-        obj.push_str(&["1", "123"]);
-        obj.push_str(&["2", "2"]);
+        db.insert(&Insert::insert_into("document").element("id", 1).element("size", 123))?;
+        db.insert(&Insert::insert_into("document").element("id", 2).element("size", 2))?;
 
-        let result = QueryResults {
-            attributes: obj.attributes().map(ResultAttribute::from).collect(),
-            results: obj.iter().map(|tuple| tuple.raw_bytes().to_vec()).collect(),
-        };
-
+        let result = db.execute_query(&Query::scan("document"))?;
         let sorted = result.sort("document.size", SortOrder::SmallestFirst).unwrap();
         let first = sorted.tuples().next().unwrap();
         assert_eq!(first.element("document.size").unwrap().to_string(), "2");
 
-        let result = QueryResults {
-            attributes: obj.attributes().map(ResultAttribute::from).collect(),
-            results: obj.iter().map(|tuple| tuple.raw_bytes().to_vec()).collect(),
-        };
-
+        let result = db.execute_query(&Query::scan("document"))?;
         let sorted = result.sort("document.size", SortOrder::LargestFirst).unwrap();
         let first = sorted.tuples().next().unwrap();
         assert_eq!(first.element("document.size").unwrap().to_string(), "123");
+
+        Ok(())
     }
 }
