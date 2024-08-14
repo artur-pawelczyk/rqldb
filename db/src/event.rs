@@ -124,7 +124,7 @@ mod tests {
             }
         });
 
-        db.execute_query(&Query::scan("document").delete())?;
+        db.delete(&Query::scan("document").delete())?;
 
         assert!(deleted_id.get().is_some());
 
@@ -180,7 +180,7 @@ mod tests {
             move |_, _, _| { called.set(true); Ok(()) }
         });
 
-        db.execute_query(&Query::scan("document").delete())?;
+        db.delete(&Query::scan("document").delete())?;
 
         assert!(called.get());
 

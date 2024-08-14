@@ -1,4 +1,4 @@
-use crate::dsl::{Definition, Query, Operator, TupleAttr, TupleBuilder, IntoTuple};
+use crate::dsl::{Definition, Delete, IntoTuple, Operator, Query, TupleAttr, TupleBuilder};
 use crate::schema::Type;
 use crate::tokenize::{Token, Tokenizer, TokenizerError};
 
@@ -64,7 +64,7 @@ pub fn parse_query(query_str: &str) -> Result<Query<'_>, ParseError> {
                     check_if_end(tokenizer.next()?)?;
                     query = query.count();
                 },
-                "delete" => query = query.delete(),
+                "delete" => unimplemented!(),
                 _ => return Err(ParseError{ msg: "Function not recognized", pos: token.pos() })
             },
             Token::End(_) => break,
@@ -73,6 +73,10 @@ pub fn parse_query(query_str: &str) -> Result<Query<'_>, ParseError> {
     }
 
     Ok(query)
+}
+
+pub fn parse_delete(query_str: &str) -> Result<Delete<'_>, ParseError> {
+    parse_query(query_str).map(|q| Delete(q))
 }
 
 fn check_if_end(token: Token) -> Result<(), ParseError> {
@@ -292,7 +296,6 @@ mod tests {
         assert_parse!("scan example | filter id > 1 | select_all");
         assert_parse!("scan example | join example.other_id other.id | select_all");
         assert_parse!("scan example | count");
-        assert_parse!("scan example | filter example.id = 1 | delete");
         assert_parse!("scan_index example.id = 1 | select_all");
         assert_parse!("scan example | apply sum example.n");
     }

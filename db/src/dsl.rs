@@ -73,9 +73,9 @@ impl<'a> Query<'a> {
         self
     }
 
-    pub fn delete(mut self) -> Self {
-        self.finisher = Finisher::Delete;
-        self
+    pub fn delete(mut self) -> Delete<'a> {
+        self.finisher = Finisher::AllColumns;
+        Delete(self)
     }
 }
 
@@ -375,6 +375,14 @@ impl<'a> fmt::Display for Insert<'a, Vec<TupleAttr<'a>>> {
     }
 }
 
+pub struct Delete<'a>(pub(crate) Query<'a>);
+
+impl fmt::Display for Delete<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 #[derive(Eq, PartialEq, Debug)]
 pub struct Definition {
     pub name: String,
@@ -483,10 +491,10 @@ mod tests {
     #[test]
     fn delete() {
         let delete_all = Query::scan("example").delete();
-        assert_eq!(delete_all.to_string(), "scan example | delete");
+        assert_eq!(delete_all.to_string(), "scan example | select_all");
 
         let delete_one = Query::scan("example").filter("example.id", EQ, "1").delete();
-        assert_eq!(delete_one.to_string(), "scan example | filter example.id = 1 | delete");
+        assert_eq!(delete_one.to_string(), "scan example | filter example.id = 1 | select_all");
     }
 
     #[test]

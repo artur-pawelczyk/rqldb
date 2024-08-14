@@ -94,6 +94,39 @@ impl Database {
         Ok(())
     }
 
+    pub fn delete(&self, cmd: &dsl::Delete) -> Result<()> {
+        let plan = compute_plan(&self, &cmd.0)?;
+        let source: ObjectView = match &plan.source {
+            Source::TableScan(obj) => {
+                ObjectView::Ref(obj.borrow())
+            },
+            Source::IndexScan(obj, val) => {
+                if let Some(tuple_id) = obj.borrow().find_in_index(val) {
+                    ObjectView::TupleRef(obj.borrow(), tuple_id)
+                } else {
+                    ObjectView::Empty
+                }
+            },
+            _ => { return Err(format!("Cannot execute delete for this type of query")); }
+        };
+
+        let ids = source.iter()
+            .filter(|t| test_filters(&plan.filters, t))
+            .map(|t| t.id())
+            .collect::<Vec<_>>();
+
+        drop(source);
+        let mut object = match &plan.source {
+            Source::TableScan(obj) => obj.borrow_mut(),
+            Source::IndexScan(obj, _) => obj.borrow_mut(),
+            _ => { return Err(format!("Cannot execute delete for this type of query")); }
+        };
+
+        object.remove_tuples(&ids);
+
+        Ok(())
+    }
+
     fn execute_plan(&self, plan: Plan) -> Result<QueryResults> {
         let source: ObjectView = match &plan.source {
             Source::TableScan(obj) => {
@@ -480,13 +513,13 @@ mod tests {
         db.define(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
         db.execute_query(&Query::tuple(&[("id", "1"), ("content", "the content")]).insert_into("document")).unwrap();
 
-        let tuple_delete = db.execute_query(&Query::tuple(&[("id", "1")]).delete());
+        let tuple_delete = db.delete(&Query::tuple(&[("id", "1")]).delete());
         assert!(tuple_delete.is_err());
 
-        let no_such_table = db.execute_query(&Query::scan("something").delete());
+        let no_such_table = db.delete(&Query::scan("something").delete());
         assert!(no_such_table.is_err());
 
-        db.execute_query(&Query::scan("document").delete()).unwrap();
+        db.delete(&Query::scan("document").delete()).unwrap();
 
         let result = db.execute_query(&Query::scan("document")).unwrap();
         assert!(result.tuples().next().is_none());

@@ -42,6 +42,8 @@ impl Shell {
     }
 
     pub(crate) fn handle_input(&mut self, input: &str, output: &mut impl fmt::Write) {
+        // TODO: Implement "insert" and "delete"
+        // TODO: Use 'match' expression
         if input.is_empty() {
         } else if let Some((cmd, args)) = maybe_read_command(input) {
             if cmd == "define" {

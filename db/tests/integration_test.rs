@@ -1,3 +1,4 @@
+use rqldb::parse::parse_delete;
 use rqldb::{parse_query, parse_definition};
 use rqldb::db::Database;
 
@@ -91,8 +92,8 @@ fn test_update() {
 fn test_delete() {
     let db = prepare_db();
 
-    let delete = parse_query("scan document | filter document.id = 1 | delete").unwrap();
-    db.execute_query(&delete).unwrap();
+    let delete = parse_delete("scan document | filter document.id = 1").unwrap();
+    db.delete(&delete).unwrap();
 
     let after_delete = db.execute_query(&parse_query("scan document").unwrap()).unwrap();
     assert_eq!(after_delete.tuples().count(), 1);
