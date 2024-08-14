@@ -11,6 +11,9 @@ type LpIndex = u16;
 type LpCountType = u32;
 const LP_COUNT: Range<usize> = 0..size_of::<LpCountType>();
 
+// TODO: Line pointer doesn't need to store both start and end. End of
+// one line pointer is equal to the start of the next one. There's no
+// need to store both.
 #[derive(Clone, Debug)]
 struct LinePointer(LpIndex, LpIndex);
 impl LinePointer {
