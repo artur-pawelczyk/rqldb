@@ -42,42 +42,47 @@ impl Shell {
     }
 
     pub(crate) fn handle_input(&mut self, input: &str, output: &mut impl fmt::Write) {
-        // TODO: Implement "insert" and "delete"
-        // TODO: Use 'match' expression
         if input.is_empty() {
-        } else if let Some((cmd, args)) = maybe_read_command(input) {
-            if cmd == "define" {
+            return;
+        }
+
+        // TODO: Implement "insert" and "delete"
+        match maybe_read_command(input) {
+            Some(("define", args)) => {
                 let command = match parse_definition(args) {
                     Ok(x) => x,
                     Err(error) => { write!(output, "{}", error).unwrap(); return; }
                 };
                 self.db.define(&command);
-            } else if cmd == "dump" {
-                if args.is_empty() {
-                    self.dump_all_relations(output);
-                } else {
-                    self.dump_relation(args, output);
-                }
-            } else if cmd == "sort" {
-                self.sort = if args.trim().is_empty() { None } else { read_sort_args(args) };
-            } else if cmd == "limit" {
-                if let Ok(limit) = args.parse() {
-                    self.limit = Some(limit)
-                } else {
-                    self.limit = None;
-                }
-            } else if cmd == "output" {
-                let printer: Box<dyn ResultPrinter> = match args {
-                    "simple" => Box::new(SimplePrinter),
-                    "table" => Box::new(TablePrinter),
-                    _ => { println!("No such output type"); return; },
-                };
-
-                self.result_printer = printer;
-            } else if cmd == "quit" {
+            },
+            Some(("dump", "")) => {
+                self.dump_all_relations(output);
+            },
+            Some(("dump", dump_file)) => {
+                self.dump_relation(dump_file, output);
+            },
+            Some(("sort", sort)) => {
+                self.sort = if sort.trim().is_empty() { None } else { read_sort_args(sort) };
+            },
+            Some(("limit", limit)) => {
+                self.limit = limit.parse().ok();
+            },
+            Some(("output", "simple")) => {
+                self.result_printer = Box::new(SimplePrinter);
+            },
+            Some(("output", "table")) => {
+                self.result_printer = Box::new(TablePrinter);
+            },
+            Some(("output", printer)) => {
+                eprintln!("Printer {printer} not supported");
+            },
+            Some(("quit", _)) => {
                 std::process::exit(0);
+            },
+            Some(_) => {
+                eprintln!("Command not recognized");
             }
-        } else {
+            None => {
                 let query = match parse_query(input) {
                     Ok(parsed) => parsed,
                     Err(error) => { println!("{}", error); return; }
@@ -96,6 +101,7 @@ impl Shell {
                     },
                     Result::Err(err) => writeln!(output, "{}", err).unwrap(),
                 }
+            },
         }
     }
 
