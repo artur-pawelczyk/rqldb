@@ -1,4 +1,4 @@
-use std::{fmt, io};
+use std::{error::Error, fmt, io};
 
 use rqldb::{parse_definition, parse_query, Database, QueryResults, SortOrder};
 use rqldb_live_storage::LiveStorage;
@@ -42,65 +42,67 @@ impl Shell {
     }
 
     pub(crate) fn handle_input(&mut self, input: &str, output: &mut impl fmt::Write) {
-        if input.is_empty() {
-            return;
+        if !input.is_empty() {
+            if let Err(e) = self.handle_input_inner(input, output) {
+                writeln!(output, "{e}").unwrap();
+            }
         }
+    }
 
+    fn handle_input_inner(&mut self, input: &str, output: &mut impl fmt::Write) -> Result<(), Box<dyn Error>> {
         // TODO: Implement "insert" and "delete"
         match maybe_read_command(input) {
             Some(("define", args)) => {
-                let command = match parse_definition(args) {
-                    Ok(x) => x,
-                    Err(error) => { write!(output, "{}", error).unwrap(); return; }
-                };
+                let command = parse_definition(args)?;
                 self.db.define(&command);
+                Ok(())
             },
             Some(("dump", "")) => {
-                self.dump_all_relations(output);
+                self.db.dump_all(output)?;
+                Ok(())
             },
-            Some(("dump", dump_file)) => {
-                self.dump_relation(dump_file, output);
+            Some(("dump", relation)) => {
+                self.db.dump(relation, output)?;
+                Ok(())
             },
             Some(("sort", sort)) => {
                 self.sort = if sort.trim().is_empty() { None } else { read_sort_args(sort) };
+                Ok(())
             },
             Some(("limit", limit)) => {
                 self.limit = limit.parse().ok();
+                Ok(())
             },
             Some(("output", "simple")) => {
                 self.result_printer = Box::new(SimplePrinter);
+                Ok(())
             },
             Some(("output", "table")) => {
                 self.result_printer = Box::new(TablePrinter);
+                Ok(())
             },
             Some(("output", printer)) => {
-                eprintln!("Printer {printer} not supported");
+                Err(ShellError(format!("Printer {printer} not supported")))?;
+                Ok(())
             },
             Some(("quit", _)) => {
                 std::process::exit(0);
             },
             Some(_) => {
-                eprintln!("Command not recognized");
+                Err(ShellError(format!("Command not recognized")))?;
+                Ok(())
             }
             None => {
-                let query = match parse_query(input) {
-                    Ok(parsed) => parsed,
-                    Err(error) => { println!("{}", error); return; }
-                };
-
-                match self.db.execute_query(&query) {
-                    Result::Ok(result) => {
-                        if let Some((sort_attr, ord)) = &self.sort {
-                            match result.sort(sort_attr, *ord) {
-                                Result::Ok(sorted) => { self.result_printer.print_result(&sorted, self.print_context(output)).unwrap() },
-                                Result::Err(err) => { writeln!(output, "{err}").unwrap(); },
-                            }
-                        } else {
-                            self.result_printer.print_result(&result, self.print_context(output)).unwrap();
-                        }
-                    },
-                    Result::Err(err) => writeln!(output, "{}", err).unwrap(),
+                let query = parse_query(input)?;
+                let result = self.db.execute_query(&query)?;
+                if let Some((sort_attr, ord)) = &self.sort {
+                    let sorted = result.sort(sort_attr, *ord)?;
+                    self.result_printer.print_result(&sorted, self.print_context(output))?;
+                } else {
+                    self.result_printer.print_result(&result, self.print_context(output))?;
                 }
+
+                Ok(())
             },
         }
     }
@@ -112,18 +114,6 @@ impl Shell {
         }
 
         ctx
-    }
-
-    fn dump_relation(&self, name: &str, output: &mut impl fmt::Write) {
-        if let Err(e) = self.db.dump(name, output) {
-            println!("{e}");
-        }
-    }
-
-    fn dump_all_relations(&self, output: &mut impl fmt::Write) {
-        if let Err(e) = self.db.dump_all(output) {
-            println!("{e}");
-        }
     }
 }
 
@@ -229,6 +219,18 @@ impl fmt::Write for NilOut {
         Ok(())
     }
 }
+
+#[derive(Debug)]
+pub(crate) struct ShellError(String);
+
+impl Error for ShellError {}
+
+impl fmt::Display for ShellError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+    
 
 #[cfg(test)]
 mod tests {
