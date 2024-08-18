@@ -1,6 +1,6 @@
 use std::{error::Error, fmt, io};
 
-use rqldb::{parse_definition, parse_query, Database, QueryResults, SortOrder};
+use rqldb::{parse::{parse_delete, parse_insert}, parse_definition, parse_query, Database, QueryResults, SortOrder};
 use rqldb_live_storage::LiveStorage;
 
 use crate::table::Table;
@@ -50,11 +50,20 @@ impl Shell {
     }
 
     fn handle_input_inner(&mut self, input: &str, output: &mut impl fmt::Write) -> Result<(), Box<dyn Error>> {
-        // TODO: Implement "insert" and "delete"
         match maybe_read_command(input) {
             Some(("define", args)) => {
                 let command = parse_definition(args)?;
                 self.db.define(&command);
+                Ok(())
+            },
+            Some(("insert", query)) => {
+                let insert = parse_insert(query)?;
+                self.db.insert(&insert)?;
+                Ok(())
+            },
+            Some(("delete", query)) => {
+                let delete = parse_delete(query)?;
+                self.db.delete(&delete)?;
                 Ok(())
             },
             Some(("dump", "")) => {
