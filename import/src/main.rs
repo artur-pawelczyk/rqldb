@@ -1,7 +1,7 @@
 mod import;
 
 use core::fmt;
-use std::{error::Error, io::Read};
+use std::{error::Error, fs::File, io::Read};
 
 use rqldb::{Database, Definition, Type};
 
@@ -26,7 +26,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                       .attribute("population", Type::NUMBER));
 
     let mut csv = String::new();
-    std::io::stdin().read_to_string(&mut csv).unwrap();
+    if let Some(file) = std::env::args().nth(1) {
+        File::options().read(true).open(&file)?.read_to_string(&mut csv)?;
+    } else {
+        std::io::stdin().read_to_string(&mut csv)?;
+    }
     
     Import::into_table("state")
         .column("state_id", "id")
