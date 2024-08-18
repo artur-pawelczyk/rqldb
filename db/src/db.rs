@@ -144,13 +144,19 @@ impl Database {
 
         for source_tuple in source.iter() {
             let mut tuple = source_tuple;
+            let mut joined = None;
 
             for (join, source_object) in zip(plan.joins.iter(), join_sources.iter()) {
+                joined = Some(false);
                 let key = tuple.element(join.joinee_key());
                 if let Some(join_source) = source_object.iter().find(|bytes| bytes.element(join.joiner_key()) == key) {
                     tuple = tuple.extend(join_source);
+                    joined = Some(true);
                 }
-                // TODO: Shouldn't a tuple be skipped when join doesn't find a match?
+            }
+
+            if !joined.unwrap_or(true) {
+                continue;
             }
 
             if test_filters(&plan.filters, &tuple) {
@@ -274,7 +280,7 @@ fn tuple_to_cells(attrs: &[Attribute], tuple: &Tuple) -> Vec<u8> {
             debug_assert!(attr.name() == elem.name());
             bytes.extend(elem.bytes());
         } else {
-            panic!("Attribute not matched {}", attr.name());
+            panic!("Attribute {} not found in the tuple", attr.name());
         }
 
         bytes
@@ -383,6 +389,7 @@ mod tests {
         db.define(&Definition::relation("type").attribute("id", Type::NUMBER).attribute("name", Type::TEXT));
 
         db.insert(&Query::tuple(&[("id", "1"), ("content", "example"), ("type_id", "2")]).insert_into("document")).unwrap();
+        db.insert(&Query::tuple(&[("id", "2"), ("content", "no type"), ("type_id", "3")]).insert_into("document")).unwrap();
         db.insert(&Query::tuple(&[("id", "1"), ("name", "type_a")]).insert_into("type")).unwrap();
         db.insert(&Query::tuple(&[("id", "2"), ("name", "type_b")]).insert_into("type")).unwrap();
 
