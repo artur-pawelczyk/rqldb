@@ -30,7 +30,7 @@ fn benchmark_insert(c: &mut Criterion) {
                                      .inferred("title", "example_doc")
                                      .inferred("content", "the content")
             ).insert_into("document");
-            db.execute_query(&query).unwrap();
+            db.insert(&query).unwrap();
         }
     }));
 }
@@ -39,7 +39,7 @@ fn benchmark_delete(c: &mut Criterion) {
     fn prepare_db() -> Database {
         let db = create_database(DbType::PrimaryIndex);
         for i in 1..100_000 {
-            db.execute_query(&Query::tuple(TupleBuilder::new()
+            db.insert(&Query::tuple(TupleBuilder::new()
                                            .inferred("id", i)
                                            .inferred("type", "12")
                                            .inferred("title", "example_doc")
@@ -71,7 +71,7 @@ fn benchmark_insert_without_index(c: &mut Criterion) {
                                      .inferred("title", "example_doc")
                                      .inferred("content", "the content")
             ).insert_into("document");
-            db.execute_query(&query).unwrap();
+            db.insert(&query).unwrap();
         }
     }));
 }
@@ -85,7 +85,7 @@ fn benchmark_filter(c: &mut Criterion) {
                                  .inferred("title", "example_doc")
                                  .inferred("content", "the content")
         ).insert_into("document");
-        db.execute_query(&query).unwrap();
+        db.insert(&query).unwrap();
     }
 
     let query = Query::scan("document").filter("document.id", Operator::EQ, "100");
@@ -101,7 +101,7 @@ fn benchmark_index_search(c: &mut Criterion) {
                                  .inferred("title", "example_doc")
                                  .inferred("content", "the content")
         ).insert_into("document");
-        db.execute_query(&query).unwrap();
+        db.insert(&query).unwrap();
     }
 
     let query = Query::scan_index("document.id", Operator::EQ, "100");
@@ -118,7 +118,7 @@ fn benchmark_count(c: &mut Criterion) {
                                  .inferred("title", "example_doc")
                                  .inferred("content", "the content")
         ).insert_into("document");
-        db.execute_query(&query).unwrap();
+        db.insert(&query).unwrap();
     }
 
     let count_query = Query::scan("document").count();
@@ -132,14 +132,14 @@ fn benchmark_join(c: &mut Criterion) {
 
     let types = 1..=10;
     for id in types.clone() {
-        db.execute_query(&Query::build_tuple()
+        db.insert(&Query::build_tuple()
                          .inferred("id", id)
                          .inferred("name", "something")
                          .build().insert_into("type")).unwrap();
     }
 
     for (doc_id, type_id) in iter::zip(0..1_000_000, types.cycle()) {
-        db.execute_query(&Query::build_tuple()
+        db.insert(&Query::build_tuple()
                          .inferred("id", doc_id)
                          .inferred("title", "something")
                          .inferred("type", type_id)
@@ -161,7 +161,7 @@ fn benchmark_read_results(c: &mut Criterion) {
                                  .inferred("title", "example_doc")
                                  .inferred("content", "the content")
         ).insert_into("document");
-        db.execute_query(&query).unwrap();
+        db.insert(&query).unwrap();
     }
 
     c.bench_function("read_results", |b| b.iter(|| {
