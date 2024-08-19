@@ -1,6 +1,6 @@
 mod bytes;
 mod event;
-pub mod db;
+mod database;
 pub mod dsl;
 pub mod dump;
 pub mod object;
@@ -22,7 +22,7 @@ use object::{Attribute, NamedAttribute as _};
 use bytes::IntoBytes as _;
 
 pub use crate::schema::Type;
-pub use crate::db::Database;
+pub use crate::database::Database;
 pub use crate::dsl::{Query, Operator, Definition};
 pub use crate::parse::{parse_definition, parse_query};
 pub use crate::event::EventSource;

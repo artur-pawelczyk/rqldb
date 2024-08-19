@@ -1,5 +1,5 @@
 use crate::bytes::into_bytes;
-use crate::db::SharedObject;
+use crate::database::SharedObject;
 use crate::Database;
 use crate::Operator;
 use crate::dsl;
