@@ -1,14 +1,15 @@
+mod insert;
+
 use core::fmt;
 use std::cell::{RefCell, Ref};
 use std::io;
 use std::iter::zip;
 use std::rc::Rc;
 
-use crate::bytes::write_as_bytes;
 use crate::dump::{dump_values, dump_create};
 
 use crate::event::EventHandler;
-use crate::object::{Attribute, IndexedObject, NamedAttribute, ObjectId, TempObject};
+use crate::object::{Attribute, IndexedObject, ObjectId, TempObject};
 use crate::page::TupleId;
 use crate::plan::{Source, Filter, Plan, Finisher, ApplyFn};
 use crate::schema::{AttributeRef, TableId};
@@ -16,7 +17,7 @@ use crate::tuple::Tuple;
 use crate::{schema::Schema, QueryResults, plan::compute_plan};
 use crate::{dsl, Query, ResultAttribute};
 
-type Result<T> = std::result::Result<T, String>;
+pub(crate) type Result<T> = std::result::Result<T, String>;
 
 pub(crate) type SharedObject = Rc<RefCell<IndexedObject>>;
 
@@ -62,26 +63,6 @@ impl Database {
 
     pub fn execute_query(&self, query: &dsl::Query) -> Result<QueryResults> {
         self.execute_plan(compute_plan(self, query)?)
-    }
-
-    pub fn insert(&self, cmd: &dsl::Insert<'_, Vec<dsl::TupleAttr<'_>>>) -> Result<()> {
-        let mut target = self.object(cmd.target)
-            .ok_or_else(|| format!("Relation {} not found", cmd.target))?
-            .borrow_mut();
-
-        let mut byte_tuple = Vec::new();
-        for attr in target.attributes() {
-            let elem = cmd.tuple
-                .iter().find(|elem| elem.name == attr.name.as_ref() || elem.name == attr.short_name())
-                .ok_or_else(|| format!("Attribute {} is missing", attr.name))?;
-
-            write_as_bytes(attr.kind, &elem.value, &mut byte_tuple)
-                .map_err(|_| format!("Error encoding value for attribute {}", attr.name))?;
-        }
-
-        target.add_tuple(&byte_tuple);
-
-        Ok(())
     }
 
     pub fn delete(&self, cmd: &dsl::Delete) -> Result<()> {
