@@ -1,4 +1,5 @@
 mod insert;
+mod obj_view;
 
 use core::fmt;
 use std::cell::{RefCell, Ref};
@@ -6,12 +7,13 @@ use std::io;
 use std::iter::zip;
 use std::rc::Rc;
 
+use obj_view::ObjectView;
+
 use crate::dump::{dump_values, dump_create};
 
 use crate::event::EventHandler;
-use crate::object::{Attribute, IndexedObject, ObjectId, TempObject};
-use crate::page::TupleId;
-use crate::plan::{Source, Filter, Plan, Finisher, ApplyFn};
+use crate::object::{Attribute, IndexedObject, ObjectId};
+use crate::plan::{ApplyFn, Filter, Finisher, Plan, Source};
 use crate::schema::{AttributeRef, TableId};
 use crate::tuple::Tuple;
 use crate::{schema::Schema, QueryResults, plan::compute_plan};
@@ -67,19 +69,7 @@ impl Database {
 
     pub fn delete(&self, cmd: &dsl::Delete) -> Result<()> {
         let plan = compute_plan(&self, &cmd.0)?;
-        let source: ObjectView = match &plan.source {
-            Source::TableScan(obj) => {
-                ObjectView::Ref(obj.borrow())
-            },
-            Source::IndexScan(obj, val) => {
-                if let Some(tuple_id) = obj.borrow().find_in_index(val) {
-                    ObjectView::TupleRef(obj.borrow(), tuple_id)
-                } else {
-                    ObjectView::Empty
-                }
-            },
-            _ => { return Err(format!("Cannot execute delete for this type of query")); }
-        };
+        let source = ObjectView::from(&plan.source);
 
         let ids = source.iter()
             .filter(|t| test_filters(&plan.filters, t))
@@ -99,27 +89,7 @@ impl Database {
     }
 
     fn execute_plan(&self, plan: Plan) -> Result<QueryResults> {
-        let source: ObjectView = match &plan.source {
-            Source::TableScan(obj) => {
-                ObjectView::Ref(obj.borrow())
-            },
-            Source::Tuple(values_map) => {
-                let attrs = plan.source.attributes();
-                let mut temp_object = TempObject::from_attrs(&attrs);
-                let values: Vec<_> = values_map.values().collect();
-                temp_object.push_str(&values);
-                ObjectView::Val(temp_object)
-            },
-            Source::IndexScan(obj, val) => {
-                if let Some(tuple_id) = obj.borrow().find_in_index(val) {
-                    ObjectView::TupleRef(obj.borrow(), tuple_id)
-                } else {
-                    ObjectView::Empty
-                }
-            },
-            _ => unimplemented!()
-        };
-
+        let source = ObjectView::from(&plan.source);
         let join_sources: Vec<Ref<IndexedObject>> = plan.joins.iter().map(|join| join.source_object().borrow()).collect();
         let mut sink = self.create_sink(&plan);
 
@@ -196,24 +166,6 @@ impl Database {
 
 fn test_filters(filters: &[Filter], tuple: &Tuple) -> bool {
     filters.iter().all(|filter| filter.matches_tuple(tuple))
-}
-
-enum ObjectView<'a> {
-    Ref(Ref<'a, IndexedObject>),
-    TupleRef(Ref<'a, IndexedObject>, TupleId),
-    Val(TempObject),
-    Empty,
-}
-
-impl<'a> ObjectView<'a> {
-    fn iter(&'a self) -> Box<dyn Iterator<Item = Tuple<'a>> + 'a> {
-        match self {
-            Self::Ref(o) => o.iter(),
-            Self::TupleRef(o, id) => Box::new(std::iter::once_with(|| o.get(*id))),
-            Self::Val(o) => o.iter(),
-            Self::Empty => Box::new(std::iter::empty()),
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -461,7 +413,7 @@ mod tests {
         db.define(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
         db.insert(&Query::tuple(&[("id", "1"), ("content", "the content")]).insert_into("document")).unwrap();
 
-        let tuple_delete = db.delete(&Query::tuple(&[("id", "1")]).delete());
+        let tuple_delete = db.delete(&Query::build_tuple().typed(Type::NUMBER, "id", 1).build().delete());
         assert!(tuple_delete.is_err());
 
         let no_such_table = db.delete(&Query::scan("something").delete());
