@@ -13,7 +13,7 @@ use crate::tuple::{element_at_pos, PositionalAttribute};
 use crate::{tuple::Tuple, schema::Relation, Type};
 use crate::page::TupleId;
 
-pub type ObjectId = usize;
+pub type ObjectId = u32;
 
 #[derive(Default)]
 pub(crate) struct IndexedObject {
@@ -273,11 +273,11 @@ pub struct Attribute {
 }
 
 impl PositionalAttribute for Attribute {
-    fn pos(&self) -> usize {
+    fn pos(&self) -> u32 {
         self.reference.attr_id
     }
 
-    fn object_id(&self) -> Option<usize> {
+    fn object_id(&self) -> Option<u32> {
         self.reference.rel_id
     }
 }

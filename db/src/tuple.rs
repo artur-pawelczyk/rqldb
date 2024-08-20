@@ -1,19 +1,19 @@
 use core::fmt;
 
-use crate::object::{Attribute, IndexedObject, NamedAttribute as _};
+use crate::object::{Attribute, IndexedObject, NamedAttribute as _, ObjectId};
 use crate::page::TupleId;
 use crate::schema::Type;
 
 pub trait PositionalAttribute {
-    fn pos(&self) -> usize;
-    fn object_id(&self) -> Option<usize> {
+    fn pos(&self) -> u32;
+    fn object_id(&self) -> Option<u32> {
         None
     }
 }
 
 impl PositionalAttribute for usize {
-    fn pos(&self) -> usize {
-        *self
+    fn pos(&self) -> u32 {
+        *self as u32
     }
 }
 
@@ -22,7 +22,7 @@ pub(crate) struct Tuple<'a> {
     id: TupleId,
     raw: &'a [u8],
     attrs: &'a [Attribute],
-    source_id: usize,
+    source_id: ObjectId,
     rest: Option<Box<Tuple<'a>>>,
 }
 
@@ -57,16 +57,16 @@ impl<'a> Tuple<'a> {
 
         if let Some(obj_id) = attr.object_id() {
             if obj_id == self.source_id {
-                let attr = self.attrs.get(pos)?;
-                let start = self.offset(pos);
+                let attr = self.attrs.get(pos as usize)?;
+                let start = self.offset(pos as usize);
                 let end = start + attr.kind().size(&self.raw[start..]);
                 Some(Element { raw: &self.raw[start..end], kind: attr.kind(), name: attr.name() })
             } else {
                 self.rest.as_ref().and_then(|tuple| tuple.element(attr))
             }
         } else {
-            let attr = self.attrs.get(pos)?;
-            let start = self.offset(pos);
+            let attr = self.attrs.get(pos as usize)?;
+            let start = self.offset(pos as usize);
             let end = start + attr.kind().size(&self.raw[start..]);
             Some(Element { raw: &self.raw[start..end], kind: attr.kind(), name: attr.name() })
         }
@@ -185,9 +185,9 @@ impl<'a> ByteTuple for &'a [u8] {
     }
 }
 
-pub(crate) fn element_at_pos<T: ByteTuple>(mut tuple: T, attrs: &[Attribute], n: usize) -> T::Element {
+pub(crate) fn element_at_pos<T: ByteTuple>(mut tuple: T, attrs: &[Attribute], n: u32) -> T::Element {
     let mut last = None;
-    for attr in attrs.iter().take(n+1) {
+    for attr in attrs.iter().take(n as usize + 1) {
         let e = tuple.next_element(attr.kind());
         last = Some(e.0);
         tuple = e.1

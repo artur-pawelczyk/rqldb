@@ -9,7 +9,7 @@ pub struct Schema {
 
 #[derive(Clone)]
 pub struct Relation {
-    pub id: usize,
+    pub id: u32,
     pub name: Box<str>,
     columns: Vec<InnerColumn>,
 }
@@ -30,7 +30,7 @@ pub trait TableId {
     fn find_in(self, schema: &Schema) -> Option<&Relation>;
 }
 
-impl TableId for usize {
+impl TableId for u32 {
     fn find_in(self, schema: &Schema) -> Option<&Relation> {
         schema.relations.iter().find(|rel| rel.id == self)
     }
@@ -51,13 +51,13 @@ impl TableId for &String {
 
 impl TableId for &AttributeRef {
     fn find_in(self, schema: &Schema) -> Option<&Relation> {
-        schema.relations.get(self.rel_id?)
+        schema.relations.get(self.rel_id? as usize)
     }
 }
 
 impl TableId for &Column<'_> {
     fn find_in(self, schema: &Schema) -> Option<&Relation> {
-        self.reference().rel_id.and_then(|id| schema.relations.get(id))
+        self.reference().rel_id.and_then(|id| schema.relations.get(id as usize))
     }
 }
 
@@ -83,7 +83,7 @@ impl AttributeIdentifier for &str {
 
 impl AttributeIdentifier for &AttributeRef {
     fn find_in_schema(self, schema: &Schema) -> Option<Column> {
-        let rel = schema.relations.get(self.rel_id?)?;
+        let rel = schema.relations.get(self.rel_id? as usize)?;
         rel.attribute_by_id(self.attr_id)
     }
 
@@ -99,22 +99,22 @@ impl AttributeIdentifier for &AttributeRef {
 #[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub struct AttributeRef {
     // TODO: make this field a u32 so the whole struct can fit in 16 bytes
-    pub(crate) rel_id: Option<usize>,
-    pub(crate) attr_id: usize,
+    pub(crate) rel_id: Option<u32>,
+    pub(crate) attr_id: u32,
 }
 
 impl AttributeRef {
-    pub(crate) fn temporary(attr_id: usize) -> Self {
+    pub(crate) fn temporary(attr_id: u32) -> Self {
         Self { attr_id, rel_id: None }
     }
 }
 
 impl PositionalAttribute for AttributeRef {
-    fn pos(&self) -> usize {
+    fn pos(&self) -> u32 {
         self.attr_id
     }
 
-    fn object_id(&self) -> Option<usize> {
+    fn object_id(&self) -> Option<u32> {
         self.rel_id
     }
 }
@@ -123,8 +123,8 @@ impl PositionalAttribute for AttributeRef {
 pub struct Column<'a> {
     inner: &'a InnerColumn,
     table: &'a Relation,
-    id: usize,
-    rel_id: usize,
+    id: u32,
+    rel_id: u32,
 }
 
 impl<'a> fmt::Debug for Column<'a> {
@@ -304,7 +304,7 @@ impl<'a> TableBuilder<'a> {
     }
 
     pub fn add(self) -> &'a Relation {
-        let id = self.schema.relations.len();
+        let id = self.schema.relations.len() as u32;
         self.schema.relations.push(Relation { id, name: Box::from(self.name), columns: self.columns });
         self.schema.relations.last().unwrap()
     }
@@ -312,7 +312,7 @@ impl<'a> TableBuilder<'a> {
 
 pub struct ColumnIter<'a> {
     table: &'a Relation,
-    rel_id: usize,
+    rel_id: u32,
     pos: usize,
 }
 
@@ -323,7 +323,7 @@ impl<'a> Iterator for ColumnIter<'a> {
         let next = self.table.columns.get(self.pos).map(|inner| Column {
             inner,
             table: self.table,
-            id: self.pos,
+            id: self.pos as u32,
             rel_id: self.rel_id
         });
         self.pos += 1;
@@ -377,10 +377,10 @@ impl Relation {
     /// assert_eq!(schema.find_relation("example").unwrap().indexed_column().unwrap().short_name(), "id");
     /// ```
     pub fn indexed_column(&self) -> Option<Column> {
-        self.columns.iter().enumerate().find(|(_, col)| col.indexed).map(|(pos, col)| Column{
+        self.columns.iter().enumerate().find(|(_, col)| col.indexed).map(|(pos, col)| Column {
             table: self,
             inner: col,
-            id: pos,
+            id: pos as u32,
             rel_id: self.id
         })
     }
@@ -401,13 +401,13 @@ impl Relation {
             .map(|(pos, col)| Column {
                 table: self,
                 inner: col,
-                id: pos,
+                id: pos as u32,
                 rel_id: self.id,
             })
     }
 
-    fn attribute_by_id(&self, attr_id: usize) -> Option<Column> {
-        let rel = self.columns.get(attr_id)?;
+    fn attribute_by_id(&self, attr_id: u32) -> Option<Column> {
+        let rel = self.columns.get(attr_id as usize)?;
         Some(Column {
             table: self,
             inner: rel,

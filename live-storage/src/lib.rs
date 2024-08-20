@@ -4,7 +4,7 @@ mod schema;
 use std::{fs::{create_dir_all, File}, io, path::{Path, PathBuf}};
 
 use heap::Heap;
-use rqldb::{schema::Schema, Database, EventSource};
+use rqldb::{object::ObjectId, schema::Schema, Database, EventSource};
 use schema::{read_schema, write_schema};
 
 pub struct LiveStorage {
@@ -72,7 +72,7 @@ impl LiveStorage {
         }
     }
 
-    fn object_file(&self, id: usize) -> Option<PathBuf> {
+    fn object_file(&self, id: ObjectId) -> Option<PathBuf> {
         let mut file = self.dir.clone();
         file.push(id.to_string());
         if file.is_file() {

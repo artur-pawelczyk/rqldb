@@ -55,7 +55,7 @@ impl Database {
         }).add();
 
         self.objects.insert(
-            relation.id,
+            relation.id as usize,
             Rc::new(RefCell::new(IndexedObject::from_table(relation).with_handler(Rc::clone(&self.handler))))
         );
 
@@ -133,7 +133,7 @@ impl Database {
 
     pub(crate) fn object(&self, id: impl TableId) -> Option<&SharedObject> {
         let rel = self.schema.find_relation(id)?;
-        self.objects.get(rel.id)
+        self.objects.get(rel.id as usize)
     }
 
     pub fn schema(&self) -> &Schema {
@@ -141,7 +141,7 @@ impl Database {
     }
 
     pub fn read_object(&mut self, id: ObjectId, r: impl io::Read) -> Result<()> {
-        let obj = self.objects.get(id).ok_or_else(|| format!("No such object: {id}"))?;
+        let obj = self.objects.get(id as usize).ok_or_else(|| format!("No such object: {id}"))?;
         obj.borrow_mut().read(r).map_err(|_| format!("IO error"))?;
         Ok(())
     }
