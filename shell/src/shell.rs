@@ -1,4 +1,4 @@
-se std::{error::Error, fmt, io};
+use std::{error::Error, fmt, io};
 
 use rqldb::{parse_definition, parse_delete, parse_insert, parse_query, Database, QueryResults, SortOrder};
 use rqldb_live_storage::LiveStorage;
