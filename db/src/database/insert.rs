@@ -29,7 +29,7 @@ impl Database {
 mod tests {
     use dsl::{Definition, Query};
 
-    use crate::{plan::Plan, Type};
+    use crate::Type;
 
     use super::*;
 
@@ -75,7 +75,6 @@ mod tests {
     fn update() {
         let mut db = Database::default();
         db.define(&Definition::relation("document").indexed_attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
-        let obj = db.object("document").unwrap();
 
         db.insert(&Query::build_tuple()
                   .inferred("id", "1")
@@ -86,7 +85,7 @@ mod tests {
                   .inferred("content", "new content")
                   .build().insert_into("document")).unwrap();
 
-        let result = db.execute_plan(Plan::scan(obj)).unwrap();
+        let result = db.execute_query(&Query::scan("document")).unwrap();
         let mut tuples = result.tuples();
         assert_eq!(tuples.next().unwrap().element("document.content").unwrap().to_string(), "new content");
         assert!(tuples.next().is_none());
