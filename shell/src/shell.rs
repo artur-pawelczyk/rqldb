@@ -1,6 +1,6 @@
-use std::{error::Error, fmt, io};
+se std::{error::Error, fmt, io};
 
-use rqldb::{parse::{parse_delete, parse_insert}, parse_definition, parse_query, Database, QueryResults, SortOrder};
+use rqldb::{parse_definition, parse_delete, parse_insert, parse_query, Database, QueryResults, SortOrder};
 use rqldb_live_storage::LiveStorage;
 
 use crate::table::Table;

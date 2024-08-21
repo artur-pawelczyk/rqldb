@@ -1,6 +1,4 @@
-// TODO: Import 'parse_delete' and 'parse_insert' from crate root
-use rqldb::parse::{parse_delete, parse_insert};
-use rqldb::{parse_query, parse_definition};
+use rqldb::{parse_definition, parse_delete, parse_insert, parse_query};
 use rqldb::Database;
 
 fn prepare_db() -> Database {
