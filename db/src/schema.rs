@@ -98,7 +98,6 @@ impl AttributeIdentifier for &AttributeRef {
 
 #[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub struct AttributeRef {
-    // TODO: make this field a u32 so the whole struct can fit in 16 bytes
     pub(crate) rel_id: Option<u32>,
     pub(crate) attr_id: u32,
 }
