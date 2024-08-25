@@ -174,7 +174,7 @@ fn benchmark_read_results(c: &mut Criterion) {
 }
 
 fn benchmark_parse(c: &mut Criterion) {
-    let query = "scan example | join example.id other.id | filter example.value > 5 | insert_into foo";
+    let query = "scan example | join example.id other.id | filter example.value > 5";
 
     c.bench_function("parse query", |b| b.iter(|| parse_query(query).unwrap()));
 }
