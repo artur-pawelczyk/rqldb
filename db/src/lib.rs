@@ -13,6 +13,7 @@ pub mod page;
 mod heap;
 
 use core::fmt;
+use std::cell::Cell;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -29,7 +30,7 @@ pub use crate::event::EventSource;
 
 pub struct QueryResults {
     attributes: Vec<ResultAttribute>,
-    results: Vec<Vec<u8>>,
+    results: Cell<Box<dyn Iterator<Item = Vec<u8>>>>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -62,7 +63,7 @@ impl PartialEq<str> for ResultAttribute {
 #[derive(Debug)]
 pub struct Tuple<'a> {
     attributes: &'a [ResultAttribute],
-    contents: &'a [u8],
+    contents: Vec<u8>,
 }
 
 impl<'a> Tuple<'a> {
@@ -72,6 +73,10 @@ impl<'a> Tuple<'a> {
 
     pub fn is_empty(&self) -> bool {
         self.contents.is_empty()
+    }
+
+    pub fn attributes(&self) -> impl Iterator<Item = &ResultAttribute> {
+        self.attributes.iter()
     }
 
     pub fn element(&self, name: &str) -> Option<Element> {
@@ -227,62 +232,44 @@ impl QueryResults {
         let tuple = val.into().to_byte_vec();
         Self {
             attributes: vec![ResultAttribute { name: Box::from(name), kind: Type::NUMBER }],
-            results: vec![tuple],
+            results: Cell::new(Box::new(std::iter::once(tuple))),
         }
     }
 
     pub(crate) fn empty() -> Self {
-        Self { attributes: vec![], results: Vec::new() }
+        Self { attributes: vec![], results: Cell::new(Box::new(std::iter::empty())) }
     }
 
     pub fn attributes(&self) -> &[ResultAttribute] {
         &self.attributes
     }
 
-    pub fn tuples(&self) -> impl Iterator<Item = Tuple> {
-        Tuples {
-            attributes: &self.attributes,
-            contents: &self.results
-        }
+    pub fn tuples<'a>(&'a self) -> impl Iterator<Item = Tuple<'a>> {
+        self.take_results().map(|contents| Tuple { attributes: &self.attributes, contents })
     }
 
     pub fn sort(self, attr: &str, order: SortOrder) -> Result<Self, SortError> {
         let mut sorted_contents = BTreeMap::new();
-        for byte_tuple in self.results.into_iter() {
-            let tuple = Tuple { attributes: &self.attributes, contents: &byte_tuple };
+        for byte_tuple in self.take_results() {
+            let tuple = Tuple { attributes: &self.attributes, contents: byte_tuple };
             let elem = tuple.element(attr).ok_or_else(|| SortError { missing_attribute: Box::from(attr) })?;
-            sorted_contents.insert(elem.as_bytes().to_vec(), byte_tuple);
+            sorted_contents.insert(elem.as_bytes().to_vec(), tuple.contents);
         }
 
         match order {
             SortOrder::SmallestFirst => Ok(Self {
                 attributes: self.attributes,
-                results: sorted_contents.into_iter().map(|(_, v)| v).collect()
+                results: Cell::new(Box::new(sorted_contents.into_iter().map(|(_, v)| v))),
             }),
             SortOrder::LargestFirst => Ok(Self {
                 attributes: self.attributes,
-                results: sorted_contents.into_iter().rev().map(|(_, v)| v).collect()
+                results: Cell::new(Box::new(sorted_contents.into_iter().rev().map(|(_, v)| v))),
             }),
         }
     }
-}
 
-struct Tuples<'a> {
-    attributes: &'a [ResultAttribute],
-    contents: &'a [Vec<u8>],
-}
-
-impl<'a> Iterator for Tuples<'a> {
-    type Item = Tuple<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(bytes) = self.contents.get(0) {
-            let tuple = Tuple { attributes: self.attributes, contents: bytes };
-            self.contents = &self.contents[1..];
-            Some(tuple)
-        } else {
-            None
-        }
+    fn take_results(&self) -> Box<dyn Iterator<Item = Vec<u8>>> {
+        self.results.replace(Box::new(std::iter::empty()))
     }
 }
 

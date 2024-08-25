@@ -1,5 +1,6 @@
 use core::fmt;
-use std::cell::{RefCell, Ref};
+use std::cell::{Cell, Ref, RefCell};
+use std::collections::VecDeque;
 use std::io;
 use std::iter::zip;
 use std::rc::Rc;
@@ -9,7 +10,8 @@ use crate::dump::{dump_values, dump_create};
 
 use crate::event::EventHandler;
 use crate::object::{Attribute, IndexedObject, ObjectId};
-use crate::plan::{ApplyFn, Filter, Finisher, Plan, Source};
+use crate::page::TupleId;
+use crate::plan::{self, ApplyFn, Filter, Finisher, Plan, Source};
 use crate::schema::{AttributeRef, TableId};
 use crate::tuple::Tuple;
 use crate::{schema::Schema, QueryResults, plan::compute_plan};
@@ -83,6 +85,33 @@ impl Database {
     }
 
     fn execute_plan(&self, plan: Plan) -> Result<QueryResults> {
+        if plan.is_result_immediate() {
+            return self.execute_plan_immediate(plan);
+        }
+
+        let ids = ObjectView::from(&plan.source).iter().map(|t| t.id()).collect::<VecDeque<_>>();
+
+        let source = match &plan.source {
+            Source::TableScan(obj) => Rc::clone(obj),
+            Source::IndexScan(obj, _) => Rc::clone(obj),
+            s => todo!("{}", s),
+        };
+
+        let attributes = plan.final_attributes().iter().map(Into::into).collect();
+        let results = ResultIter {
+            source,
+            ids,
+            joins: Box::from(plan.joins),
+            filters: Box::from(plan.filters),
+        };
+
+        Ok(QueryResults {
+            attributes,
+            results: Cell::new(Box::new(results)),
+        })
+    }
+
+    fn execute_plan_immediate(&self, plan: Plan) -> Result<QueryResults> {
         let source = ObjectView::from(&plan.source);
         let join_sources: Vec<Ref<IndexedObject>> = plan.joins.iter().map(|join| join.source_object().borrow()).collect();
         let mut sink = self.create_sink(&plan);
@@ -188,9 +217,9 @@ impl Sink {
             Self::Sum(_, n) => QueryResults::single_number("sum", n),
             Self::Max(_, n) => QueryResults::single_number("max", n),
             Self::Return(attributes, results) => {
-                QueryResults{
+                QueryResults {
                     attributes: attributes.iter().map(ResultAttribute::from).collect(),
-                    results,
+                    results: Cell::new(Box::new(results.into_iter())),
                 }
             }
             Self::NoOp => QueryResults::empty(),
@@ -212,6 +241,52 @@ fn tuple_to_cells(attrs: &[Attribute], tuple: &Tuple) -> Vec<u8> {
 
         bytes
     })
+}
+
+struct ResultIter {
+    ids: VecDeque<TupleId>,
+    source: SharedObject,
+    joins: Box<[plan::Join]>,
+    filters: Box<[plan::Filter]>,
+}
+
+impl ResultIter {
+    fn by_id(&self, id: TupleId) -> Option<Vec<u8>> {
+        let source = self.source.borrow();
+        let tuple = source.get(id);
+        let mut output = tuple.raw_bytes().to_vec();
+
+        for join in &self.joins {
+            let key = tuple.element(join.joinee_key());
+            if let Some(join_tuple) = join.source_object()
+                .borrow().iter()
+                .find(|join_tuple| join_tuple.element(join.joiner_key()) == key) {
+                    output.extend(join_tuple.raw_bytes());
+                } else {
+                    return None;
+                }
+        }
+
+        if test_filters(&self.filters, &tuple) {
+            Some(output)
+        } else {
+            None
+        }
+    }
+}
+
+impl Iterator for ResultIter {
+    type Item = Vec<u8>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(id) = self.ids.pop_back() {
+            if let Some(tuple) = self.by_id(id) {
+                return Some(tuple);
+            }
+        }
+
+        None
+    }
 }
 
 #[cfg(test)]
@@ -400,7 +475,7 @@ mod tests {
     #[test]
     fn recover_object() {
         let mut source_db = Database::default();
-        source_db.define(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT));        
+        source_db.define(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
         let contents = Rc::new(RefCell::new(Vec::<u8>::new()));
         source_db.on_page_modified({
             let contents = Rc::clone(&contents);
@@ -412,14 +487,14 @@ mod tests {
         source_db.insert(&Query::tuple(TupleBuilder::new()
                                               .inferred("id", "1")
                                               .inferred("content", "name")).insert_into("document")).unwrap();
-        
+
         let mut target_db = Database::default();
         target_db.define(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
         let object = target_db.object("document").unwrap().borrow().id();
         target_db.read_object(object, contents.borrow().as_slice()).unwrap();
 
         let all = target_db.execute_query(&Query::scan("document")).unwrap();
-        assert_eq!(all.tuples().count(), 1);        
+        assert_eq!(all.tuples().count(), 1);
     }
 
     #[test]

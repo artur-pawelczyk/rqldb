@@ -10,6 +10,7 @@ use crate::schema::Column;
 use crate::schema::Type;
 use crate::tuple::Tuple;
 
+use core::fmt;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -25,15 +26,6 @@ pub(crate) struct Plan {
 }
 
 impl Plan {
-    #[cfg(test)]
-    pub fn scan(obj: &SharedObject) -> Self {
-        Self{
-            source: Source::scan_table(obj),
-            finisher: Finisher::Return,
-            ..Plan::default()
-        }
-    }
-
     pub fn final_attributes(&self) -> Vec<Attribute> {
         let mut attrs = Vec::new();
 
@@ -44,6 +36,20 @@ impl Plan {
         }
 
         attrs
+    }
+
+    pub(crate) fn is_result_immediate(&self) -> bool {
+        match self.source {
+            Source::Tuple(_) => true,
+            _ => {
+                match self.finisher {
+                    Finisher::Return => false,
+                    Finisher::Count => true,
+                    Finisher::Apply(_, _) => true,
+                    Finisher::Nil => true,
+                }
+            },
+        }
     }
 }
 
@@ -97,6 +103,17 @@ impl Source {
             Self::TableScan(obj) => obj.borrow().attributes().cloned().collect(),
             Self::IndexScan(obj, _) => obj.borrow().attributes().cloned().collect(),
             _ => vec![]
+        }
+    }
+}
+
+impl fmt::Display for Source {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::TableScan(o) => write!(f, "TableScan({})", o.borrow().id()),
+            Self::Tuple(m) => write!(f, "Tuple({})", m.len()),
+            Self::IndexScan(o, key) => write!(f, "IndexScan({}, {})", o.borrow().id(), key.len()),
+            Self::Nil => write!(f, "Nil"),
         }
     }
 }

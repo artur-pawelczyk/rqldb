@@ -116,7 +116,7 @@ impl IndexedObject {
     pub(crate) fn get(&self, id: TupleId) -> Tuple {
         let tuple = self.pages.tuple_by_id(id);
         let contents = tuple.contents();
-        Tuple::with_object(contents, self)
+        Tuple::with_object(contents, self).with_id(id)
     }
 
     pub(crate) fn iter<'b>(&'b self) -> Box<dyn Iterator<Item = Tuple<'b>> + 'b> {
