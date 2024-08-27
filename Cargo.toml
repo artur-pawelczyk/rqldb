@@ -5,3 +5,11 @@ members = [
         "shell",
         "live-storage",
 ]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+description = "Experimental, purely relational database"
+authors = ["Artur Pawelczyk"]
+license = "MIT"
+repository = "https://github.com/artur-pawelczyk/rqldb/"
