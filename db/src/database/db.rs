@@ -292,7 +292,8 @@ impl Iterator for ResultIter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{bytes::IntoBytes as _, dsl::{Definition, Operator, Query, TupleBuilder}, EventSource, Type};
+    use crate::{bytes::IntoBytes as _, dsl::{Definition, Operator, Query, TupleBuilder}, test::fixture::DocumentWithType, EventSource, Type};
+    use crate::test::fixture::{Document, Fixture, Flavor};
 
     #[test]
     fn query_not_existing_relation() {
@@ -304,12 +305,8 @@ mod tests {
 
     #[test]
     fn query_empty_relation() {
-        let mut db = Database::default();
-        let command = Definition::relation("document")
-            .attribute("id", Type::NUMBER)
-            .attribute("content", Type::TEXT);
-
-        db.define(&command);
+        let db = Database::default()
+            .generate_dataset(Document(Flavor::SchemaOnly));
 
         let query = Query::scan("document").select_all();
         let result = db.execute_query(&query).unwrap();
@@ -324,15 +321,8 @@ mod tests {
 
     #[test]
     pub fn filter() {
-        let mut db = Database::default();
-        db.define(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
-
-        for i in 1..20 {
-            let id = i.to_string();
-            let content = format!("example{}", i);
-            let query = Query::tuple(TupleBuilder::new().inferred("id", id).inferred("content", content)).insert_into("document");
-            db.insert(&query).expect("Insert");
-        }
+        let db = Database::default()
+            .generate_dataset(Document(Flavor::Size(20)));
 
         let mut result = db.execute_query(&Query::scan("document").filter("document.id", Operator::EQ, "5")).unwrap();
         assert_eq!(result.tuples().count(), 1);
@@ -340,7 +330,7 @@ mod tests {
         result = db.execute_query(&Query::scan("document").filter("document.id", Operator::GT, "5").filter("document.id", Operator::LT, "10")).unwrap();
         assert_eq!(result.tuples().count(), 4);
 
-        result = db.execute_query(&Query::scan("document").filter("document.content", Operator::EQ, "example1")).unwrap();
+        result = db.execute_query(&Query::scan("document").filter("document.content", Operator::EQ, "example 1")).unwrap();
         assert_eq!(result.tuples().count(), 1);
 
         assert!(db.execute_query(&Query::scan("document").filter("not_a_field", Operator::EQ, "1")).is_err());
@@ -348,14 +338,8 @@ mod tests {
 
     #[test]
     fn single_join() {
-        let mut db = Database::default();
-        db.define(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT).attribute("type_id", Type::NUMBER));
-        db.define(&Definition::relation("type").attribute("id", Type::NUMBER).attribute("name", Type::TEXT));
-
-        db.insert(&Query::tuple(&[("id", "1"), ("content", "example"), ("type_id", "2")]).insert_into("document")).unwrap();
-        db.insert(&Query::tuple(&[("id", "2"), ("content", "no type"), ("type_id", "3")]).insert_into("document")).unwrap();
-        db.insert(&Query::tuple(&[("id", "1"), ("name", "type_a")]).insert_into("type")).unwrap();
-        db.insert(&Query::tuple(&[("id", "2"), ("name", "type_b")]).insert_into("type")).unwrap();
+        let db = Database::default()
+            .generate_dataset(DocumentWithType);
 
         let result = db.execute_query(&Query::scan("document").join("document.type_id", "type.id")).unwrap();
         assert_eq!(

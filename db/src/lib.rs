@@ -12,6 +12,9 @@ pub mod tuple;
 pub mod page;
 mod heap;
 
+#[cfg(test)]
+pub mod test;
+
 use core::fmt;
 use std::cell::Cell;
 use std::cmp::Ordering;
