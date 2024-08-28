@@ -21,8 +21,8 @@ use super::{Result, SharedObject};
 
 #[derive(Default)]
 pub struct Database {
-    schema: Schema,
-    objects: Vec<SharedObject>,
+    pub(crate) schema: Schema,
+    pub(crate) objects: Vec<SharedObject>,
     pub(crate) handler: Rc<RefCell<EventHandler>>,
 }
 
@@ -39,24 +39,6 @@ impl Database {
             objects,
             handler,
         }
-    }
-
-    pub fn define(&mut self, definition: &dsl::Definition) {
-        let relation = definition.columns.iter().fold(self.schema.create_table(&definition.name), |acc, col| {
-            if col.indexed {
-                acc.indexed_column(&col.name, col.kind)
-            } else {
-                acc.column(&col.name, col.kind)
-            }
-        }).add();
-
-        self.objects.insert(
-            relation.id as usize,
-            Rc::new(RefCell::new(IndexedObject::from_table(relation).with_handler(Rc::clone(&self.handler))))
-        );
-
-        let rel_id = relation.id;
-        self.schema().find_relation(rel_id).map(|r| self.handler.borrow().emit_define_relation(&self, r));
     }
 
     pub fn execute_query(&self, query: &dsl::Query) -> Result<QueryResults> {

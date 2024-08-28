@@ -1,6 +1,7 @@
 mod insert;
 mod obj_view;
 mod db;
+mod define;
 
 use std::{cell::RefCell, rc::Rc};
 
