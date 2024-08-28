@@ -5,7 +5,8 @@ impl GenerateData for Document {
     fn generate_schema(&self, db: &mut Database) {
         db.define(&Definition::relation("document")
                   .attribute("id", Type::NUMBER)
-                  .attribute("content", Type::TEXT));
+                  .attribute("content", Type::TEXT)
+        ).unwrap();
     }
 
     fn generate_data(&self, db: &mut Database) {
@@ -25,11 +26,13 @@ impl GenerateData for DocumentWithType {
         db.define(&Definition::relation("document")
                   .attribute("id", Type::NUMBER)
                   .attribute("content", Type::TEXT)
-                  .attribute("type_id", Type::NUMBER));
+                  .attribute("type_id", Type::NUMBER)
+        ).unwrap();
 
         db.define(&Definition::relation("type")
                   .attribute("id", Type::NUMBER)
-                  .attribute("name", Type::TEXT));
+                  .attribute("name", Type::TEXT)
+        ).unwrap();
     }
 
     fn generate_data(&self, db: &mut Database) {

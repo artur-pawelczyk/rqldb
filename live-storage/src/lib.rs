@@ -125,7 +125,7 @@ mod tests {
     fn test_restore_schema() -> Result<(), Box<dyn Error>> {
         let storage = LiveStorage::temporary()?;
         let mut db = storage.create_db()?;
-        db.define(&Definition::relation("document").attribute("id", Type::NUMBER));
+        db.define(&Definition::relation("document").attribute("id", Type::NUMBER))?;
 
         let storage = storage.reopen();
         let db = storage.create_db()?;
@@ -140,7 +140,7 @@ mod tests {
         let mut db = storage.create_db()?;
         db.define(&Definition::relation("document")
                   .indexed_attribute("id", Type::NUMBER)
-                  .attribute("name", Type::TEXT));
+                  .attribute("name", Type::TEXT))?;
         db.insert(&Query::tuple(TupleBuilder::new()
                                        .inferred("id", "1")
                                        .inferred("name", "example one"))

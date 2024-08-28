@@ -68,7 +68,7 @@ mod tests {
     use crate::{dsl::TupleBuilder, page::PAGE_SIZE, Database, Definition, Query, Type};
 
     #[test]
-    fn event_on_define_relation() {
+    fn event_on_define_relation() -> Result<(), Box<dyn Error>> {
         let mut db = Database::default();
 
         let created_relation = Rc::new(RefCell::new(String::new()));
@@ -78,9 +78,11 @@ mod tests {
         });
         assert_eq!(created_relation.borrow().as_str(), "");
 
-        db.define(&Definition::relation("document").attribute("id", Type::TEXT));
+        db.define(&Definition::relation("document").attribute("id", Type::TEXT))?;
 
         assert_eq!(created_relation.borrow().as_str(), "document");
+
+        Ok(())
     }
 
     #[test]
@@ -88,7 +90,7 @@ mod tests {
         let mut db = Database::default();
         db.define(&Definition::relation("document")
                   .attribute("id", Type::NUMBER)
-                  .attribute("name", Type::TEXT));
+                  .attribute("name", Type::TEXT))?;
 
         let created_tuple = Rc::new(RefCell::new(Vec::<u8>::new()));
         db.on_add_tuple({
@@ -111,7 +113,7 @@ mod tests {
         let mut db = Database::default();
         db.define(&Definition::relation("document")
                   .attribute("id", Type::NUMBER)
-                  .attribute("name", Type::TEXT));
+                  .attribute("name", Type::TEXT))?;
         db.insert(&Query::tuple(TupleBuilder::new()
                                        .inferred("id", "1")
                                        .inferred("name", "example")).insert_into("document"))?;
@@ -135,10 +137,10 @@ mod tests {
     fn event_on_insert_page() -> Result<(), Box<dyn Error>> {
         let mut db = Database::default();
         db.define(&Definition::relation("something")
-                  .attribute("id", Type::NUMBER));
+                  .attribute("id", Type::NUMBER))?;
         db.define(&Definition::relation("document")
                   .attribute("id", Type::NUMBER)
-                  .attribute("name", Type::TEXT));
+                  .attribute("name", Type::TEXT))?;
         let document_obj_id = db.object("document").unwrap().borrow().id();
 
         let affected_obj = Rc::new(Cell::new(None::<ObjectId>));
@@ -168,7 +170,7 @@ mod tests {
         let mut db = Database::default();
         db.define(&Definition::relation("document")
                   .attribute("id", Type::NUMBER)
-                  .attribute("name", Type::TEXT));
+                  .attribute("name", Type::TEXT))?;
 
         db.insert(&Query::tuple(TupleBuilder::new()
                                        .inferred("id", "1")

@@ -354,7 +354,7 @@ mod tests {
             .attribute("id", Type::NUMBER)
             .attribute("content", Type::TEXT)
             .attribute("type", Type::NUMBER);
-        db.define(&command);
+        db.define(&command).unwrap();
 
         let filters = expect_filters(compute_plan(&db, &dsl::Query::scan("example").filter("example.id", EQ, "1").filter("example.type", EQ, "2")), 2);
         assert_eq!(filters.get(0).map(|x| x.attribute.pos()), Some(0));
@@ -371,7 +371,7 @@ mod tests {
         db.define(&Definition::relation("example")
                           .attribute("id", Type::NUMBER)
                           .attribute("content", Type::TEXT)
-                          .attribute("type", Type::NUMBER));
+                          .attribute("type", Type::NUMBER)).unwrap();
 
         let mut object = TempObject::from_relation(db.schema().find_relation("example").unwrap());
         object.push_str(&["1", "content1", "11"]);
@@ -412,10 +412,10 @@ mod tests {
         let mut db = Database::default();
         db.define(&Definition::relation("document")
                           .attribute("name", Type::TEXT)
-                          .attribute("type_id", Type::NUMBER));
+                          .attribute("type_id", Type::NUMBER)).unwrap();
         db.define(&Definition::relation("type")
                           .attribute("id", Type::NUMBER)
-                          .attribute("name", Type::TEXT));
+                          .attribute("name", Type::TEXT)).unwrap();
 
         let query = dsl::Query::scan("document").join("document.type_id", "type.id");
         let plan = compute_plan(&db, &query).unwrap();

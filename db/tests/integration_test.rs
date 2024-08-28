@@ -9,8 +9,8 @@ id::NUMBER::KEY
 title::TEXT
 content::TEXT
 type::NUMBER
-published::BOOLEAN").unwrap());
-    db.define(&parse_definition("relation type id::NUMBER name::TEXT").unwrap());
+published::BOOLEAN").unwrap()).unwrap();
+    db.define(&parse_definition("relation type id::NUMBER name::TEXT").unwrap()).unwrap();
 
     let insert = parse_insert("type id = 1 name = artictle").unwrap();
     db.insert(&insert).unwrap();

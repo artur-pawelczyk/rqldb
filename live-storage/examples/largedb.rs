@@ -12,7 +12,7 @@ fn main() {
         db.define(&Definition::relation("document")
                   .indexed_attribute("id", Type::NUMBER)
                   .attribute("title", Type::TEXT)
-                  .attribute("content", Type::TEXT));
+                  .attribute("content", Type::TEXT)).unwrap();
     }
 
 

@@ -53,7 +53,7 @@ impl Shell {
         match maybe_read_command(input) {
             Some(("define", args)) => {
                 let command = parse_definition(args)?;
-                self.db.define(&command);
+                self.db.define(&command)?;
                 Ok(())
             },
             Some(("insert", query)) => {
@@ -250,7 +250,7 @@ mod tests {
     #[test]
     fn test_dump() {
         let mut shell = Shell::default().simple_output();
-        shell.db.define(&Definition::relation("example").attribute("id", Type::NUMBER));
+        shell.db.define(&Definition::relation("example").attribute("id", Type::NUMBER)).unwrap();
 
         let mut s = String::new();
         shell.handle_input(".dump", &mut s);
@@ -262,7 +262,7 @@ mod tests {
         let mut shell = Shell::default().simple_output();
         shell.db.define(&Definition::relation("document")
                         .indexed_attribute("id", Type::NUMBER)
-                        .attribute("content", Type::TEXT));
+                        .attribute("content", Type::TEXT)).unwrap();
         shell.db.insert(&Query::tuple(&[("id", "1"), ("content", "example")])
                                .insert_into("document")).unwrap();
 
@@ -279,7 +279,7 @@ document.content = example".trim());
         shell.db.define(&Definition::relation("document")
                         .indexed_attribute("id", Type::NUMBER)
                         .attribute("content", Type::TEXT)
-                        .attribute("size", Type::NUMBER));
+                        .attribute("size", Type::NUMBER)).unwrap();
 
         shell.db.insert(&Query::tuple(&[("id", "1"), ("content", "example"), ("size", "123")])
                                .insert_into("document")).unwrap();
@@ -317,7 +317,7 @@ document.size = 2".trim());
         let mut shell = Shell::default().simple_output();
         shell.db.define(&Definition::relation("document")
                         .indexed_attribute("id", Type::NUMBER)
-                        .attribute("content", Type::TEXT));
+                        .attribute("content", Type::TEXT)).unwrap();
         shell.db.insert(&Query::tuple(&[("id", "1"), ("content", "example")])
                                .insert_into("document")).unwrap();
 
@@ -332,7 +332,7 @@ document.size = 2".trim());
     fn test_limit() {
         let mut shell = Shell::default().simple_output();
         shell.db.define(&Definition::relation("document")
-                        .attribute("id", Type::NUMBER));
+                        .attribute("id", Type::NUMBER)).unwrap();
 
         for i in 0..100 {
             let id = i.to_string();

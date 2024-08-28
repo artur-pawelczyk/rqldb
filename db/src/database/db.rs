@@ -338,9 +338,21 @@ mod tests {
     #[test]
     fn two_joins() {
         let mut db = Database::default();
-        db.define(&Definition::relation("document").indexed_attribute("id", Type::NUMBER).attribute("type_id", Type::NUMBER).attribute("author", Type::TEXT));
-        db.define(&Definition::relation("type").indexed_attribute("id", Type::NUMBER).attribute("name", Type::TEXT));
-        db.define(&Definition::relation("author").indexed_attribute("name", Type::TEXT).attribute("displayname", Type::TEXT));
+        db.define(&Definition::relation("document")
+                  .indexed_attribute("id", Type::NUMBER)
+                  .attribute("type_id", Type::NUMBER)
+                  .attribute("author", Type::TEXT)
+        ).unwrap();
+
+        db.define(&Definition::relation("type")
+                  .indexed_attribute("id", Type::NUMBER)
+                  .attribute("name", Type::TEXT)
+        ).unwrap();
+
+        db.define(&Definition::relation("author")
+                  .indexed_attribute("name", Type::TEXT)
+                  .attribute("displayname", Type::TEXT)
+        ).unwrap();
 
         db.insert(&Query::tuple(&[("id", "1"), ("type_id", "1"), ("author", "admin")]).insert_into("document")).unwrap();
         db.insert(&Query::tuple(&[("id", "1"), ("name", "page")]).insert_into("type")).unwrap();
@@ -357,7 +369,7 @@ mod tests {
         db.define(&Definition::relation("document")
                           .attribute("id", Type::NUMBER)
                           .attribute("content", Type::TEXT)
-                          .attribute("size", Type::NUMBER));
+                          .attribute("size", Type::NUMBER)).unwrap();
 
         for i in 1..=10 {
             let query = Query::tuple(TupleBuilder::new()
@@ -386,7 +398,7 @@ mod tests {
     #[test]
     fn count() {
         let mut db = Database::default();
-        db.define(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
+        db.define(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT)).unwrap();
 
         for i in 1..21 {
             let query = Query::tuple(TupleBuilder::new()
@@ -407,7 +419,7 @@ mod tests {
     #[test]
     fn delete() {
         let mut db = Database::default();
-        db.define(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
+        db.define(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT)).unwrap();
         db.insert(&Query::tuple(&[("id", "1"), ("content", "the content")]).insert_into("document")).unwrap();
 
         let tuple_delete = db.delete(&Query::build_tuple().typed(Type::NUMBER, "id", 1).build().delete());
@@ -425,7 +437,7 @@ mod tests {
     #[test]
     fn duplicates() {
         let mut db = Database::default();
-        db.define(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
+        db.define(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT)).unwrap();
 
         let insert_query = Query::tuple(&[("id", "1"), ("content", "the content")]).insert_into("document");
         db.insert(&insert_query).unwrap();
@@ -441,7 +453,7 @@ mod tests {
     #[test]
     fn recover_object() {
         let mut source_db = Database::default();
-        source_db.define(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
+        source_db.define(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT)).unwrap();
         let contents = Rc::new(RefCell::new(Vec::<u8>::new()));
         source_db.on_page_modified({
             let contents = Rc::clone(&contents);
@@ -455,7 +467,7 @@ mod tests {
                                               .inferred("content", "name")).insert_into("document")).unwrap();
 
         let mut target_db = Database::default();
-        target_db.define(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
+        target_db.define(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT)).unwrap();
         let object = target_db.object("document").unwrap().borrow().id();
         target_db.read_object(object, contents.borrow().as_slice()).unwrap();
 
@@ -466,7 +478,7 @@ mod tests {
     #[test]
     fn index_scan() {
         let mut db = Database::default();
-        db.define(&Definition::relation("document").indexed_attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
+        db.define(&Definition::relation("document").indexed_attribute("id", Type::NUMBER).attribute("content", Type::TEXT)).unwrap();
 
         for id in 1..20 {
             let content = format!("example{}", id);
@@ -495,8 +507,8 @@ mod tests {
     #[test]
     fn dump_all() {
         let mut db = Database::default();
-        db.define(&Definition::relation("first").indexed_attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
-        db.define(&Definition::relation("second").attribute("num", Type::NUMBER));
+        db.define(&Definition::relation("first").indexed_attribute("id", Type::NUMBER).attribute("content", Type::TEXT)).unwrap();
+        db.define(&Definition::relation("second").attribute("num", Type::NUMBER)).unwrap();
         db.insert(&Query::tuple(&[("id", "1"), ("content", "one")]).insert_into("first")).unwrap();
 
         let expected = concat!(

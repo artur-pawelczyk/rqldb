@@ -302,7 +302,7 @@ mod tests {
         let mut db = Database::default();
         db.define(&Definition::relation("document")
                   .attribute("id", Type::NUMBER)
-                  .attribute("size", Type::NUMBER));
+                  .attribute("size", Type::NUMBER)).unwrap();
 
         db.insert(&Insert::insert_into("document").element("id", 1).element("size", 123))?;
         db.insert(&Insert::insert_into("document").element("id", 2).element("size", 2))?;

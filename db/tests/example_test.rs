@@ -13,7 +13,7 @@ fn test_example_code() -> Result<(), Box<dyn Error>> {
     for line in String::from_utf8(file).unwrap().lines().filter(|s| !s.is_empty()).map(str::trim) {
         if line.starts_with(DEF) {
             let command = parse::parse_definition(&line[DEF.len()..])?;
-            db.define(&command);
+            db.define(&command)?;
         } else if line.starts_with(INSERT) {
             let command = parse::parse_insert(&line[INSERT.len()..])?;
             db.insert(&command)?;

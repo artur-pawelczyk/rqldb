@@ -40,7 +40,7 @@ mod tests {
         let command = Definition::relation("document")
             .attribute("id", Type::NUMBER)
             .attribute("content", Type::TEXT);
-        db.define(&command);
+        db.define(&command).unwrap();
 
         let insert_query = Query::build_tuple()
             .inferred("id", "1")
@@ -65,7 +65,7 @@ mod tests {
         let command = Definition::relation("document")
             .attribute("id", Type::NUMBER)
             .attribute("content", Type::TEXT);
-        db.define(&command);
+        db.define(&command).unwrap();
 
         let result = db.insert(&Query::tuple(&[("id", "not-a-number"), ("id", "random-text")]).insert_into("document"));
         assert!(result.is_err());
@@ -74,7 +74,7 @@ mod tests {
     #[test]
     fn update() {
         let mut db = Database::default();
-        db.define(&Definition::relation("document").indexed_attribute("id", Type::NUMBER).attribute("content", Type::TEXT));
+        db.define(&Definition::relation("document").indexed_attribute("id", Type::NUMBER).attribute("content", Type::TEXT)).unwrap();
 
         db.insert(&Query::build_tuple()
                   .inferred("id", "1")

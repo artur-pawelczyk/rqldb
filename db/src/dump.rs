@@ -51,7 +51,7 @@ mod tests {
 
         db.define(&Definition::relation("example")
                           .indexed_attribute("id", Type::NUMBER)
-                          .attribute("content", Type::TEXT));
+                          .attribute("content", Type::TEXT)).unwrap();
 
         let mut expected_tuple = BTreeMap::new();
         expected_tuple.insert("example.id", "1");
