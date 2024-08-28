@@ -243,8 +243,12 @@ impl Schema {
     /// use rqldb::Type;
     /// 
     /// let mut schema = Schema::default();
-    /// schema.create_table("example").indexed_column("id", Type::NUMBER).column("name", Type::TEXT).add();
+    /// let relation = schema.create_table("example").indexed_column("id", Type::NUMBER).column("name", Type::TEXT).add();
+    /// assert!(relation.is_some());
     /// assert!(schema.find_relation("example").is_some());
+    ///
+    /// // Trying to create a new relation with the same name
+    /// assert!(schema.create_table("example").column("id", Type::NUMBER).add().is_none());
     /// ```
     #[must_use]
     pub fn create_table(&mut self, name: &str) -> TableBuilder {
@@ -302,10 +306,14 @@ impl<'a> TableBuilder<'a> {
         self
     }
 
-    pub fn add(self) -> &'a Relation {
+    pub fn add(self) -> Option<&'a Relation> {
+        if self.schema.find_relation(&self.name).is_some() {
+            return None;
+        }
+
         let id = self.schema.relations.len() as u32;
         self.schema.relations.push(Relation { id, name: Box::from(self.name), columns: self.columns });
-        self.schema.relations.last().unwrap()
+        self.schema.relations.last()
     }
 }
 
@@ -356,7 +364,7 @@ impl Relation {
     /// let relation = schema.create_table("document")
     ///     .column("id", Type::NUMBER)
     ///     .column("content", Type::TEXT)
-    ///     .add();
+    ///     .add().unwrap();
     ///
     /// assert_eq!(relation.column_type("document.id"), Some(Type::NUMBER));
     /// assert_eq!(relation.column_type("something.id"), None);
