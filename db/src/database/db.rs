@@ -276,7 +276,7 @@ mod tests {
     use dsl::Insert;
 
     use super::*;
-    use crate::{bytes::IntoBytes as _, dsl::{Definition, Operator, Query, TupleBuilder}, test::fixture::{Document, DocumentWithSize, DocumentWithType, Flavor, GenerateDataset as _}, EventSource, Type};
+    use crate::{bytes::IntoBytes as _, dsl::{Definition, Operator, Query, TupleBuilder}, test::fixture::{Dataset, Document, DocumentWithSize, DocumentWithType, Flavor}, EventSource, Type};
 
     #[test]
     fn query_not_existing_relation() {
@@ -288,8 +288,9 @@ mod tests {
 
     #[test]
     fn query_empty_relation() {
-        let db = Database::default()
-            .generate_dataset(Document(Flavor::SchemaOnly));
+        let db = Dataset::default()
+            .add(Document::empty())
+            .generate(Database::default());
 
         let query = Query::scan("document").select_all();
         let result = db.execute_query(&query).unwrap();
@@ -304,8 +305,9 @@ mod tests {
 
     #[test]
     pub fn filter() {
-        let db = Database::default()
-            .generate_dataset(Document(Flavor::Size(20)));
+        let db = Dataset::default()
+            .add(Document::size(20))
+            .generate(Database::default());
 
         let mut result = db.execute_query(&Query::scan("document").filter("document.id", Operator::EQ, "5")).unwrap();
         assert_eq!(result.tuples().count(), 1);
@@ -321,8 +323,9 @@ mod tests {
 
     #[test]
     fn single_join() {
-        let db = Database::default()
-            .generate_dataset(DocumentWithType);
+        let db = Dataset::default()
+            .add(DocumentWithType)
+            .generate(Database::default());
 
         let result = db.execute_query(&Query::scan("document").join("document.type_id", "type.id")).unwrap();
         assert_eq!(
@@ -366,8 +369,9 @@ mod tests {
 
     #[test]
     fn apply() {
-        let db = Database::default()
-            .generate_dataset(DocumentWithSize(Flavor::Size(10)));
+        let db = Dataset::default()
+            .add(DocumentWithSize(Flavor::Size(10)))
+            .db();
 
         let sum_result = db.execute_query(&Query::scan("document").apply("sum", &["document.size"])).unwrap();
         let first = sum_result.tuples().next().unwrap();
@@ -386,8 +390,9 @@ mod tests {
 
     #[test]
     fn count() {
-        let db = Database::default()
-            .generate_dataset(Document(Flavor::Size(20)));
+        let db = Dataset::default()
+            .add(Document::size(20))
+            .db();
 
         let result = db.execute_query(&Query::scan("document").count()).unwrap();
         let first = result.tuples().next().unwrap();
@@ -399,8 +404,9 @@ mod tests {
 
     #[test]
     fn delete() {
-        let db = Database::default()
-            .generate_dataset(Document(Flavor::Size(1)));
+        let db = Dataset::default()
+            .add(Document::size(1))
+            .db();
 
         let tuple_delete = db.delete(&Query::build_tuple().typed(Type::NUMBER, "id", 1).build().delete());
         assert!(tuple_delete.is_err());
@@ -416,8 +422,9 @@ mod tests {
 
     #[test]
     fn duplicates() {
-        let db = Database::default()
-            .generate_dataset(Document(Flavor::SchemaOnly));
+        let db = Dataset::default()
+            .add(Document::empty())
+            .db();
 
         let insert = Insert::insert_into("document").element("id", 1).element("content", "the content");
         db.insert(&insert).unwrap();

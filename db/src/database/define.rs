@@ -29,11 +29,13 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{test::fixture::{Document, Flavor, GenerateDataset as _}, Type};
+    use crate::{test::fixture::{Dataset, Document}, Type};
 
     #[test]
     fn redefine_non_empty_relation() {
-        let mut db = Database::default().generate_dataset(Document(Flavor::Size(1)));
+        let mut db = Dataset::default()
+            .add(Document::size(1))
+            .db();
 
         let result = db.define(&Definition::relation("document").attribute("id", Type::NUMBER));
         assert!(result.is_err());

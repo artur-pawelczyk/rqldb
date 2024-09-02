@@ -242,6 +242,18 @@ impl<'a> Encode<'a> for u32 {
     }
 }
 
+impl<'a> Encode<'a> for i32 {
+    fn encode(self) -> Cow<'a, str> {
+        Cow::Owned(self.to_string())
+    }
+}
+
+impl<'a> Encode<'a> for usize {
+    fn encode(self) -> Cow<'a, str> {
+        Cow::Owned(self.to_string())
+    }
+}
+
 impl<'a> IntoTuple<'a> for TupleBuilder<'a> {
     fn into_tuple(self) -> Vec<TupleAttr<'a>> {
         self.0
