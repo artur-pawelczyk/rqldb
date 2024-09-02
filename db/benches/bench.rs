@@ -219,7 +219,7 @@ impl DatabaseFixture for Database {
             .attribute("title", Type::TEXT)
             .attribute("content", Type::TEXT);
 
-        self.define(&def);
+        self.define(&def).unwrap();
 
         self
     }
@@ -227,7 +227,7 @@ impl DatabaseFixture for Database {
     fn add_type_relation(mut self) -> Self {
         self.define(&Definition::relation("type")
                     .attribute("id", Type::NUMBER)
-                    .attribute("name", Type::TEXT));
+                    .attribute("name", Type::TEXT)).unwrap();
         self
     }
 }

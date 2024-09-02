@@ -273,10 +273,12 @@ impl Iterator for ResultIter {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use dsl::Insert;
 
     use super::*;
-    use crate::{bytes::IntoBytes as _, dsl::{Definition, Operator, Query, TupleBuilder}, test::fixture::{Dataset, Document, DocumentWithSize, DocumentWithType, Flavor}, EventSource, Type};
+    use crate::{bytes::IntoBytes as _, dsl::{Definition, Operator, Query, TupleBuilder}, test::fixture::{Dataset, DocType, Document, DocumentWithSize, Flavor}, EventSource, Type};
 
     #[test]
     fn query_not_existing_relation() {
@@ -298,8 +300,8 @@ mod tests {
         assert_eq!(result.tuples().count(), 0);
         let attrs = result.attributes();
         assert_eq!(
-            attrs.iter().map(ResultAttribute::name).collect::<Vec<_>>(),
-            vec!["document.id", "document.content"]
+            attrs.iter().map(ResultAttribute::name).collect::<HashSet<_>>(),
+            ["document.id", "document.content"].into()
         );
     }
 
@@ -324,13 +326,14 @@ mod tests {
     #[test]
     fn single_join() {
         let db = Dataset::default()
-            .add(DocumentWithType)
+            .add(Document::size(2))
+            .add(DocType::size(2))
             .generate(Database::default());
 
         let result = db.execute_query(&Query::scan("document").join("document.type_id", "type.id")).unwrap();
         assert_eq!(
-            result.attributes.iter().map(ResultAttribute::name).collect::<Vec<_>>(),
-            vec!["document.id", "document.content", "document.type_id", "type.id", "type.name"]
+            result.attributes.iter().map(ResultAttribute::name).collect::<HashSet<_>>(),
+            ["document.id", "document.content", "document.type_id", "type.id", "type.name"].into()
         );
         let tuple = result.tuples().next().unwrap();
         let document_id = tuple.element("document.id").unwrap().to_string();
