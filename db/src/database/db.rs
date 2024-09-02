@@ -273,8 +273,10 @@ impl Iterator for ResultIter {
 
 #[cfg(test)]
 mod tests {
+    use dsl::Insert;
+
     use super::*;
-    use crate::{bytes::IntoBytes as _, dsl::{Definition, Operator, Query, TupleBuilder}, test::fixture::DocumentWithType, EventSource, Type};
+    use crate::{bytes::IntoBytes as _, dsl::{Definition, Operator, Query, TupleBuilder}, test::fixture::{DocumentWithSize, DocumentWithType}, EventSource, Type};
     use crate::test::fixture::{Document, Fixture, Flavor};
 
     #[test]
@@ -365,20 +367,8 @@ mod tests {
 
     #[test]
     fn apply() {
-        let mut db = Database::default();
-        db.define(&Definition::relation("document")
-                          .attribute("id", Type::NUMBER)
-                          .attribute("content", Type::TEXT)
-                          .attribute("size", Type::NUMBER)).unwrap();
-
-        for i in 1..=10 {
-            let query = Query::tuple(TupleBuilder::new()
-                                     .inferred("id", i)
-                                     .inferred("content", "example")
-                                     .inferred("size", i)
-            ).insert_into("document");
-           db.insert(&query).expect("Insert");
-        }
+        let db = Database::default()
+            .generate_dataset(DocumentWithSize(Flavor::Size(10)));
 
         let sum_result = db.execute_query(&Query::scan("document").apply("sum", &["document.size"])).unwrap();
         let first = sum_result.tuples().next().unwrap();
@@ -397,16 +387,8 @@ mod tests {
 
     #[test]
     fn count() {
-        let mut db = Database::default();
-        db.define(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT)).unwrap();
-
-        for i in 1..21 {
-            let query = Query::tuple(TupleBuilder::new()
-                                     .inferred("id", i)
-                                     .inferred("content", "example")
-            ).insert_into("document");
-            db.insert(&query).expect("Insert");
-        }
+        let db = Database::default()
+            .generate_dataset(Document(Flavor::Size(20)));
 
         let result = db.execute_query(&Query::scan("document").count()).unwrap();
         let first = result.tuples().next().unwrap();
@@ -418,9 +400,8 @@ mod tests {
 
     #[test]
     fn delete() {
-        let mut db = Database::default();
-        db.define(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT)).unwrap();
-        db.insert(&Query::tuple(&[("id", "1"), ("content", "the content")]).insert_into("document")).unwrap();
+        let db = Database::default()
+            .generate_dataset(Document(Flavor::Size(1)));
 
         let tuple_delete = db.delete(&Query::build_tuple().typed(Type::NUMBER, "id", 1).build().delete());
         assert!(tuple_delete.is_err());
@@ -436,12 +417,12 @@ mod tests {
 
     #[test]
     fn duplicates() {
-        let mut db = Database::default();
-        db.define(&Definition::relation("document").attribute("id", Type::NUMBER).attribute("content", Type::TEXT)).unwrap();
+        let db = Database::default()
+            .generate_dataset(Document(Flavor::SchemaOnly));
 
-        let insert_query = Query::tuple(&[("id", "1"), ("content", "the content")]).insert_into("document");
-        db.insert(&insert_query).unwrap();
-        db.insert(&insert_query).unwrap();
+        let insert = Insert::insert_into("document").element("id", 1).element("content", "the content");
+        db.insert(&insert).unwrap();
+        db.insert(&insert).unwrap();
 
         let count_query = Query::scan("document").count();
         let result = db.execute_query(&count_query).unwrap();

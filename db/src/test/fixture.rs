@@ -14,7 +14,31 @@ impl GenerateData for Document {
             for i in 1..=n {
                 db.insert(&Insert::insert_into("document")
                           .element("id", i)
-                          .element("content", format!("example {i}"))).unwrap();
+                          .element("content", format!("example {i}"))
+                ).unwrap();
+            }
+        }
+    }
+}
+
+pub struct DocumentWithSize(pub Flavor);
+impl GenerateData for DocumentWithSize {
+    fn generate_schema(&self, db: &mut Database) {
+        db.define(&Definition::relation("document")
+                  .attribute("id", Type::NUMBER)
+                  .attribute("content", Type::TEXT)
+                  .attribute("size", Type::NUMBER)
+        ).unwrap();
+    }
+
+    fn generate_data(&self, db: &mut Database) {
+        if let Flavor::Size(n) = self.0 {
+            for i in 1..=n {
+                db.insert(&Insert::insert_into("document")
+                          .element("id", i)
+                          .element("content", format!("example {i}"))
+                          .element("size", i)
+                ).unwrap();
             }
         }
     }
