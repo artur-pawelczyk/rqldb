@@ -29,7 +29,7 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{test::fixture::{Document, Fixture, Flavor}, Type};
+    use crate::{test::fixture::{Document, Flavor, GenerateDataset as _}, Type};
 
     #[test]
     fn redefine_non_empty_relation() {

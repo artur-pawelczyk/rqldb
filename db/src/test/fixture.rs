@@ -1,7 +1,7 @@
 use crate::{dsl::Insert, Database, Definition, Type};
 
 pub struct Document(pub Flavor);
-impl GenerateData for Document {
+impl Fixture for Document {
     fn generate_schema(&self, db: &mut Database) {
         db.define(&Definition::relation("document")
                   .attribute("id", Type::NUMBER)
@@ -22,7 +22,7 @@ impl GenerateData for Document {
 }
 
 pub struct DocumentWithSize(pub Flavor);
-impl GenerateData for DocumentWithSize {
+impl Fixture for DocumentWithSize {
     fn generate_schema(&self, db: &mut Database) {
         db.define(&Definition::relation("document")
                   .attribute("id", Type::NUMBER)
@@ -45,7 +45,7 @@ impl GenerateData for DocumentWithSize {
 }
 
 pub struct DocumentWithType;
-impl GenerateData for DocumentWithType {
+impl Fixture for DocumentWithType {
     fn generate_schema(&self, db: &mut Database) {
         db.define(&Definition::relation("document")
                   .attribute("id", Type::NUMBER)
@@ -72,19 +72,19 @@ pub enum Flavor {
     Size(u32),
 }
 
-pub trait Fixture {
-    fn generate_dataset(self, d: impl GenerateData) -> Self;
+pub trait GenerateDataset {
+    fn generate_dataset(self, d: impl Fixture) -> Self;
 }
 
-impl Fixture for Database {
-    fn generate_dataset(mut self, d: impl GenerateData) -> Self {
+impl GenerateDataset for Database {
+    fn generate_dataset(mut self, d: impl Fixture) -> Self {
         d.generate_schema(&mut self);
         d.generate_data(&mut self);
         self
     }
 }
 
-pub trait GenerateData {
+pub trait Fixture {
     fn generate_schema(&self, db: &mut Database);
     fn generate_data(&self, _: &mut Database) {
     }

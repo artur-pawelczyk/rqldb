@@ -276,8 +276,7 @@ mod tests {
     use dsl::Insert;
 
     use super::*;
-    use crate::{bytes::IntoBytes as _, dsl::{Definition, Operator, Query, TupleBuilder}, test::fixture::{DocumentWithSize, DocumentWithType}, EventSource, Type};
-    use crate::test::fixture::{Document, Fixture, Flavor};
+    use crate::{bytes::IntoBytes as _, dsl::{Definition, Operator, Query, TupleBuilder}, test::fixture::{Document, DocumentWithSize, DocumentWithType, Flavor, GenerateDataset as _}, EventSource, Type};
 
     #[test]
     fn query_not_existing_relation() {
