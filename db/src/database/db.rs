@@ -278,7 +278,7 @@ mod tests {
     use dsl::Insert;
 
     use super::*;
-    use crate::{bytes::IntoBytes as _, dsl::{Definition, Operator, Query, TupleBuilder}, test::fixture::{Dataset, DocType, Document, DocumentWithSize, Flavor}, EventSource, Type};
+    use crate::{bytes::IntoBytes as _, dsl::{Definition, Operator, Query, TupleBuilder}, test::fixture::{Dataset, DocSize, DocType, Document}, EventSource, Type};
 
     #[test]
     fn query_not_existing_relation() {
@@ -373,7 +373,8 @@ mod tests {
     #[test]
     fn apply() {
         let db = Dataset::default()
-            .add(DocumentWithSize(Flavor::Size(10)))
+            .add(Document::size(10))
+            .add(DocSize)
             .db();
 
         let sum_result = db.execute_query(&Query::scan("document").apply("sum", &["document.size"])).unwrap();

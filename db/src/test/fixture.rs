@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, iter};
 
-use crate::{dsl::Insert, Database, Definition};
+use crate::{dsl::{Insert, TupleBuilder}, Database, Definition};
 
 use super::gen::Generator;
 
@@ -81,62 +81,29 @@ impl Fixture for Document {
     }
 
     fn generate_data(&self, db: &mut Database, relations: &[Relation]) {
-        for i in 1..=self.0 {
-            let mut insert = Insert::insert_into("document")
-                .element("id", i)
-                .element("content", format!("example {i}"));
-
-            if let Some(gen) = relations.iter().find(|r| r.0 == "type").and_then(|r| r.1.get("id")) {
-                insert = insert.element("type_id", gen.next());
+        for _ in 1..=self.0 {
+            let mut tuple = TupleBuilder::new();
+            for (name, gen) in &relations.iter().find(|r| r.0 == "document").unwrap().1 {
+                tuple = tuple.inferred(name, gen.next());
             }
 
-            db.insert(&insert).unwrap();
+            db.insert(&Insert::insert_into("document").tuple(tuple)).unwrap();
         }
     }
 }
 
-pub struct DocumentWithSize(pub Flavor);
-impl Fixture for DocumentWithSize {
+pub struct DocSize;
+impl Fixture for DocSize {
     fn generate_schema(&self) -> Box<dyn Iterator<Item = Relation>> {
-        Box::new(iter::once(Relation::name("document")
-                  .attribute("id", Generator::id())
-                  .attribute("content", Generator::text())
-                  .attribute("size", Generator::number_from(1))))
+        Box::new(iter::empty())
     }
 
-    fn generate_data(&self, db: &mut Database, _: &[Relation]) {
-        if let Flavor::Size(n) = self.0 {
-            for i in 1..=n {
-                db.insert(&Insert::insert_into("document")
-                          .element("id", i)
-                          .element("content", format!("example {i}"))
-                          .element("size", i)
-                ).unwrap();
-            }
+    fn before_define(&self, mut def: Relation) -> Relation {
+        if def.0 == "document" {
+            def = def.attribute("size", Generator::number_from(1));
         }
-    }
-}
 
-pub struct DocumentWithType;
-impl Fixture for DocumentWithType {
-    fn generate_schema(&self) -> Box<dyn Iterator<Item = Relation>> {
-        let document = Relation::name("document")
-                  .attribute("id", Generator::id())
-                  .attribute("content", Generator::text())
-                  .attribute("type_id", Generator::cycle(2));
-
-        let doc_type = Relation::name("type")
-            .attribute("id", Generator::id())
-            .attribute("name", Generator::letter("type_"));
-
-        Box::new([document, doc_type].into_iter())
-    }
-
-    fn generate_data(&self, db: &mut Database, _: &[Relation]) {
-        db.insert(&Insert::insert_into("document").element("id", 1).element("content", "example").element("type_id", 2)).unwrap();
-        db.insert(&Insert::insert_into("document").element("id", 2).element("content", "no type").element("type_id", 3)).unwrap();
-        db.insert(&Insert::insert_into("type").element("id", 1).element("name", "type_a")).unwrap();
-        db.insert(&Insert::insert_into("type").element("id", 2).element("name", "type_b")).unwrap();
+        def
     }
 }
 
@@ -171,11 +138,6 @@ impl Fixture for DocType {
 
         def
     }
-}
-
-pub enum Flavor {
-    SchemaOnly,
-    Size(u32),
 }
 
 pub trait Fixture {
