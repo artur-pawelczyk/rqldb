@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{error::Error, fs::{read_dir, File}, io::Read as _, path::Path};
 
 use rqldb::{parse, Database};
 
@@ -7,10 +7,21 @@ const INSERT: &'static str = ".insert";
 
 #[test]
 fn test_example_code() -> Result<(), Box<dyn Error>> {
-    let mut db = Database::default();
+    for entry in read_dir("../examples/")? {
+        let file_path = entry?.path();
+        if file_path.extension().map(|s| s == "query").unwrap_or(false) {
+            validate_file(&file_path)?;
+        }
+    }
 
-    let file = std::fs::read("../examples/example.query")?;
-    for line in String::from_utf8(file).unwrap().lines().filter(|s| !s.is_empty()).map(str::trim) {
+    Ok(())
+}
+
+fn validate_file(path: &Path) -> Result<(), Box<dyn Error>> {
+    let mut db = Database::default();
+    let mut contents = String::new();
+    File::open(path)?.read_to_string(&mut contents)?;
+    for line in contents.lines().filter(|s| !s.is_empty()).map(str::trim) {
         if line.starts_with(DEF) {
             let command = parse::parse_definition(&line[DEF.len()..])?;
             db.define(&command)?;
@@ -24,4 +35,4 @@ fn test_example_code() -> Result<(), Box<dyn Error>> {
     }
 
     Ok(())
-}
+ }
