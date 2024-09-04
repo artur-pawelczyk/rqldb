@@ -25,7 +25,7 @@ impl Dataset {
             db.define(&rel.into()).unwrap();
         }
 
-        for f in self.0 {
+        for f in &self.0 {
             f.generate_data(&mut db, &relations);
         }
 
@@ -37,24 +37,36 @@ impl Dataset {
     }
 }
 
-pub struct Relation(&'static str, BTreeMap<&'static str, Generator>);
+pub struct Relation {
+    name: &'static str,
+    attributes: BTreeMap<&'static str, Generator>,
+    index: Option<&'static str>,
+}
 
 impl Relation {
     fn name(name: &'static str) -> Self {
-        Self(name, BTreeMap::new())
+        Self {
+            name,
+            attributes: BTreeMap::new(),
+            index: None,
+        }
     }
 
     fn attribute(mut self, name: &'static str, gen: Generator) -> Self {
-        self.1.insert(name, gen);
+        self.attributes.insert(name, gen);
         self
     }
 }
 
 impl From<&Relation> for Definition {
     fn from(rel: &Relation) -> Self {
-        let mut def = Definition::relation(rel.0);
-        for (name, gen) in &rel.1 {
-            def = def.attribute(name, gen.kind());
+        let mut def = Definition::relation(rel.name);
+        for (name, gen) in &rel.attributes {
+            if Some(name) == rel.index.as_ref() {
+                def = def.indexed_attribute(name, gen.kind());
+            } else {
+                def = def.attribute(name, gen.kind());
+            }
         }
 
         def
@@ -83,7 +95,7 @@ impl Fixture for Document {
     fn generate_data(&self, db: &mut Database, relations: &[Relation]) {
         for _ in 1..=self.0 {
             let mut tuple = TupleBuilder::new();
-            for (name, gen) in &relations.iter().find(|r| r.0 == "document").unwrap().1 {
+            for (name, gen) in &relations.iter().find(|r| r.name == "document").unwrap().attributes {
                 tuple = tuple.inferred(name, gen.next());
             }
 
@@ -99,7 +111,7 @@ impl Fixture for DocSize {
     }
 
     fn before_define(&self, mut def: Relation) -> Relation {
-        if def.0 == "document" {
+        if def.name == "document" {
             def = def.attribute("size", Generator::number_from(1));
         }
 
@@ -132,8 +144,23 @@ impl Fixture for DocType {
     }
 
     fn before_define<'a>(&self, mut def: Relation) -> Relation {
-        if def.0 == "document" {
+        if def.name == "document" {
             def = def.attribute("type_id", Generator::cycle(self.0));
+        }
+
+        def
+    }
+}
+
+pub struct Index(&'static str, &'static str);
+impl Fixture for Index {
+    fn generate_schema(&self) -> Box<dyn Iterator<Item = Relation>> {
+        Box::new(iter::empty())
+    }
+
+    fn before_define(&self, mut def: Relation) -> Relation {
+        if def.name == self.0 {
+            def.index = Some(self.1);
         }
 
         def

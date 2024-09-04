@@ -17,7 +17,7 @@ use crate::tuple::Tuple;
 use crate::{schema::Schema, QueryResults, plan::compute_plan};
 use crate::{dsl, Query, ResultAttribute};
 
-use super::{Result, SharedObject};
+use super::{Error, Result, SharedObject};
 
 #[derive(Default)]
 pub struct Database {
@@ -58,7 +58,7 @@ impl Database {
         let mut object = match &plan.source {
             Source::TableScan(obj) => obj.borrow_mut(),
             Source::IndexScan(obj, _) => obj.borrow_mut(),
-            _ => { return Err(format!("Cannot execute delete for this type of query")); }
+            _ => { return Err(format!("Cannot execute delete for this type of query").into()); }
         };
 
         object.remove_tuples(&ids);
@@ -153,7 +153,7 @@ impl Database {
 
     pub fn dump(&self, name: &str, writer: &mut impl fmt::Write) -> Result<()> {
         let rel = self.schema.find_relation(name).unwrap();
-        writeln!(writer, ".define {}", dump_create(rel)).map_err(|_| "Stdio error")?;
+        writeln!(writer, ".define {}", dump_create(rel)).map_err(|_| Error::from("Stdio error"))?;
         let result = self.execute_query(&Query::scan(name)).unwrap();
         dump_values(name, result, writer);
 
