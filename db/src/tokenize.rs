@@ -13,6 +13,14 @@ pub enum Token<'a> {
 #[derive(Debug)]
 pub struct TokenizerError;
 
+impl std::error::Error for TokenizerError {}
+
+impl fmt::Display for TokenizerError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "tokenizer error")
+    }
+}
+
 pub struct Tokenizer<'a> {
     source: &'a str,
     pos: usize,

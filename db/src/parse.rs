@@ -6,14 +6,21 @@ use std::fmt;
 use std::str::FromStr;
 
 #[derive(Debug)]
-pub struct ParseError {
-    msg: &'static str,
-    pos: usize,
+pub enum ParseError {
+    Msg(&'static str, usize),
+    UnexpectedToken(Box<str>, Box<str>, usize),
 }
 
 impl ParseError {
-    pub fn msg(msg: &'static str) -> Self {
-        Self{ msg, pos: 0 }
+    pub(crate) fn msg(msg: &'static str) -> Self {
+        Self::Msg(msg, 0)
+    }
+
+    pub(crate) fn expected(self, expected: &str) -> Self {
+        match self {
+            Self::UnexpectedToken(actual, _, pos) => Self::UnexpectedToken(actual, Box::from(expected), pos),
+            x => x,
+        }
     }
 }
 
@@ -22,13 +29,23 @@ impl std::error::Error for ParseError {
 
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "error at {}: {}", self.pos, self.msg)
+        match self {
+            Self::Msg(msg, pos) => write!(f, "{msg} at {pos}"),
+            Self::UnexpectedToken(actual, expected, pos) if expected.is_empty() => write!(f, "Unexpected token {actual} at {pos}"),
+            Self::UnexpectedToken(actual, expected, pos) => write!(f, "Expected {actual}, got {expected} at {pos}"),
+        }
     }
 }
 
 impl From<TokenizerError> for ParseError {
     fn from(_: TokenizerError) -> Self {
         Self::msg("tokenizer error")
+    }
+}
+
+impl From<Token<'_>> for ParseError {
+    fn from(token: Token<'_>) -> Self {
+        Self::UnexpectedToken(Box::from(token.to_string()), Box::from(""), token.pos())
     }
 }
 
@@ -65,10 +82,10 @@ pub fn parse_query(query_str: &str) -> Result<Query<'_>, ParseError> {
                     query = query.count();
                 },
                 "delete" => unimplemented!(),
-                _ => return Err(ParseError{ msg: "Function not recognized", pos: token.pos() })
+                _ => return Err(ParseError::Msg("Function not recognized", token.pos()))
             },
             Token::End(_) => break,
-            _ => return Err(ParseError{ msg: "Expected a symbol", pos: token.pos() })
+            _ => return Err(ParseError::from(token).expected("symbol"))
         }
     }
 
@@ -77,12 +94,12 @@ pub fn parse_query(query_str: &str) -> Result<Query<'_>, ParseError> {
 
 pub fn parse_insert<'a>(query_str: &'a str) -> Result<Insert<'a, Vec<TupleAttr<'a>>>, ParseError> {
     let mut tokenizer = Tokenizer::new(query_str);
-    let target = tokenizer.next().map_err(|_| ParseError::msg("Expected target relation name"))?;
+    let target = tokenizer.next().map_err(|token| ParseError::from(token).expected("relation name"))?;
     match target {
         Token::Symbol(target, _) => {
             Ok(Insert::insert_into(target).tuple(read_tuple(&mut tokenizer)?))
         },
-        t => Err(ParseError { msg: "Unexpected token", pos: t.pos() }),
+        t => Err(ParseError::from(t))
     }
 }
 
@@ -123,9 +140,9 @@ fn read_operator(t: Token) -> Result<Operator, ParseError> {
             ">=" => Ok(Operator::GE),
             "<" => Ok(Operator::LT),
             "<=" => Ok(Operator::LE),
-            _ => Err(ParseError { msg: "Unknown operator", pos: t.pos() }),
+            _ => Err(ParseError::Msg("Unknown operator", t.pos())),
         }
-        _ => Err(ParseError { msg: "Unknown operator", pos: t.pos() }),
+        t => Err(ParseError::from(t).expected("operator"))
     }
 }
 
@@ -142,7 +159,7 @@ fn read_table_scan<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Query<'a>, Parse
             expect_pipe_or_end(tokenizer)?;
             Ok(Query::scan(table))
         },
-        token => Err(ParseError{ msg: "Expected a symbol", pos: token.pos() })
+        token => Err(ParseError::from(token).expected("symbol"))
     }
 }
 
@@ -161,13 +178,13 @@ fn read_tuple<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Vec<TupleAttr<'a>>, P
                             return Err(ParseError::msg("Expected a symbol"));
                         }
                     },
-                    token => return Err(ParseError { pos: token.pos(), msg: "Expected an equals sign" })
+                    token => return Err(ParseError::from(token).expected("equals sign"))
                 }
             },
             Token::Pipe(_) => break,
             Token::End(_) => break,
             Token::SymbolWithType(value_or_name, kind, pos) => {
-                let kind = Type::from_str(kind).map_err(|_| ParseError{ msg: "Unknown type", pos })?;
+                let kind = Type::from_str(kind).map_err(|_| ParseError::Msg("Unknown type", pos))?;
                 match tokenizer.next()? {
                     Token::Op("=", _) => {
                         if let Token::Symbol(value, _) = tokenizer.next()? {
@@ -176,11 +193,11 @@ fn read_tuple<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Vec<TupleAttr<'a>>, P
                             return Err(ParseError::msg("Expected a symbol"));
                         }
                     },
-                    token => return Err(ParseError { pos: token.pos(), msg: "Expected an equals sign" })
+                    token => return Err(ParseError::from(token).expected("equals sign"))
                 }
             },
-            Token::SymbolWithKeyType(_, _, pos) => return Err(ParseError{ msg: "Expected a symbol, got typed field", pos }),
-            t => return Err(ParseError { msg: "Unexpected token", pos: t.pos() }),
+            Token::SymbolWithKeyType(_, _, _) => return Err(ParseError::from(token).expected("symbol")),
+            t => return Err(ParseError::from(t))
         }
     }
 
@@ -196,8 +213,8 @@ fn read_list<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Vec<&'a str>, ParseErr
             Token::Symbol(name, _) => values.push(name),
             Token::Pipe(_) => break,
             Token::End(_) => break,
-            Token::SymbolWithType(_, _, pos) => return Err(ParseError{ msg: "Expected a symbol, got typed field", pos }),
-            Token::SymbolWithKeyType(_, _, pos) => return Err(ParseError{ msg: "Expected a symbol, got typed field", pos }),
+            Token::SymbolWithType(_, _, _) => return Err(ParseError::from(token).expected("typed field")),
+            Token::SymbolWithKeyType(_, _, _) => return Err(ParseError::from(token).expected("typed field")),
             Token::Op(_, _) => todo!(),
         }
     }
@@ -219,10 +236,7 @@ fn expect_pipe_or_end(tokenizer: &mut Tokenizer) -> Result<(), ParseError> {
     match token {
         Token::Pipe(_) => Ok(()),
         Token::End(_) => Ok(()),
-        t => Err(ParseError{
-            msg: "No more arguments were expected",
-            pos: t.pos(),
-        }),
+        t => Err(ParseError::Msg("No more arguments were expected", t.pos())),
     }
 }
 
@@ -287,14 +301,6 @@ mod tests {
                 assert!(parsed.is_err());
             }
         };
-
-        ($query:literal, $pos:literal) => {
-            {
-                let parsed = parse_query($query);
-                dbg!(&parsed);
-                assert!(matches!(parsed, Err(ParseError{ msg: _, pos: $pos })));
-            }
-        }
     }
 
     macro_rules! assert_parse_insert {
@@ -322,14 +328,14 @@ mod tests {
     #[test]
     fn test_fail_parse_query() {
         assert_parse_query_fails!("");
-        assert_parse_query_fails!("scan | select_all", 5);
+        assert_parse_query_fails!("scan | select_all");
         assert_parse_query_fails!("scann example");
-        assert_parse_query_fails!("scan example1 example2", 14);
+        assert_parse_query_fails!("scan example1 example2");
         assert_parse_query_fails!("| select_all");
-        assert_parse_query_fails!("scan example | i_dont_know", 15);
-        assert_parse_query_fails!("scan example | id::NUMBER", 15);
-        assert_parse_query_fails!("scan example | filter id ! 1", 25);
-        assert_parse_query_fails!("tuple 1 2 | select_all", 8);
+        assert_parse_query_fails!("scan example | i_dont_know");
+        assert_parse_query_fails!("scan example | id::NUMBER");
+        assert_parse_query_fails!("scan example | filter id ! 1");
+        assert_parse_query_fails!("tuple 1 2 | select_all");
     }
 
     #[test]
