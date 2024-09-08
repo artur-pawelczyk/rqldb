@@ -1,6 +1,6 @@
 use std::{error::Error, fs::{read_dir, File}, io::Read as _, path::Path};
 
-use rqldb::{interpret::{Interpreter, NoopOutputHandler}, parse, Database};
+use rqldb::{interpret::{Interpreter, NoopOutputHandler}, Database};
 
 #[test]
 fn test_example_code() -> Result<(), Box<dyn Error>> {

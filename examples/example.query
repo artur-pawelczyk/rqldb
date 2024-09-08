@@ -1,10 +1,12 @@
 .define relation document id::NUMBER content::TEXT type::NUMBER
 .define relation type id::NUMBER name::TEXT
 
+# Insert tuples into "type" relation
 .insert type id = 1 name = article
 .insert type id = 2 name = page
 .insert type id = 3 name = contract
 
+# Insert tuples into "document" relation
 .insert document id = 1 content = example_page type = 2
 .insert document id = 2 content = other_page type = 2
 .insert document id = 3 content = some_contract type = 3

@@ -69,7 +69,9 @@ impl Interpreter {
     }
 
     fn read_command<'a>(&self, input: &'a str) -> Command<'a> {
-        if input.chars().next() == Some('.') {
+        if input.chars().next() == Some('#') {
+            Command::Empty
+        } else if input.chars().next() == Some('.') {
             if let Some(cmd_end) = input.char_indices().find(|(_, c)| c.is_ascii_whitespace()).map(|(i, _)| i) {
                 match &input[1..cmd_end] {
                     "define" => Command::Define(&input[cmd_end..].trim()),
@@ -142,6 +144,19 @@ mod tests {
         interpreter.handle_line("scan document", &mut handler)?;
 
         assert_eq!(handler.results.len(), 1);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_ignore_comment() -> Result<(), Box<dyn Error>> {
+        let interpreter = Interpreter::default();
+        let mut handler = MockOutputHandler::default();
+
+        interpreter.handle_line("# this is a comment", &mut handler)?;
+
+        assert!(handler.custom_commands.is_empty());
+        assert!(handler.results.is_empty());
 
         Ok(())
     }
