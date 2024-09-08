@@ -4,7 +4,16 @@ use crate::{parse_definition, parse_delete, parse_insert, parse_query, Database,
 
 pub trait OutputHandler {
     fn output_result<'a>(&mut self, _: QueryResults);
-    fn custom_command(&mut self, cmd: &str);
+    fn custom_command(&mut self, db: &Database, cmd: &str);
+}
+
+pub struct NoopOutputHandler;
+impl OutputHandler for NoopOutputHandler {
+    fn output_result<'a>(&mut self, _: QueryResults) {
+    }
+
+    fn custom_command(&mut self, _: &Database, _: &str) {
+    }
 }
 
 #[derive(Default)]
@@ -46,7 +55,7 @@ impl Interpreter {
                 Ok(())
             },
             Command::Custom(s) => {
-                output.custom_command(s);
+                output.custom_command(&self.db.borrow(), s);
                 Ok(())
             },
             Command::Query(query) => {
@@ -106,7 +115,7 @@ mod tests {
             self.results.push(result);
         }
 
-        fn custom_command(&mut self, cmd: &str) {
+        fn custom_command(&mut self, _: &Database, cmd: &str) {
             self.custom_commands.push(String::from(cmd));
         }
     }
