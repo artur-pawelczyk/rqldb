@@ -11,6 +11,7 @@ pub mod tokenize;
 pub mod tuple;
 pub mod page;
 mod heap;
+pub mod interpret;
 
 #[cfg(test)]
 pub mod test;
