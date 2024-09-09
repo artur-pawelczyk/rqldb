@@ -1,8 +1,10 @@
 mod shell;
 mod table;
+mod print;
 
+use print::{NilOut, StandardOut};
 use rustyline::config::Configurer;
-use shell::{NilOut, Shell, StandardOut};
+use shell::Shell;
 
 use rustyline::Editor;
 use clap::Parser;
