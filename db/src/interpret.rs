@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashSet, error::Error};
+use std::{cell::RefCell, error::Error};
 
 use crate::{parse_definition, parse_delete, parse_insert, parse_query, Database, QueryResults};
 
@@ -18,7 +18,6 @@ impl OutputHandler for NoopOutputHandler {
 
 #[derive(Default)]
 pub struct Interpreter {
-    custom_commands: HashSet<String>,
     db: RefCell<Database>,
 }
 
@@ -26,14 +25,6 @@ impl Interpreter {
     pub fn with_database(db: Database) -> Self {
         Self {
             db: RefCell::new(db),
-            ..Default::default()
-        }
-    }
-
-    pub fn custom_commands(self, commands: &[impl ToString]) -> Self {
-        Self {
-            custom_commands: commands.iter().map(ToString::to_string).collect(),
-            ..self
         }
     }
 
@@ -77,8 +68,7 @@ impl Interpreter {
                     "define" => Command::Define(&input[cmd_end..].trim()),
                     "insert" => Command::Insert(&input[cmd_end..].trim()),
                     "delete" => Command::Delete(&input[cmd_end..].trim()),
-                    cmd if self.custom_commands.contains(cmd) => Command::Custom(&input[1..]),
-                    _ => Command::Query(input),
+                    _ => Command::Custom(&input[1..]),
                 }
             } else {
                 Command::Query(input)
@@ -125,7 +115,7 @@ mod tests {
     #[test]
     fn test_custom_command() -> Result<(), Box<dyn Error>> {
         let mut handler = MockOutputHandler::default();
-        let interpreter = Interpreter::default().custom_commands(&["something"]);
+        let interpreter = Interpreter::default();
         interpreter.handle_line(".something arg", &mut handler)?;
 
         assert_eq!(handler.custom_commands[0], "something arg");
