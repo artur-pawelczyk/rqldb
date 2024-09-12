@@ -5,7 +5,7 @@ use rqldb::QueryResults;
 use crate::table::Table;
 
 pub(crate) trait ResultPrinter {
-    fn print_result<'a>(&self, result: &QueryResults, ctx: PrintContext<'a>) -> Result<(), fmt::Error>;
+    fn print_result<'a>(&self, result: &QueryResults, ctx: &mut PrintContext<'a>) -> Result<(), fmt::Error>;
 }
 
 pub(crate) struct PrintContext<'a> {
@@ -25,7 +25,7 @@ impl<'a> PrintContext<'a> {
 
 pub(crate) struct TablePrinter;
 impl ResultPrinter for TablePrinter {
-    fn print_result<'a>(&self, result: &QueryResults, ctx: PrintContext<'a>) -> Result<(), fmt::Error> {
+    fn print_result<'a>(&self, result: &QueryResults, ctx: &mut PrintContext<'a>) -> Result<(), fmt::Error> {
         let mut table = Table::new();
         for attr in result.attributes() {
             table.add_title_cell(attr.name());
@@ -49,7 +49,7 @@ impl ResultPrinter for TablePrinter {
 
 pub(crate) struct SimplePrinter;
 impl ResultPrinter for SimplePrinter {
-    fn print_result<'a>(&self, result: &QueryResults, ctx: PrintContext<'a>) -> Result<(), fmt::Error> {
+    fn print_result<'a>(&self, result: &QueryResults, ctx: &mut PrintContext<'a>) -> Result<(), fmt::Error> {
         let attributes = result.attributes();
         for (n, tuple) in result.tuples().enumerate() {
             if ctx.limit.map(|limit| n >= limit).unwrap_or(false) {

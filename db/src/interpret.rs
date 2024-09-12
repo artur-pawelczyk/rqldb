@@ -1,15 +1,16 @@
-use std::{cell::RefCell, error::Error};
+use std::{cell::{Ref, RefCell}, error::Error};
 
 use crate::{parse_definition, parse_delete, parse_insert, parse_query, Database, QueryResults};
 
 pub trait OutputHandler {
-    fn output_result<'a>(&mut self, _: QueryResults);
+    fn output_result(&mut self, _: QueryResults) -> Result<(), Box<dyn Error>>;
     fn custom_command(&mut self, db: &Database, cmd: &str);
 }
 
 pub struct NoopOutputHandler;
 impl OutputHandler for NoopOutputHandler {
-    fn output_result<'a>(&mut self, _: QueryResults) {
+    fn output_result(&mut self, _: QueryResults) -> Result<(), Box<dyn Error>> {
+        Ok(())
     }
 
     fn custom_command(&mut self, _: &Database, _: &str) {
@@ -52,26 +53,31 @@ impl Interpreter {
             Command::Query(query) => {
                 let query = parse_query(query)?;
                 let result = self.db.borrow().execute_query(&query)?;
-                output.output_result(result);
+                output.output_result(result)?;
                 Ok(())
             },
             _ => Ok(())
         }
     }
 
+    pub fn database(&self) -> Ref<Database> {
+        self.db.borrow()
+    }
+
     fn read_command<'a>(&self, input: &'a str) -> Command<'a> {
-        if input.chars().next() == Some('#') {
+        if input.is_empty() || input.chars().next() == Some('#') {
             Command::Empty
         } else if input.chars().next() == Some('.') {
-            if let Some(cmd_end) = input.char_indices().find(|(_, c)| c.is_ascii_whitespace()).map(|(i, _)| i) {
-                match &input[1..cmd_end] {
-                    "define" => Command::Define(&input[cmd_end..].trim()),
-                    "insert" => Command::Insert(&input[cmd_end..].trim()),
-                    "delete" => Command::Delete(&input[cmd_end..].trim()),
-                    _ => Command::Custom(&input[1..]),
-                }
-            } else {
-                Command::Query(input)
+            let cmd_end = input.char_indices()
+                .find(|(_, c)| c.is_ascii_whitespace())
+                .map(|(i, _)| i)
+                .unwrap_or(input.len());
+
+            match &input[1..cmd_end] {
+                "define" => Command::Define(&input[cmd_end..].trim()),
+                "insert" => Command::Insert(&input[cmd_end..].trim()),
+                "delete" => Command::Delete(&input[cmd_end..].trim()),
+                _ => Command::Custom(&input[1..]),
             }
         } else {
             Command::Query(input)
@@ -103,13 +109,27 @@ mod tests {
     }
 
     impl OutputHandler for MockOutputHandler {
-        fn output_result<'a>(&mut self, result: QueryResults) {
+        fn output_result<'a>(&mut self, result: QueryResults) -> Result<(), Box<dyn Error>> {
             self.results.push(result);
+            Ok(())
         }
 
         fn custom_command(&mut self, _: &Database, cmd: &str) {
             self.custom_commands.push(String::from(cmd));
         }
+    }
+
+    #[test]
+    fn test_empty_command() -> Result<(), Box<dyn Error>> {
+        let mut handler = MockOutputHandler::default();
+        let interpreter = Interpreter::default();
+
+        interpreter.handle_line("", &mut handler)?;
+
+        assert!(handler.custom_commands.is_empty());
+        assert!(handler.results.is_empty());
+
+        Ok(())
     }
 
     #[test]
