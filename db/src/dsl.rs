@@ -63,7 +63,7 @@ impl<'a> Query<'a> {
         self
     }
 
-    pub fn insert_into(self, name: &'a str) -> Insert<Vec<TupleAttr<'a>>> {
+    pub fn insert_into(self, name: &'a str) -> Insert<'a> {
         if let Source::Tuple(tuple) = self.source {
             Insert { target: name, tuple }
         } else {
@@ -359,7 +359,7 @@ fn write_attrs(f: &mut fmt::Formatter, attrs: &[TupleAttr<'_>]) -> fmt::Result {
 }
 
 #[derive(Debug)]
-pub struct Insert<'a, T>
+pub struct Insert<'a, T = Vec<TupleAttr<'a>>>
 {
     pub(crate) target: &'a str,
     pub(crate) tuple: T,
@@ -370,27 +370,27 @@ impl<'a> Insert<'a, ()> {
         Self { target, tuple: () }
     }
 
-    pub fn tuple<T>(self, tuple: T) -> Insert<'a, Vec<TupleAttr<'a>>>
+    pub fn tuple<T>(self, tuple: T) -> Insert<'a>
     where T: IntoTuple<'a>,
     {
         Insert { tuple: tuple.into_tuple(), target: self.target }
     }
 
-    pub fn element(self, name: &'a str, value: impl Encode<'a>) -> Insert<'a, Vec<TupleAttr<'a>>> {
+    pub fn element(self, name: &'a str, value: impl Encode<'a>) -> Insert {
         let elem = TupleAttr { kind: None, name, value: value.encode() };
         Insert { target: self.target, tuple: vec![elem] }
     }
 }
 
-impl<'a> Insert<'a, Vec<TupleAttr<'a>>> {
-   pub fn element(mut self, name: &'a str, value: impl Encode<'a>) -> Insert<'a, Vec<TupleAttr<'a>>> {
+impl<'a> Insert<'a> {
+   pub fn element(mut self, name: &'a str, value: impl Encode<'a>) -> Insert {
        let elem = TupleAttr { kind: None, name, value: value.encode() };
        self.tuple.push(elem);
        self
     }
 }
 
-impl<'a> fmt::Display for Insert<'a, Vec<TupleAttr<'a>>> {
+impl fmt::Display for Insert<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} ", self.target)?;
         write_attrs(f, &self.tuple)?;

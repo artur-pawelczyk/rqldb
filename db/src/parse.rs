@@ -92,7 +92,7 @@ pub fn parse_query(query_str: &str) -> Result<Query<'_>, ParseError> {
     Ok(query)
 }
 
-pub fn parse_insert<'a>(query_str: &'a str) -> Result<Insert<'a, Vec<TupleAttr<'a>>>, ParseError> {
+pub fn parse_insert<'a>(query_str: &'a str) -> Result<Insert<'a>, ParseError> {
     let mut tokenizer = Tokenizer::new(query_str);
     let target = tokenizer.next().map_err(|token| ParseError::from(token).expected("relation name"))?;
     match target {

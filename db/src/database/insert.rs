@@ -4,7 +4,7 @@ use crate::{dsl, Database};
 use crate::database::Result;
 
 impl Database {
-    pub fn insert(&self, cmd: &dsl::Insert<'_, Vec<dsl::TupleAttr<'_>>>) -> Result<()> {
+    pub fn insert(&self, cmd: &dsl::Insert) -> Result<()> {
         let mut target = self.object(cmd.target)
             .ok_or_else(|| format!("Relation {} not found", cmd.target))?
             .borrow_mut();
