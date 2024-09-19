@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::io::Write;
 use std::{fmt, io};
 use std::hash::{DefaultHasher, Hash as _, Hasher};
 use std::iter::zip;
@@ -9,7 +10,7 @@ use crate::bytes::write_as_bytes;
 use crate::event::EventHandler;
 use crate::heap::Heap;
 use crate::schema::AttributeRef;
-use crate::tuple::{element_at_pos, PositionalAttribute};
+use crate::tuple::PositionalAttribute;
 use crate::{tuple::Tuple, schema::Relation, Type};
 use crate::page::TupleId;
 
@@ -48,29 +49,39 @@ impl IndexedObject {
         self.id
     }
 
-    pub(crate) fn add_tuple(&mut self, tuple: &[u8]) {
+    pub(crate) fn add_tuple(&mut self, tuple: &impl PartialTuple) -> Result<(), TupleAddError> {
+        let mut byte_tuple = Vec::new();
+        for attr in &self.attrs {
+            if !tuple.write_element_at(attr, &mut byte_tuple) {
+                return Err(TupleAddError {
+                    msg: Box::from(format!("Attribute {} of type {} not found", attr.name(), attr.kind()))
+                });
+            }
+        }
+
         let added = match &self.index {
             Index::Attr(key_attr) => {
-                let key = element_at_pos(tuple, &self.attrs, key_attr.pos());
-                if let Some(id) = self.find_in_index(key) {
+                let mut key = Vec::new();
+                assert!(tuple.write_element_at(key_attr, &mut key));
+                if let Some(id) = self.find_in_index(&key) {
                     self.pages.delete(id);
-                    self.remove_from_index(key, id);
+                    self.remove_from_index(&key, id);
 
-                    let new_id = self.pages.push(tuple);
-                    self.add_to_index(tuple, new_id);
+                    let new_id = self.pages.push(&byte_tuple);
+                    self.add_to_index(&byte_tuple, new_id);
                     false
                 } else {
-                    let id = self.pages.push(tuple);
-                    self.add_to_index(key, id);
+                    let id = self.pages.push(&byte_tuple);
+                    self.add_to_index(&key, id);
                     true
                 }
             },
             Index::Uniq => {
-                if self.find_in_index(tuple).is_some() {
+                if self.find_in_index(&byte_tuple).is_some() {
                     false
                 } else {
-                    let id = self.pages.push(tuple);
-                    self.add_to_index(tuple, id);
+                    let id = self.pages.push(&byte_tuple);
+                    self.add_to_index(&byte_tuple, id);
                     true
                 }
                 
@@ -78,8 +89,10 @@ impl IndexedObject {
         };
  
        if added {
-            self.handler.borrow().emit_add_tuple(self.id, tuple);
-        }
+            self.handler.borrow().emit_add_tuple(self.id, &byte_tuple);
+       }
+
+        Ok(())
     }
 
     pub(crate) fn find_in_index(&self, bytes: &[u8]) -> Option<TupleId> {
@@ -196,11 +209,30 @@ impl fmt::Debug for IndexedObject {
     }
 }
 
+#[derive(Debug)]
+pub(crate) struct TupleAddError {
+    pub(crate) msg: Box<str>,
+}
+
+impl std::error::Error for TupleAddError {}
+
+impl fmt::Display for TupleAddError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.msg)
+    }
+}
+
 #[derive(Default)]
 enum Index {
     #[default]
     Uniq,
     Attr(Attribute),
+}
+
+pub(crate) trait PartialTuple {
+    fn write_element_at<A, W>(&self, attr: &A, out: W) -> bool
+    where A: NamedAttribute,
+          W: Write;
 }
 
 #[derive(Debug)]

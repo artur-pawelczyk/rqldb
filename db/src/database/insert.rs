@@ -1,7 +1,11 @@
+use std::io::Write;
+
 use crate::bytes::write_as_bytes;
-use crate::object::NamedAttribute as _;
+use crate::object::{NamedAttribute, PartialTuple, TupleAddError};
 use crate::{dsl, Database};
 use crate::database::Result;
+
+use super::Error;
 
 impl Database {
     pub fn insert(&self, cmd: &dsl::Insert) -> Result<()> {
@@ -9,19 +13,26 @@ impl Database {
             .ok_or_else(|| format!("Relation {} not found", cmd.target))?
             .borrow_mut();
 
-        let mut byte_tuple = Vec::new();
-        for attr in target.attributes() {
-            let elem = cmd.tuple
-                .iter().find(|elem| elem.name == attr.name.as_ref() || elem.name == attr.short_name())
-                .ok_or_else(|| format!("Attribute {} is missing", attr.name))?;
+        target.add_tuple(&cmd)
+            .map_err(Error::from)
+    }
+}
 
-            write_as_bytes(attr.kind, &elem.value, &mut byte_tuple)
-                .map_err(|_| format!("Error encoding value for attribute {}", attr.name))?;
-        }
+impl PartialTuple for &dsl::Insert<'_> {
+    fn write_element_at<A, W>(&self, attr: &A, mut out: W) -> bool
+    where A: NamedAttribute,
+    W: Write
+    {
+        self.tuple.iter()
+            .find(|elem| elem.name == attr.name() || elem.name == attr.short_name())
+            .map(|elem| write_as_bytes(attr.kind(), &elem.value, &mut out).is_ok() )
+            .unwrap_or(false)
+    }
+}
 
-        target.add_tuple(&byte_tuple);
-
-        Ok(())
+impl From<TupleAddError> for Error {
+    fn from(value: TupleAddError) -> Self {
+        Self(value.msg)
     }
 }
 
