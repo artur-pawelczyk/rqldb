@@ -38,9 +38,9 @@ impl From<TupleAddError> for Error {
 
 #[cfg(test)]
 mod tests {
-    use dsl::{Definition, Query};
+    use dsl::{Definition, Operator, Query};
 
-    use crate::Type;
+    use crate::{test::fixture::{self, Dataset}, Type};
 
     use super::*;
 
@@ -100,5 +100,26 @@ mod tests {
         let mut tuples = result.tuples();
         assert_eq!(tuples.next().unwrap().element("document.content").unwrap().to_string(), "new content");
         assert!(tuples.next().is_none());
+    }
+
+    #[test]
+    fn update_with_index() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let db = Dataset::default()
+            .add(fixture::Document::size(1))
+            .add(fixture::DocIdIndex)
+            .add(fixture::DocSize)
+            .generate(Database::default());
+
+        db.insert(&Query::build_tuple()
+                  .inferred("id", 1)
+                  .inferred("content", "updated content")
+                  .inferred("size", 100)
+                  .build().insert_into("document")).unwrap();
+
+        let result = db.execute_query(&Query::scan_index("document.id", Operator::EQ, "1"))?;
+        let mut tuples = result.tuples();
+        assert_eq!(tuples.next().unwrap().element("document.content").unwrap().to_string(), "updated content");
+
+        Ok(())
     }
 }

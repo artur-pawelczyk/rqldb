@@ -68,7 +68,7 @@ impl IndexedObject {
                     self.remove_from_index(&key, id);
 
                     let new_id = self.pages.push(&byte_tuple);
-                    self.add_to_index(&byte_tuple, new_id);
+                    self.add_to_index(&key, new_id);
                     false
                 } else {
                     let id = self.pages.push(&byte_tuple);

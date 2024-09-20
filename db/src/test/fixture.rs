@@ -56,6 +56,11 @@ impl Relation {
         self.attributes.insert(name, gen);
         self
     }
+
+    fn index(mut self, attr: &'static str) -> Self {
+        self.index = Some(attr);
+        self
+    }
 }
 
 impl From<&Relation> for Definition {
@@ -113,6 +118,21 @@ impl Fixture for DocSize {
     fn before_define(&self, mut def: Relation) -> Relation {
         if def.name == "document" {
             def = def.attribute("size", Generator::number_from(1));
+        }
+
+        def
+    }
+}
+
+pub struct DocIdIndex;
+impl Fixture for DocIdIndex {
+    fn generate_schema(&self) -> Box<dyn Iterator<Item = Relation>> {
+        Box::new(iter::empty())
+    }
+
+    fn before_define(&self, mut def: Relation) -> Relation {
+        if def.name == "document" {
+            def = def.index("id");
         }
 
         def
