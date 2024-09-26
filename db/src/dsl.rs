@@ -6,6 +6,7 @@ use crate::{parse::ParseError, schema::Type};
 pub struct Query<'a> {
     pub source: Source<'a>,
     pub join_sources: Vec<JoinSource<'a>>,
+    mappers: Vec<Mapper<'a>>,
     pub filters: Vec<Filter<'a>>,
     pub finisher: Finisher<'a>
 }
@@ -28,9 +29,7 @@ impl<'a> Query<'a> {
     pub fn tuple(values: impl IntoTuple<'a>) -> Self {
         Self {
             source: Source::Tuple(values.into_tuple()),
-            join_sources: vec![],
-            filters: Vec::new(),
-            finisher: Finisher::AllColumns,
+            ..Default::default()
         }
     }
 
@@ -63,6 +62,14 @@ impl<'a> Query<'a> {
         self
     }
 
+    pub fn set(mut self, attr: &'a str, value: impl Encode<'a>) -> Self {
+        self.mappers.push(Mapper {
+            function: "set",
+            args: Box::from([attr.into(), value.encode()]),
+        });
+        self
+    }
+
     pub fn insert_into(self, name: &'a str) -> Insert<'a> {
         if let Source::Tuple(tuple) = self.source {
             Insert { target: name, tuple }
@@ -87,6 +94,10 @@ impl<'a> fmt::Display for Query<'a> {
         write!(f, "{}", &self.source)?;
         for join in &self.join_sources {
             write!(f, " | {}", join)?;
+        }
+
+        for mapper in &self.mappers {
+            write!(f, " | {}", mapper)?;
         }
 
         for filter in &self.filters {
@@ -283,6 +294,20 @@ impl<'a> fmt::Display for JoinSource<'a> {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct Mapper<'a> {
+    function: &'a str,
+    args: Box<[Cow<'a, str>]>,
+}
+
+impl<'a> fmt::Display for Mapper<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "map {} ", self.function)?;
+
+        write_tokens(f, &self.args)
+    }
+}
+
 #[derive(Debug, Eq, PartialEq)]
 pub enum Filter<'a> {
     Condition(&'a str, Operator, &'a str),
@@ -316,13 +341,13 @@ impl<'a> fmt::Display for Finisher<'a> {
     }
 }
 
-fn write_tokens(f: &mut fmt::Formatter, tokens: &[&str]) -> fmt::Result {
+fn write_tokens(f: &mut fmt::Formatter, tokens: &[impl AsRef<str>]) -> fmt::Result {
     let mut i = tokens.iter().peekable();
     while let Some(token) = i.next() {
-        if token.contains(' ') {
-            write!(f, "\"{}\"", token)?;
+        if token.as_ref().contains(' ') {
+            write!(f, "\"{}\"", token.as_ref())?;
         } else {
-            write!(f, "{}" , token)?;
+            write!(f, "{}" , token.as_ref())?;
         }
 
         if i.peek().is_some() {
@@ -333,6 +358,7 @@ fn write_tokens(f: &mut fmt::Formatter, tokens: &[&str]) -> fmt::Result {
     Ok(())
 }
 
+// TODO: Use 'write_tokens' internally
 fn write_attrs(f: &mut fmt::Formatter, attrs: &[TupleAttr<'_>]) -> fmt::Result {
     let mut i = attrs.iter().peekable();
     while let Some(attr) = i.next() {
@@ -503,6 +529,12 @@ mod tests {
     fn apply() {
         let query = Query::scan("example").apply("sum", &["example.n"]);
         assert_eq!(query.to_string(), "scan example | apply sum example.n");
+    }
+
+    #[test]
+    fn map_set() {
+        let query = Query::scan("example").set("example.name", "new name");
+        assert_eq!(query.to_string(), "scan example | map set example.name \"new name\" | select_all");
     }
 
     #[test]
