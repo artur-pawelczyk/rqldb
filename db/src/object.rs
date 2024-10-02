@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::io::Write;
 use std::{fmt, io};
@@ -344,6 +345,12 @@ impl PartialEq<str> for Attribute {
 
 impl PartialEq<str> for &Attribute {
     fn eq(&self, s: &str) -> bool {
+        self.name.as_ref() == s
+    }
+}
+
+impl PartialEq<Cow<'_, str>> for Attribute {
+    fn eq(&self, s: &Cow<'_, str>) -> bool {
         self.name.as_ref() == s
     }
 }

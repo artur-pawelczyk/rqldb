@@ -1,4 +1,5 @@
 use core::fmt;
+use std::borrow::Cow;
 
 use crate::object::{Attribute, IndexedObject, NamedAttribute as _, ObjectId};
 use crate::page::TupleId;
@@ -20,7 +21,7 @@ impl PositionalAttribute for usize {
 #[derive(Debug)]
 pub(crate) struct Tuple<'a> {
     id: TupleId,
-    raw: &'a [u8],
+    raw: Cow<'a, [u8]>,
     attrs: &'a [Attribute],
     source_id: ObjectId,
     rest: Option<Box<Tuple<'a>>>,
@@ -30,14 +31,21 @@ impl<'a> Tuple<'a> {
     pub(crate) fn from_bytes(raw: &'a [u8], attrs: &'a [Attribute]) -> Self {
         Self {
             id: TupleId::anonymous(),
-            raw, attrs,
+            raw: Cow::Borrowed(raw),
+            attrs,
             rest: None,
             source_id: attrs.first().and_then(|a| a.object_id()).unwrap_or(0),
         }
     }
 
     pub(crate) fn with_object(raw: &'a [u8], obj: &'a IndexedObject) -> Self {
-        Self { id: TupleId::anonymous(), raw, attrs: &obj.attrs, source_id: obj.id(), rest: None }
+        Self {
+            id: TupleId::anonymous(),
+            raw: Cow::Borrowed(raw),
+            attrs: &obj.attrs,
+            source_id: obj.id(),
+            rest: None
+        }
     }
 
     pub(crate) fn with_id(self, id: impl Into<TupleId>) -> Self {
@@ -49,7 +57,7 @@ impl<'a> Tuple<'a> {
     }
 
     pub(crate) fn raw_bytes(&self) -> &[u8] {
-        self.raw
+        &self.raw
     }
 
     pub(crate) fn element(&self, attr: &impl PositionalAttribute) -> Option<Element> {

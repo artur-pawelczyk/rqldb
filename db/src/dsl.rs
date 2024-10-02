@@ -6,7 +6,7 @@ use crate::{parse::ParseError, schema::Type};
 pub struct Query<'a> {
     pub source: Source<'a>,
     pub join_sources: Vec<JoinSource<'a>>,
-    mappers: Vec<Mapper<'a>>,
+    pub(crate) mappers: Vec<Mapper<'a>>,
     pub filters: Vec<Filter<'a>>,
     pub finisher: Finisher<'a>
 }
@@ -295,9 +295,9 @@ impl<'a> fmt::Display for JoinSource<'a> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-struct Mapper<'a> {
-    function: &'a str,
-    args: Box<[Cow<'a, str>]>,
+pub(crate) struct Mapper<'a> {
+    pub(crate) function: &'a str,
+    pub(crate) args: Box<[Cow<'a, str>]>,
 }
 
 impl<'a> fmt::Display for Mapper<'a> {

@@ -20,6 +20,7 @@ type Result<T> = std::result::Result<T, String>;
 #[derive(Default)]
 pub(crate) struct Plan {
     pub source: Source,
+    pub mappers: Vec<Mapper>,
     pub filters: Vec<Filter>,
     pub joins: Vec<Join>,
     pub finisher: Finisher,
@@ -49,6 +50,18 @@ impl Plan {
                     Finisher::Nil => true,
                 }
             },
+        }
+    }
+}
+
+pub(crate) enum Mapper {
+    Set(AttributeRef, Vec<u8>),
+}
+
+impl Mapper {
+    pub(crate) fn apply<'a>(&self, tuple: Tuple<'a>) -> Tuple<'a> {
+        match self {
+            Self::Set(attr, value) => unimplemented!()
         }
     }
 }
@@ -206,6 +219,7 @@ pub(crate) fn compute_plan(db: &Database, query: &dsl::Query) -> Result<Plan> {
     let plan = compute_finisher(source, db, query)?;
     let plan = compute_joins(plan, db, query)?;
     let plan = compute_filters(plan, query)?;
+    let plan = compute_mappers(plan, query)?;
 
     Ok(plan)
 }
@@ -262,6 +276,22 @@ fn compute_filters(plan: Plan, query: &dsl::Query) -> Result<Plan> {
     }
 
     Ok(Plan{ filters, ..plan })
+}
+
+fn compute_mappers(mut plan: Plan, query: &dsl::Query) -> Result<Plan> {
+    if let Some(mapper) = query.mappers.first() {
+        let (attr_name, value) = match &mapper.args[..] {
+            [attr_name, value] => (attr_name, value),
+            _ => unimplemented!(),
+        };
+
+        let attributes = plan.final_attributes();
+        let attr = attributes.iter().find(|attr| *attr == attr_name).unwrap();
+        let byte_value = into_bytes(attr.kind(), value).unwrap();
+        plan.mappers.push(Mapper::Set(attr.reference, byte_value));
+    }
+
+    Ok(plan)
 }
 
 fn compute_finisher<'query>(source: QuerySource<'query>, db: &Database, query: &'query dsl::Query) -> Result<Plan> {

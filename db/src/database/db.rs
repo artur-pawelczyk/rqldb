@@ -11,7 +11,7 @@ use crate::dump::{dump_values, dump_create};
 use crate::event::EventHandler;
 use crate::object::{Attribute, IndexedObject, ObjectId};
 use crate::page::TupleId;
-use crate::plan::{self, ApplyFn, Filter, Finisher, Plan, Source};
+use crate::plan::{self, ApplyFn, Filter, Finisher, Mapper, Plan, Source};
 use crate::schema::{AttributeRef, TableId};
 use crate::tuple::Tuple;
 use crate::{schema::Schema, QueryResults, plan::compute_plan};
@@ -85,6 +85,7 @@ impl Database {
             ids,
             joins: Box::from(plan.joins),
             filters: Box::from(plan.filters),
+            mappers: Box::from(plan.mappers),
         };
 
         Ok(QueryResults {
@@ -229,6 +230,7 @@ struct ResultIter {
     ids: VecDeque<TupleId>,
     source: SharedObject,
     joins: Box<[plan::Join]>,
+    mappers: Box<[plan::Mapper]>,
     filters: Box<[plan::Filter]>,
 }
 
@@ -238,6 +240,7 @@ impl ResultIter {
         let tuple = source.get(id);
         let mut output = tuple.raw_bytes().to_vec();
 
+        // TODO: Use mappers for joins
         for join in &self.joins {
             let key = tuple.element(join.joinee_key());
             if let Some(join_tuple) = join.source_object()
@@ -390,6 +393,18 @@ mod tests {
             .and_then(|e| <i32>::try_from(e).ok())
             .unwrap();
         assert_eq!(max, 10);
+    }
+
+    #[test]
+    #[ignore]
+    fn mapper() {
+        let db = Dataset::default()
+            .add(Document::size(1))
+            .db();
+
+        let result = db.execute_query(&Query::scan("document").set("document.content", "content after map")).unwrap();
+        let mut tuples = result.tuples();
+        assert_eq!(tuples.next().unwrap().element("document.content").unwrap().to_string(), "content after map");
     }
 
     #[test]
