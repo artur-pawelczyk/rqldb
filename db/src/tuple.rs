@@ -21,8 +21,8 @@ impl PositionalAttribute for usize {
 #[derive(Debug)]
 pub(crate) struct Tuple<'a> {
     id: TupleId,
-    raw: Cow<'a, [u8]>,
-    attrs: &'a [Attribute],
+    pub(crate) raw: Cow<'a, [u8]>,
+    pub(crate) attrs: &'a [Attribute],
     source_id: ObjectId,
     rest: Option<Box<Tuple<'a>>>,
 }

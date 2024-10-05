@@ -9,10 +9,11 @@ use crate::database::obj_view::ObjectView;
 use crate::dump::{dump_values, dump_create};
 
 use crate::event::EventHandler;
+use crate::mapper::Mapper;
 use crate::object::{Attribute, IndexedObject, ObjectId};
 use crate::page::TupleId;
-use crate::plan::{self, ApplyFn, Filter, Finisher, Mapper, Plan, Source};
-use crate::schema::{AttributeRef, TableId};
+use crate::plan::{self, ApplyFn, Filter, Finisher, Plan, Source};
+use crate::schema::{AttributeIdentifier, AttributeRef, TableId};
 use crate::tuple::Tuple;
 use crate::{schema::Schema, QueryResults, plan::compute_plan};
 use crate::{dsl, Query, ResultAttribute};
@@ -85,7 +86,7 @@ impl Database {
             ids,
             joins: Box::from(plan.joins),
             filters: Box::from(plan.filters),
-            mappers: Box::from(plan.mappers),
+            mappers: Box::from([]),
         };
 
         Ok(QueryResults {
@@ -140,6 +141,10 @@ impl Database {
     pub(crate) fn object(&self, id: impl TableId) -> Option<&SharedObject> {
         let rel = self.schema.find_relation(id)?;
         self.objects.get(rel.id as usize)
+    }
+
+    pub(crate) fn attribute(&self, id: impl AttributeIdentifier) -> Option<AttributeRef> {
+        self.schema.lookup_attribute(id).map(|attr| attr.reference())
     }
 
     pub fn schema(&self) -> &Schema {
@@ -230,7 +235,7 @@ struct ResultIter {
     ids: VecDeque<TupleId>,
     source: SharedObject,
     joins: Box<[plan::Join]>,
-    mappers: Box<[plan::Mapper]>,
+    mappers: Box<[Box<dyn for<'a> Mapper<'a>>]>,
     filters: Box<[plan::Filter]>,
 }
 

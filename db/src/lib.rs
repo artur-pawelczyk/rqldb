@@ -12,6 +12,7 @@ pub mod tuple;
 pub mod page;
 mod heap;
 pub mod interpret;
+mod mapper;
 
 #[cfg(test)]
 pub mod test;
