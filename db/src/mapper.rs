@@ -36,7 +36,7 @@ impl<'a> From<Tuple<'a>> for OutTuple<'a> {
 }
 
 pub(crate) trait Mapper<'a> {
-    fn apply(&'a self, output: OutTuple) -> OutTuple<'a>;
+    fn apply(&'a self, output: OutTuple) -> Option<OutTuple<'a>>;
 }
 
 pub(crate) struct AppendMapper<'a> {
@@ -45,13 +45,13 @@ pub(crate) struct AppendMapper<'a> {
 }
 
 impl<'a> Mapper<'a> for AppendMapper<'a> {
-    fn apply(&'a self, output: OutTuple) -> OutTuple<'a> {
+    fn apply(&'a self, output: OutTuple) -> Option<OutTuple<'a>> {
         let mut bytes = output.into_raw();
         bytes.extend(self.raw);
-        OutTuple {
+        Some(OutTuple {
             attrs: &self.attributes_after,
             raw: bytes
-        }
+        })
     }
 }
 
@@ -63,8 +63,19 @@ struct JoinMapper {
 }
 
 impl<'a> Mapper<'a> for JoinMapper {
-    fn apply(&'a self, output: OutTuple) -> OutTuple<'a> {
-        todo!()
+    fn apply(&'a self, output: OutTuple) -> Option<OutTuple<'a>> {
+        let key = output.element(&self.joinee_key)?;
+        if let Some(join_tuple) = self.joiner.borrow().iter()
+            .find(|join_tuple| join_tuple.element(&self.joiner_key).map(|e| e.bytes() == key).unwrap_or(false)) {
+                let mut raw = output.into_raw();
+                raw.extend(join_tuple.raw_bytes());
+                return Some(OutTuple {
+                    attrs: &self.attributes_after,
+                    raw,
+                })
+            } else {
+                None
+            }
     }
 }
 
@@ -90,7 +101,7 @@ mod tests {
         };
 
         let mut out = OutTuple::default();
-        out = mapper.apply(out);
+        out = mapper.apply(out).unwrap();
 
         assert_eq!(
             out.attrs.iter().map(|a| a.name()).collect::<HashSet<_>>(),
@@ -119,7 +130,7 @@ mod tests {
         let attributes_after: Vec<_> = doc_attributes.iter().chain(typ_attributes.iter()).cloned().collect();
 
         let obj = db.object("document").unwrap().borrow();
-        let mut output = OutTuple::from(obj.iter().next().unwrap());
+        let mut output = Some(OutTuple::from(obj.iter().next().unwrap()));
 
         let join_mapper = JoinMapper {
             joiner: db.object("type").unwrap().clone(),
@@ -127,9 +138,9 @@ mod tests {
             joiner_key: db.attribute("type.id").unwrap(),
             attributes_after: attributes_after.into(),
         };
-        
-        output = join_mapper.apply(output);
 
-        assert!(output.raw.is_empty());
+        output = join_mapper.apply(output.unwrap());
+
+        assert!(output.unwrap().raw.is_empty());
     }
 }
