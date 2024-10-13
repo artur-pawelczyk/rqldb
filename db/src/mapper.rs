@@ -1,4 +1,4 @@
-use crate::{database::SharedObject, object::Attribute, schema::AttributeRef, tuple::Tuple};
+use crate::{database::SharedObject, object::{Attribute, NamedAttribute as _}, schema::AttributeRef, tuple::{PositionalAttribute, Tuple}};
 
 #[derive(Default)]
 pub(crate) struct OutTuple<'a> {
@@ -7,6 +7,20 @@ pub(crate) struct OutTuple<'a> {
 }
 
 impl<'a> OutTuple<'a> {
+    fn element(&self, attr: &impl PositionalAttribute) -> Option<&[u8]> {
+        let mut offset = 0usize;
+        for a in self.attrs {
+            let size = a.kind().size(&self.raw[offset..]);
+            if a.pos() == attr.pos() && a.object_id() == attr.object_id() {
+                return Some(&self.raw[offset..offset+size]);
+            }
+
+            offset += size;
+        }
+
+        None
+    }
+
     fn into_raw(self) -> Vec<u8> {
         self.raw
     }
@@ -56,14 +70,14 @@ impl<'a> Mapper<'a> for JoinMapper {
 
 #[cfg(test)]
 mod tests {
-    use std::iter;
+    use std::{collections::HashSet, error::Error};
 
-    use crate::test::fixture::{Dataset, DocType, Document};
+    use crate::{bytes::into_bytes, hash_set, object::NamedAttribute as _, test::fixture::{Dataset, DocType, Document}};
 
     use super::*;
 
     #[test]
-    fn append_tuple() {
+    fn append_tuple() -> Result<(), Box<dyn Error>> {
         let db = Dataset::default()
             .add(Document::size(1))
             .db();
@@ -78,8 +92,18 @@ mod tests {
         let mut out = OutTuple::default();
         out = mapper.apply(out);
 
-        assert!(!out.attrs.is_empty());
-        assert!(!out.into_raw().is_empty());
+        assert_eq!(
+            out.attrs.iter().map(|a| a.name()).collect::<HashSet<_>>(),
+            hash_set!["document.id", "document.content"]
+        );
+
+        let expected_id = into_bytes(crate::Type::NUMBER, "1")?;
+        assert_eq!(
+            out.element(&db.attribute("document.id").unwrap()),
+            Some(expected_id.as_slice())
+        );
+
+        Ok(())
     }
 
     #[ignore]
