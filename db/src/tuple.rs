@@ -80,6 +80,26 @@ impl<'a> Tuple<'a> {
         }
     }
 
+    pub(crate) fn raw_element(&self, attr: &impl PositionalAttribute) -> Option<&[u8]> {
+        let pos = attr.pos();
+
+        if let Some(obj_id) = attr.object_id() {
+            if obj_id == self.source_id {
+                let attr = self.attrs.get(pos as usize)?;
+                let start = self.offset(pos as usize);
+                let end = start + attr.kind().size(&self.raw[start..]);
+                Some(&self.raw[start..end])
+            } else {
+                self.rest.as_ref().and_then(|tuple| tuple.raw_element(attr))
+            }
+        } else {
+            let attr = self.attrs.get(pos as usize)?;
+            let start = self.offset(pos as usize);
+            let end = start + attr.kind().size(&self.raw[start..]);
+            Some(&self.raw[start..end])
+        }
+    }
+
     fn offset(&self, pos: usize) -> usize {
         let mut offset = 0usize;
         for attr in self.attrs.iter().take(pos) {

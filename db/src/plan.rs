@@ -1,5 +1,7 @@
 use crate::bytes::into_bytes;
 use crate::database::SharedObject;
+use crate::mapper::OutTuple;
+use crate::tuple::PositionalAttribute;
 use crate::Database;
 use crate::Operator;
 use crate::dsl;
@@ -73,10 +75,25 @@ pub(crate) struct Filter {
 }
 
 impl Filter {
-    pub fn matches_tuple(&self, tuple: &Tuple) -> bool {
-        let elem = tuple.element(&self.attribute).unwrap();
-        let left = elem.bytes();
+    pub fn matches_tuple<'a>(&self, tuple: &'a impl ByteTuple<'a>) -> bool {
+        let left = tuple.bytes(&self.attribute).unwrap();
         (self.comp)(left, &self.right)
+    }
+}
+
+pub(crate) trait ByteTuple<'a> {
+    fn bytes(&'a self, attr: &impl PositionalAttribute) -> Option<&[u8]>;
+}
+
+impl<'a> ByteTuple<'a> for Tuple<'a> {
+    fn bytes(&'a self, attr: &impl PositionalAttribute) -> Option<&[u8]> {
+        self.raw_element(attr)
+    }
+}
+
+impl<'a> ByteTuple<'a> for OutTuple<'a> {
+    fn bytes(&self, attr: &impl PositionalAttribute) -> Option<&[u8]> {
+        self.element(attr)
     }
 }
 
@@ -373,7 +390,6 @@ mod tests {
     use crate::dsl::Operator::{EQ, GT};
     use crate::object::TempObject;
     use crate::schema::{Schema, Type};
-    use crate::tuple::PositionalAttribute as _;
     use crate::Definition;
 
 

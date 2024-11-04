@@ -1,3 +1,5 @@
+// TODO: See if you can use slice::windows in this module
+
 mod tuple_id;
 
 use core::fmt;

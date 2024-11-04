@@ -7,7 +7,7 @@ pub(crate) struct OutTuple<'a> {
 }
 
 impl<'a> OutTuple<'a> {
-    fn element(&self, attr: &impl PositionalAttribute) -> Option<&[u8]> {
+    pub(crate) fn element(&self, attr: &impl PositionalAttribute) -> Option<&[u8]> {
         let mut offset = 0usize;
         for a in self.attrs {
             let size = a.kind().size(&self.raw[offset..]);
@@ -21,7 +21,7 @@ impl<'a> OutTuple<'a> {
         None
     }
 
-    fn into_raw(self) -> Vec<u8> {
+    pub(crate) fn into_raw(self) -> Vec<u8> {
         self.raw
     }
 }
@@ -40,8 +40,8 @@ pub(crate) trait Mapper<'a> {
 }
 
 pub(crate) struct AppendMapper<'a> {
-    raw: &'a [u8],
-    attributes_after: Box<[Attribute]>,
+    pub(crate) raw: &'a [u8],
+    pub(crate) attributes_after: Box<[Attribute]>,
 }
 
 impl<'a> Mapper<'a> for AppendMapper<'a> {
@@ -55,11 +55,11 @@ impl<'a> Mapper<'a> for AppendMapper<'a> {
     }
 }
 
-struct JoinMapper {
-    joiner: SharedObject,
-    joinee_key: AttributeRef,
-    joiner_key: AttributeRef,
-    attributes_after: Box<[Attribute]>,
+pub(crate) struct JoinMapper {
+    pub(crate) joiner: SharedObject,
+    pub(crate) joinee_key: AttributeRef,
+    pub(crate) joiner_key: AttributeRef,
+    pub(crate) attributes_after: Box<[Attribute]>,
 }
 
 impl<'a> Mapper<'a> for JoinMapper {

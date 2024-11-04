@@ -9,11 +9,11 @@ use crate::database::obj_view::ObjectView;
 use crate::dump::{dump_values, dump_create};
 
 use crate::event::EventHandler;
-use crate::mapper::Mapper;
+use crate::mapper::{JoinMapper, Mapper, OutTuple};
 use crate::object::{Attribute, IndexedObject, ObjectId};
 use crate::page::TupleId;
-use crate::plan::{self, ApplyFn, Filter, Finisher, Plan, Source};
-use crate::schema::{AttributeIdentifier, AttributeRef, TableId};
+use crate::plan::{self, ApplyFn, ByteTuple, Filter, Finisher, Plan, Source};
+use crate::schema::{AttributeRef, TableId};
 use crate::tuple::Tuple;
 use crate::{schema::Schema, QueryResults, plan::compute_plan};
 use crate::{dsl, Query, ResultAttribute};
@@ -81,12 +81,30 @@ impl Database {
         };
 
         let attributes = plan.final_attributes().iter().map(Into::into).collect();
+        let mappers = plan.joins.iter()
+            .fold(Vec::<JoinMapper>::new(), |mut acc, join| {
+                let mut attributes_after = acc.last()
+                    .map(|mapper| Vec::from(mapper.attributes_after.clone()))
+                    .unwrap_or_else(|| plan.source.attributes());
+
+                attributes_after.extend(join.source_object().borrow().attributes().cloned());
+
+                let mapper = JoinMapper {
+                    joiner: join.source_object().clone(),
+                    joinee_key: *join.joinee_key(),
+                    joiner_key: *join.joiner_key(),
+                    attributes_after: attributes_after.into(),
+                };
+                acc.push(mapper);
+                acc
+            });
+
+        let mappers: Vec<Box<dyn for<'a> Mapper<'a>>> = mappers.into_iter().map(|m| Box::new(m) as Box<dyn for<'a> Mapper<'a>>).collect();
         let results = ResultIter {
             source,
             ids,
-            joins: Box::from(plan.joins),
             filters: Box::from(plan.filters),
-            mappers: Box::from([]),
+            mappers: Box::from(mappers),
         };
 
         Ok(QueryResults {
@@ -143,10 +161,6 @@ impl Database {
         self.objects.get(rel.id as usize)
     }
 
-    pub(crate) fn attribute(&self, id: impl AttributeIdentifier) -> Option<AttributeRef> {
-        self.schema.lookup_attribute(id).map(|attr| attr.reference())
-    }
-
     pub fn schema(&self) -> &Schema {
         &self.schema
     }
@@ -175,7 +189,7 @@ impl Database {
     }
 }
 
-fn test_filters(filters: &[Filter], tuple: &Tuple) -> bool {
+fn test_filters<'a>(filters: &[Filter], tuple: &'a impl ByteTuple<'a>) -> bool {
     filters.iter().all(|filter| filter.matches_tuple(tuple))
 }
 
@@ -234,7 +248,6 @@ fn tuple_to_cells(attrs: &[Attribute], tuple: &Tuple) -> Vec<u8> {
 struct ResultIter {
     ids: VecDeque<TupleId>,
     source: SharedObject,
-    joins: Box<[plan::Join]>,
     mappers: Box<[Box<dyn for<'a> Mapper<'a>>]>,
     filters: Box<[plan::Filter]>,
 }
@@ -243,22 +256,26 @@ impl ResultIter {
     fn by_id(&self, id: TupleId) -> Option<Vec<u8>> {
         let source = self.source.borrow();
         let tuple = source.get(id);
-        let mut output = tuple.raw_bytes().to_vec();
+        let mut output = OutTuple::from(tuple);
 
-        // TODO: Use mappers for joins
-        for join in &self.joins {
-            let key = tuple.element(join.joinee_key());
-            if let Some(join_tuple) = join.source_object()
-                .borrow().iter()
-                .find(|join_tuple| join_tuple.element(join.joiner_key()) == key) {
-                    output.extend(join_tuple.raw_bytes());
-                } else {
-                    return None;
-                }
+        for mapper in &self.mappers {
+            output = mapper.apply(output)?;
         }
 
-        if test_filters(&self.filters, &tuple) {
-            Some(output)
+        // TODO: Use mappers for joins
+        // for join in &self.joins {
+        //     let key = tuple.element(join.joinee_key());
+        //     if let Some(join_tuple) = join.source_object()
+        //         .borrow().iter()
+        //         .find(|join_tuple| join_tuple.element(join.joiner_key()) == key) {
+        //             output.extend(join_tuple.raw_bytes());
+        //         } else {
+        //             return None;
+        //         }
+        // }
+
+        if test_filters(&self.filters, &output) {
+            Some(output.into_raw())
         } else {
             None
         }

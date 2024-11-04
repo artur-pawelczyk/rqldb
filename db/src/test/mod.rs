@@ -1,5 +1,6 @@
 pub mod fixture;
 mod gen;
+mod db_ext;
 
 #[macro_export]
 macro_rules! hash_set {
