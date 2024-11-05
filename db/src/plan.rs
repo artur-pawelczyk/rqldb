@@ -1,5 +1,7 @@
 use crate::bytes::into_bytes;
 use crate::database::SharedObject;
+use crate::mapper::Mapper;
+use crate::mapper::NoopMapper;
 use crate::mapper::OutTuple;
 use crate::tuple::PositionalAttribute;
 use crate::Database;
@@ -22,7 +24,7 @@ type Result<T> = std::result::Result<T, String>;
 #[derive(Default)]
 pub(crate) struct Plan {
     pub source: Source,
-    pub mappers: Vec<Mapper>,
+    pub mappers: Vec<Box<dyn for<'a> Mapper<'a>>>,
     pub filters: Vec<Filter>,
     pub joins: Vec<Join>,
     pub finisher: Finisher,
@@ -52,18 +54,6 @@ impl Plan {
                     Finisher::Nil => true,
                 }
             },
-        }
-    }
-}
-
-pub(crate) enum Mapper {
-    Set(AttributeRef, Vec<u8>),
-}
-
-impl Mapper {
-    pub(crate) fn apply<'a>(&self, tuple: Tuple<'a>) -> Tuple<'a> {
-        match self {
-            Self::Set(attr, value) => unimplemented!()
         }
     }
 }
@@ -296,16 +286,9 @@ fn compute_filters(plan: Plan, query: &dsl::Query) -> Result<Plan> {
 }
 
 fn compute_mappers(mut plan: Plan, query: &dsl::Query) -> Result<Plan> {
-    if let Some(mapper) = query.mappers.first() {
-        let (attr_name, value) = match &mapper.args[..] {
-            [attr_name, value] => (attr_name, value),
-            _ => unimplemented!(),
-        };
-
+    for _ in &query.mappers {
         let attributes = plan.final_attributes();
-        let attr = attributes.iter().find(|attr| *attr == attr_name).unwrap();
-        let byte_value = into_bytes(attr.kind(), value).unwrap();
-        plan.mappers.push(Mapper::Set(attr.reference, byte_value));
+        plan.mappers.push(Box::new(NoopMapper(attributes.into())));
     }
 
     Ok(plan)

@@ -79,6 +79,16 @@ impl<'a> Mapper<'a> for JoinMapper {
     }
 }
 
+pub(crate) struct NoopMapper(pub Box<[Attribute]>);
+impl<'a> Mapper<'a> for NoopMapper {
+    fn apply(&'a self, output: OutTuple) -> Option<OutTuple<'a>> {
+        Some(OutTuple {
+            attrs: &self.0,
+            raw: output.into_raw(),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{collections::HashSet, error::Error};
