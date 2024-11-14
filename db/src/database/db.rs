@@ -81,10 +81,12 @@ impl Database {
         };
 
         let attributes = plan.final_attributes().iter().map(Into::into).collect();
-        let mappers = plan.joins.iter()
-            .fold(Vec::<JoinMapper>::new(), |mut acc, join| {
-                let mut attributes_after = acc.last()
-                    .map(|mapper| Vec::from(mapper.attributes_after.clone()))
+        let mut mappers: Vec<Box<dyn for<'a> Mapper<'a>>> = Vec::new();
+
+        // TODO: Remove this for loop
+        for join in plan.joins {
+                let mut attributes_after = mappers.last()
+                    .map(|mapper| mapper.attributes_after())
                     .unwrap_or_else(|| plan.source.attributes());
 
                 attributes_after.extend(join.source_object().borrow().attributes().cloned());
@@ -95,11 +97,12 @@ impl Database {
                     joiner_key: *join.joiner_key(),
                     attributes_after: attributes_after.into(),
                 };
-                acc.push(mapper);
-                acc
-            });
+                mappers.push(Box::new(mapper));
+        }
 
-        let mappers: Vec<Box<dyn for<'a> Mapper<'a>>> = mappers.into_iter().map(|m| Box::new(m) as Box<dyn for<'a> Mapper<'a>>).collect();
+        // TODO: Include the join mappers here
+        mappers.extend(plan.mappers);
+
         let results = ResultIter {
             source,
             ids,
@@ -548,5 +551,21 @@ mod tests {
         let mut out = String::new();
         db.dump_all(&mut out).unwrap();
         assert_eq!(out, expected);
+    }
+
+    #[test]
+    fn set_attribute() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let db = Dataset::default()
+            .add(Document::size(1))
+            .db();
+
+        let result = db.execute_query(&Query::scan("document").set("document.content", "updated"))?;
+
+        let mut tuples = result.tuples();
+        let tuple = tuples.next().unwrap();
+
+        assert_eq!(tuple.element("document.content").unwrap().to_string(), "updated");
+
+        Ok(())
     }
 }

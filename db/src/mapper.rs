@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use crate::{database::SharedObject, object::{Attribute, NamedAttribute as _}, schema::AttributeRef, tuple::{PositionalAttribute, Tuple}};
 
 #[derive(Default)]
@@ -8,11 +10,22 @@ pub(crate) struct OutTuple<'a> {
 
 impl<'a> OutTuple<'a> {
     pub(crate) fn element(&self, attr: &impl PositionalAttribute) -> Option<&[u8]> {
+        self.element_range(attr)
+            .map(|r| &self.raw[r])
+    }
+
+    pub(crate) fn update(&mut self, attr: &impl PositionalAttribute, value: &[u8]) {
+        if let Some(range) = self.element_range(attr) {
+            self.raw.splice(range, value.iter().copied());
+        }
+    }
+
+    fn element_range(&self, attr: &impl PositionalAttribute) -> Option<Range<usize>> {
         let mut offset = 0usize;
         for a in self.attrs {
             let size = a.kind().size(&self.raw[offset..]);
             if a.pos() == attr.pos() && a.object_id() == attr.object_id() {
-                return Some(&self.raw[offset..offset+size]);
+                return Some(offset..offset+size);
             }
 
             offset += size;
@@ -37,13 +50,16 @@ impl<'a> From<Tuple<'a>> for OutTuple<'a> {
 
 pub(crate) trait Mapper<'a> {
     fn apply(&'a self, output: OutTuple) -> Option<OutTuple<'a>>;
+    fn attributes_after(&self) -> Vec<Attribute>;
 }
 
+#[cfg(test)]
 pub(crate) struct AppendMapper<'a> {
     pub(crate) raw: &'a [u8],
     pub(crate) attributes_after: Box<[Attribute]>,
 }
 
+#[cfg(test)]
 impl<'a> Mapper<'a> for AppendMapper<'a> {
     fn apply(&'a self, output: OutTuple) -> Option<OutTuple<'a>> {
         let mut bytes = output.into_raw();
@@ -52,6 +68,10 @@ impl<'a> Mapper<'a> for AppendMapper<'a> {
             attrs: &self.attributes_after,
             raw: bytes
         })
+    }
+
+    fn attributes_after(&self) -> Vec<Attribute> {
+        self.attributes_after.iter().cloned().collect()
     }
 }
 
@@ -77,6 +97,10 @@ impl<'a> Mapper<'a> for JoinMapper {
                 None
             }
     }
+
+    fn attributes_after(&self) -> Vec<Attribute> {
+        self.attributes_after.iter().cloned().collect()
+    }
 }
 
 pub(crate) struct NoopMapper(pub Box<[Attribute]>);
@@ -87,7 +111,32 @@ impl<'a> Mapper<'a> for NoopMapper {
             raw: output.into_raw(),
         })
     }
+
+    fn attributes_after(&self) -> Vec<Attribute> {
+        self.0.iter().cloned().collect()
+    }
 }
+
+pub(crate) struct SetMapper {
+    pub(crate) attr: Attribute,
+    pub(crate) value: Box<[u8]>,
+    pub(crate) attributes_after: Box<[Attribute]>,
+}
+
+impl<'a> Mapper<'a> for SetMapper {
+    fn apply(&'a self, mut output: OutTuple) -> Option<OutTuple<'a>> {
+        output.update(&self.attr, &self.value);
+        Some(OutTuple {
+            attrs: &self.attributes_after,
+            raw: output.into_raw(),
+        })
+    }
+
+    fn attributes_after(&self) -> Vec<Attribute> {
+        self.attributes_after.iter().cloned().collect()
+    }
+}
+
 
 #[cfg(test)]
 mod tests {

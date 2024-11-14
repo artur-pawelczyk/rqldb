@@ -3,6 +3,7 @@ use crate::database::SharedObject;
 use crate::mapper::Mapper;
 use crate::mapper::NoopMapper;
 use crate::mapper::OutTuple;
+use crate::mapper::SetMapper;
 use crate::tuple::PositionalAttribute;
 use crate::Database;
 use crate::Operator;
@@ -166,6 +167,29 @@ impl<'q> QuerySource<'q> {
     }
 }
 
+enum QueryMapper<'q> {
+    Set(&'q str, &'q str),
+    Noop,
+}
+
+impl<'a> From<&'a dsl::Mapper<'a>> for QueryMapper<'a> {
+    fn from(mapper: &'a dsl::Mapper<'a>) -> Self {
+        match mapper.function {
+            "set" => {
+                match &mapper.args[..] {
+                    [attr, value] => Self::Set(attr, value),
+                    _ => panic!(),
+                }
+            },
+            _ => Self::Noop,
+        }
+    }
+}
+
+fn compute_query_mappers<'q>(query: &'q dsl::Query) -> impl Iterator<Item = QueryMapper<'q>> {
+    query.mappers.iter().map(From::from)
+}
+
 impl Source {
     fn scan_table(obj: &SharedObject) -> Self {
         Source::TableScan(Rc::clone(obj))
@@ -226,7 +250,7 @@ pub(crate) fn compute_plan(db: &Database, query: &dsl::Query) -> Result<Plan> {
     let plan = compute_finisher(source, db, query)?;
     let plan = compute_joins(plan, db, query)?;
     let plan = compute_filters(plan, query)?;
-    let plan = compute_mappers(plan, query)?;
+    let plan = compute_mappers(plan, compute_query_mappers(query))?;
 
     Ok(plan)
 }
@@ -285,10 +309,23 @@ fn compute_filters(plan: Plan, query: &dsl::Query) -> Result<Plan> {
     Ok(Plan{ filters, ..plan })
 }
 
-fn compute_mappers(mut plan: Plan, query: &dsl::Query) -> Result<Plan> {
-    for _ in &query.mappers {
-        let attributes = plan.final_attributes();
-        plan.mappers.push(Box::new(NoopMapper(attributes.into())));
+fn compute_mappers<'a>(mut plan: Plan, query_mappers: impl Iterator<Item = QueryMapper<'a>>) -> Result<Plan> {
+    for query_mapper in query_mappers {
+        match query_mapper {
+            QueryMapper::Set(attr_name, value) => {
+                let attributes = plan.final_attributes();
+                let attr = attributes.iter().find(|attr| attr == attr_name).cloned().unwrap();
+                plan.mappers.push(Box::new(SetMapper {
+                    attributes_after: attributes.into(),
+                    value: into_bytes(attr.kind(), value).unwrap().into(),
+                    attr,
+                }));
+            },
+            _ => {
+                let attributes = plan.final_attributes();
+                plan.mappers.push(Box::new(NoopMapper(attributes.into())));
+            }
+        }
     }
 
     Ok(plan)
