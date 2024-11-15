@@ -1,4 +1,4 @@
-use std::{cell::{Ref, RefCell}, error::Error};
+use std::{cell::{Ref, RefCell}, error::Error, fmt};
 
 use crate::{parse_definition, parse_delete, parse_insert, parse_query, Database, QueryResults};
 
@@ -60,6 +60,13 @@ impl Interpreter {
         }
     }
 
+    // TODO: Return something useful for delete, not an error
+    pub fn run_query(&self, query: &str) -> Result<QueryResults, Box<dyn Error>> {
+        let mut handler = SimpleOutputHandler::new();
+        self.handle_line(query, &mut handler)?;
+        Ok(handler.0?)
+    }
+
     pub fn database(&self) -> Ref<Database> {
         self.db.borrow()
     }
@@ -95,6 +102,41 @@ enum Command<'a> {
     Empty,
 }
 
+struct SimpleOutputHandler(Result<QueryResults, SimpleHandlerError>);
+
+impl SimpleOutputHandler {
+    fn new() -> Self {
+        Self(Err(SimpleHandlerError::NoResult))
+    }
+}
+
+impl OutputHandler for SimpleOutputHandler {
+    fn output_result(&mut self, res: QueryResults) -> Result<(), Box<dyn Error>> {
+        self.0 = Ok(res);
+        Ok(())
+    }
+
+    fn custom_command(&mut self, _: &Database, cmd: &str) {
+        self.0 = Err(SimpleHandlerError::CustomCommand(Box::from(cmd)));
+    }
+}
+
+#[derive(Debug)]
+enum SimpleHandlerError {
+    NoResult,
+    CustomCommand(Box<str>),
+}
+
+impl Error for SimpleHandlerError {}
+
+impl fmt::Display for SimpleHandlerError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NoResult => write!(f, "No query was executed"),
+            Self::CustomCommand(c) => write!(f, "Unrecognized custom command: {c}"),
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
