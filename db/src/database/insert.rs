@@ -2,28 +2,42 @@ use std::io::Write;
 
 use crate::bytes::write_as_bytes;
 use crate::object::{NamedAttribute, PartialTuple, TupleAddError};
-use crate::{dsl, Database};
+use crate::{dsl, Database, Query};
 use crate::database::Result;
 
 use super::Error;
 
 impl Database {
-    pub fn insert(&self, cmd: &dsl::Insert) -> Result<()> {
+    pub fn insert<'a, T: Into<Query<'a>> + Clone + 'a>(&self, cmd: &dsl::Insert<T>) -> Result<()> {
         let mut target = self.object(cmd.target)
             .ok_or_else(|| format!("Relation {} not found", cmd.target))?
             .borrow_mut();
+        let query: Query = cmd.tuple.clone().into();
 
-        target.add_tuple(&cmd)
-            .map_err(Error::from)
+        match &query.source {
+            dsl::Source::Tuple(values) => {
+                target.add_tuple(&values.as_slice())
+                    .map_err(Error::from)
+            },
+            _ => Err(Error("Unsupported query type for insert".into())),
+        }
     }
 }
 
 impl PartialTuple for &dsl::Insert<'_> {
-    fn write_element_at<A, W>(&self, attr: &A, mut out: W) -> bool
+    fn write_element_at<A, W>(&self, attr: &A, out: W) -> bool
     where A: NamedAttribute,
     W: Write
     {
-        self.tuple.iter()
+        self.tuple.as_slice().write_element_at(attr, out)
+    }
+}
+
+impl PartialTuple for &[dsl::TupleAttr<'_>] {
+    fn write_element_at<A, W>(&self, attr: &A, mut out: W) -> bool
+    where A: NamedAttribute,
+          W: Write {
+        self.iter()
             .find(|elem| elem.name == attr.name() || elem.name == attr.short_name())
             .map(|elem| write_as_bytes(attr.kind(), &elem.value, &mut out).is_ok() )
             .unwrap_or(false)

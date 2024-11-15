@@ -424,6 +424,18 @@ impl fmt::Display for Insert<'_> {
     }
 }
 
+impl<'a> From<&'a [TupleAttr<'a>]> for Query<'a> {
+    fn from(tuple: &'a [TupleAttr<'_>]) -> Self {
+        Query::tuple(tuple)
+    }
+}
+
+impl<'a> From<Vec<TupleAttr<'a>>> for Query<'a> {
+    fn from(tuple: Vec<TupleAttr<'a>>) -> Self {
+        Query::tuple(tuple)
+    }
+}
+
 pub struct Delete<'a>(pub(crate) Query<'a>);
 
 impl fmt::Display for Delete<'_> {
