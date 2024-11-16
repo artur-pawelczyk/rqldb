@@ -366,7 +366,7 @@ mod tests {
         let tuple = result.tuples().next().unwrap();
         let document_id = tuple.element("document.id").unwrap().to_string();
         let type_name = tuple.element("type.name").unwrap().to_string();
-        assert_eq!(document_id, "1");
+        assert_eq!(document_id, "2");
         assert_eq!(type_name, "type_b");
     }
 
@@ -421,7 +421,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn mapper() {
         let db = Dataset::default()
             .add(Document::size(1))

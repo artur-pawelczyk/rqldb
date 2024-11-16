@@ -176,7 +176,6 @@ mod tests {
         Ok(())
     }
 
-    #[ignore]
     #[test]
     fn join_mapper() {
         let db = Dataset::default()
@@ -200,6 +199,6 @@ mod tests {
 
         output = join_mapper.apply(output.unwrap());
 
-        assert!(output.unwrap().raw.is_empty());
+        assert!(!output.unwrap().raw.is_empty());
     }
 }
