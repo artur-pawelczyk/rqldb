@@ -104,7 +104,7 @@ impl Fixture for Document {
                 tuple = tuple.inferred(name, gen.next());
             }
 
-            db.insert(&dbg!(Insert::insert_into("document").tuple(tuple))).unwrap();
+            db.insert(&Insert::insert_into("document").tuple(tuple)).unwrap();
         }
     }
 }
@@ -157,9 +157,9 @@ impl Fixture for DocType {
     fn generate_data(&self, db: &mut Database, _: &[Relation]) {
         let chars = "abcdefgh";
         for (id, ch) in chars.char_indices().cycle().take(self.0 as usize) {
-            db.insert(&dbg!(Insert::insert_into("type")
+            db.insert(&Insert::insert_into("type")
                       .element("id", id + 1)
-                      .element("name", format!("type_{ch}")))).unwrap();
+                      .element("name", format!("type_{ch}"))).unwrap();
         }
     }
 
