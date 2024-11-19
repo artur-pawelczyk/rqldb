@@ -2,7 +2,7 @@ use std::{borrow::Cow, collections::BTreeMap, fmt, str::FromStr};
 
 use crate::{parse::ParseError, schema::Type};
 
-#[derive(Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Query<'a> {
     pub source: Source<'a>,
     pub join_sources: Vec<JoinSource<'a>>,
@@ -71,11 +71,8 @@ impl<'a> Query<'a> {
     }
 
     pub fn insert_into(self, name: &'a str) -> Insert<'a> {
-        if let Source::Tuple(tuple) = self.source {
-            Insert { target: name, tuple }
-        } else {
-            panic!("Cannot create such query")
-        }
+        Insert { target: name, contents: self }
+
     }
 
     pub fn count(mut self) -> Self {
@@ -104,7 +101,9 @@ impl<'a> fmt::Display for Query<'a> {
             write!(f, " | {}", filter)?;
         }
 
-        write!(f, " | {}", self.finisher)?;
+        if !self.finisher.is_default() {
+            write!(f, " | {}", self.finisher)?;
+        }
 
         Ok(())
     }
@@ -138,7 +137,7 @@ impl FromStr for Operator {
     }
 }
 
-#[derive(Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub enum Source<'a> {
     #[default]
     Nil,
@@ -282,7 +281,7 @@ impl<'a> fmt::Display for Source<'a> {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct JoinSource<'a> {
     pub left: &'a str,
     pub right: &'a str,
@@ -294,7 +293,7 @@ impl<'a> fmt::Display for JoinSource<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Mapper<'a> {
     pub(crate) function: &'a str,
     pub(crate) args: Box<[Cow<'a, str>]>,
@@ -308,7 +307,7 @@ impl<'a> fmt::Display for Mapper<'a> {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Filter<'a> {
     Condition(&'a str, Operator, &'a str),
 }
@@ -321,13 +320,22 @@ impl<'a> fmt::Display for Filter<'a> {
     }
 }
 
-#[derive(Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub enum Finisher<'a> {
     #[default]
     AllColumns,
     Columns(Vec<&'a str>),
     Apply(&'a str, Vec<&'a str>),
     Count,
+}
+
+impl Finisher<'_> {
+    fn is_default(&self) -> bool {
+        match self {
+            Self::AllColumns => true,
+            _ => false,
+        }
+    }
 }
 
 impl<'a> fmt::Display for Finisher<'a> {
@@ -385,41 +393,50 @@ fn write_attrs(f: &mut fmt::Formatter, attrs: &[TupleAttr<'_>]) -> fmt::Result {
 }
 
 #[derive(Debug)]
-pub struct Insert<'a, T = Vec<TupleAttr<'a>>>
+pub struct Insert<'a, T = Query<'a>>
 {
     pub(crate) target: &'a str,
-    pub(crate) tuple: T,
+    pub(crate) contents: T,
 }
 
 impl<'a> Insert<'a, ()> {
     pub fn insert_into(target: &'a str) -> Self {
-        Self { target, tuple: () }
+        Self { target, contents: () }
     }
 
-    pub fn tuple<T>(self, tuple: T) -> Insert<'a>
+    #[deprecated]
+    pub fn tuple<T: Into<Query<'a>>>(self, tuple: T) -> Insert<'a>
     where T: IntoTuple<'a>,
     {
-        Insert { tuple: tuple.into_tuple(), target: self.target }
+        Insert { contents: tuple.into(), target: self.target }
     }
 
-    pub fn element(self, name: &'a str, value: impl Encode<'a>) -> Insert {
+    pub fn element(self, name: &'a str, value: impl Encode<'a>) -> Insert<'a, Vec<TupleAttr<'a>>> {
         let elem = TupleAttr { kind: None, name, value: value.encode() };
-        Insert { target: self.target, tuple: vec![elem] }
+        Insert { target: self.target, contents: vec![elem] }
     }
 }
 
-impl<'a> Insert<'a> {
-   pub fn element(mut self, name: &'a str, value: impl Encode<'a>) -> Insert {
+impl<'a> Insert<'a, Vec<TupleAttr<'a>>> {
+   pub fn element(mut self, name: &'a str, value: impl Encode<'a>) -> Self {
        let elem = TupleAttr { kind: None, name, value: value.encode() };
-       self.tuple.push(elem);
+       self.contents.push(elem);
        self
+    }
+}
+
+impl fmt::Display for Insert<'_, Vec<TupleAttr<'_>>> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} ", self.target)?;
+        write_attrs(f, &self.contents)?;
+        Ok(())
     }
 }
 
 impl fmt::Display for Insert<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} ", self.target)?;
-        write_attrs(f, &self.tuple)?;
+        write!(f, "{}", &self.contents)?;
         Ok(())
     }
 }
@@ -433,6 +450,12 @@ impl<'a> From<&'a [TupleAttr<'a>]> for Query<'a> {
 impl<'a> From<Vec<TupleAttr<'a>>> for Query<'a> {
     fn from(tuple: Vec<TupleAttr<'a>>) -> Self {
         Query::tuple(tuple)
+    }
+}
+
+impl<'a> From<TupleBuilder<'a>> for Query<'a> {
+    fn from(builder: TupleBuilder<'a>) -> Self {
+        Query::from(builder.build())
     }
 }
 
@@ -506,7 +529,7 @@ mod tests {
     #[test]
     fn select_all() {
         let query = Query::scan("example").select_all();
-        assert_eq!(query.to_string(), "scan example | select_all")
+        assert_eq!(query.to_string(), "scan example")
     }
 
     #[test]
@@ -515,20 +538,20 @@ mod tests {
             Query::scan("example").filter("id", EQ, "1").select(&["id", "a_column"]).to_string(),
             "scan example | filter id = 1 | select id a_column");
         assert_eq!(
-            Query::scan("example").filter("id", GT, "2").select_all().to_string(), "scan example | filter id > 2 | select_all"
+            Query::scan("example").filter("id", GT, "2").select_all().to_string(), "scan example | filter id > 2"
         );
     }
 
     #[test]
     fn source_is_tuple() {
         let query = Query::build_tuple().inferred("id", "1").inferred("value", "example_value").build().filter("id", Operator::EQ, "1");
-        assert_eq!(query.to_string(), "tuple id = 1 value = example_value | filter id = 1 | select_all");
+        assert_eq!(query.to_string(), "tuple id = 1 value = example_value | filter id = 1");
     }
 
     #[test]
     fn join() {
         let query = Query::scan("example").join("example.type_id", "type.id");
-        assert_eq!(query.to_string(), "scan example | join example.type_id type.id | select_all");
+        assert_eq!(query.to_string(), "scan example | join example.type_id type.id");
     }
 
     #[test]
@@ -546,22 +569,22 @@ mod tests {
     #[test]
     fn map_set() {
         let query = Query::scan("example").set("example.name", "new name");
-        assert_eq!(query.to_string(), "scan example | map set example.name \"new name\" | select_all");
+        assert_eq!(query.to_string(), "scan example | map set example.name \"new name\"");
     }
 
     #[test]
     fn index_scan() {
         let query = Query::scan_index("example.id", Operator::EQ, "1");
-        assert_eq!(query.to_string(), "scan_index example.id = 1 | select_all");
+        assert_eq!(query.to_string(), "scan_index example.id = 1");
     }
 
     #[test]
     fn delete() {
         let delete_all = Query::scan("example").delete();
-        assert_eq!(delete_all.to_string(), "scan example | select_all");
+        assert_eq!(delete_all.to_string(), "scan example");
 
         let delete_one = Query::scan("example").filter("example.id", EQ, "1").delete();
-        assert_eq!(delete_one.to_string(), "scan example | filter example.id = 1 | select_all");
+        assert_eq!(delete_one.to_string(), "scan example | filter example.id = 1");
     }
 
     #[test]
@@ -582,6 +605,6 @@ mod tests {
     #[test]
     fn quotes() {
         let query = Query::tuple(&[("id", "1"), ("value", "foo bar")]).filter("id", Operator::EQ, "1");
-        assert_eq!("tuple id = 1 value = \"foo bar\" | filter id = 1 | select_all", query.to_string());
+        assert_eq!("tuple id = 1 value = \"foo bar\" | filter id = 1", query.to_string());
     }
 }

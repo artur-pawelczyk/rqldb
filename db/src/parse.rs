@@ -1,4 +1,4 @@
-use crate::dsl::{Definition, Delete, Insert, IntoTuple, Operator, Query, TupleAttr, TupleBuilder};
+use crate::dsl::{Definition, Delete, IntoTuple, Operator, Query, TupleAttr, TupleBuilder};
 use crate::schema::Type;
 use crate::tokenize::{Token, Tokenizer, TokenizerError};
 
@@ -90,17 +90,6 @@ pub fn parse_query(query_str: &str) -> Result<Query<'_>, ParseError> {
     }
 
     Ok(query)
-}
-
-pub fn parse_insert<'a>(query_str: &'a str) -> Result<Insert<'a>, ParseError> {
-    let mut tokenizer = Tokenizer::new(query_str);
-    let target = tokenizer.next().map_err(|token| ParseError::from(token).expected("relation name"))?;
-    match target {
-        Token::Symbol(target, _) => {
-            Ok(Insert::insert_into(target).tuple(read_tuple(&mut tokenizer)?))
-        },
-        t => Err(ParseError::from(t))
-    }
 }
 
 pub fn parse_delete(query_str: &str) -> Result<Delete<'_>, ParseError> {
@@ -303,25 +292,16 @@ mod tests {
         };
     }
 
-    macro_rules! assert_parse_insert {
-        ($query:literal) => {
-            {
-                let parsed = dbg!(parse_insert($query)).unwrap();
-                assert_eq!(parsed.to_string(), $query);
-            }
-        };
-    }
-
     #[test]
     fn test_parse_query() {
-        assert_parse!("scan example | select_all");
-        assert_parse!("tuple first = 1 second = 2 | select_all");
-        assert_parse!("tuple id::NUMBER = 1 name::TEXT = something | select_all");
-        assert_parse!("scan example | filter id = 1 | select_all");
-        assert_parse!("scan example | filter id > 1 | select_all");
-        assert_parse!("scan example | join example.other_id other.id | select_all");
+        assert_parse!("scan example");
+        assert_parse!("tuple first = 1 second = 2");
+        assert_parse!("tuple id::NUMBER = 1 name::TEXT = something");
+        assert_parse!("scan example | filter id = 1");
+        assert_parse!("scan example | filter id > 1");
+        assert_parse!("scan example | join example.other_id other.id");
         assert_parse!("scan example | count");
-        assert_parse!("scan_index example.id = 1 | select_all");
+        assert_parse!("scan_index example.id = 1");
         assert_parse!("scan example | apply sum example.n");
     }
 
@@ -336,11 +316,6 @@ mod tests {
         assert_parse_query_fails!("scan example | id::NUMBER");
         assert_parse_query_fails!("scan example | filter id ! 1");
         assert_parse_query_fails!("tuple 1 2 | select_all");
-    }
-
-    #[test]
-    fn test_parse_insert() {
-        assert_parse_insert!("example id = 1 name = something");
     }
 
     #[test]

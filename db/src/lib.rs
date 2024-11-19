@@ -30,7 +30,7 @@ use bytes::IntoBytes as _;
 pub use crate::schema::Type;
 pub use crate::database::Database;
 pub use crate::dsl::{Query, Operator, Definition};
-pub use crate::parse::{parse_definition, parse_query, parse_delete, parse_insert};
+pub use crate::parse::{parse_definition, parse_query, parse_delete};
 pub use crate::event::EventSource;
 
 pub struct QueryResults {

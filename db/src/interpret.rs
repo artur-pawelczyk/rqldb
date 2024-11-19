@@ -1,6 +1,6 @@
 use std::{cell::{Ref, RefCell}, error::Error, fmt};
 
-use crate::{parse_definition, parse_delete, parse_insert, parse_query, Database, QueryResults};
+use crate::{parse_definition, parse_delete, parse_query, Database, QueryResults};
 
 pub trait OutputHandler {
     fn output_result(&mut self, _: QueryResults) -> Result<(), Box<dyn Error>>;
@@ -30,14 +30,14 @@ impl Interpreter {
     }
 
     pub fn handle_line(&self, input: &str, output: &mut impl OutputHandler) -> Result<(), Box<dyn Error>> {
-        match self.read_command(input) {
+        match dbg!(self.read_command(input)) {
             Command::Define(args) => {
                 let command = parse_definition(args)?;
                 self.db.borrow_mut().define(&command)?;
                 Ok(())
             },
-            Command::Insert(query) => {
-                let insert = parse_insert(query)?;
+            Command::Insert(target, query) => {
+                let insert = parse_query(query)?.insert_into(target);
                 self.db.borrow().insert(&insert)?;
                 Ok(())
             },
@@ -75,27 +75,28 @@ impl Interpreter {
         if input.is_empty() || input.chars().next() == Some('#') {
             Command::Empty
         } else if input.chars().next() == Some('.') {
-            let cmd_end = input.char_indices()
-                .find(|(_, c)| c.is_ascii_whitespace())
-                .map(|(i, _)| i)
-                .unwrap_or(input.len());
+            let mut words = Words(input);
+            let cmd = words.next().unwrap();
 
-            match &input[1..cmd_end] {
-                "define" => Command::Define(&input[cmd_end..].trim()),
-                "insert" => Command::Insert(&input[cmd_end..].trim()),
-                "delete" => Command::Delete(&input[cmd_end..].trim()),
+            match cmd {
+                ".define" => Command::Define(words.rest().trim()),
+                ".delete" => Command::Delete(words.rest().trim()),
+                ".insert" => {
+                    let target = words.next().unwrap(); // TODO: Return 'Result'
+                    Command::Insert(target, words.rest().trim())
+                },
                 _ => Command::Custom(&input[1..]),
             }
         } else {
             Command::Query(input)
         }
     }
-
 }
 
+#[derive(Debug)]
 enum Command<'a> {
     Define(&'a str),
-    Insert(&'a str),
+    Insert(&'a str, &'a str),
     Delete(&'a str),
     Custom(&'a str),
     Query(&'a str),
@@ -135,6 +136,33 @@ impl fmt::Display for SimpleHandlerError {
             Self::NoResult => write!(f, "No query was executed"),
             Self::CustomCommand(c) => write!(f, "Unrecognized custom command: {c}"),
         }
+    }
+}
+
+struct Words<'a>(&'a str);
+
+impl<'a> Iterator for Words<'a> {
+    type Item = &'a str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let word_end = self.0.char_indices()
+            .find(|(_, c)| c.is_ascii_whitespace())
+            .map(|(i, _)| i)
+            .unwrap_or(self.0.len());
+
+        let word = &self.0[..word_end];
+        if word.is_empty() {
+            None
+        } else {
+            self.0 = &self.0[word_end..].trim_start();
+            Some(word)
+        }
+    }
+}
+
+impl<'a> Words<'a> {
+    fn rest(&self) -> &'a str {
+        self.0
     }
 }
 

@@ -543,7 +543,7 @@ mod tests {
 
         let expected = concat!(
             ".define relation first id::NUMBER::KEY content::TEXT\n",
-            ".insert first first.content = one first.id = 1\n",
+            ".insert first tuple first.content = one first.id = 1\n",
             ".define relation second num::NUMBER\n",
         );
 

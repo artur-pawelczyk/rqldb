@@ -12,11 +12,11 @@ type::NUMBER
 published::BOOLEAN");
     let _ = db.run_query(".define relation type id::NUMBER name::TEXT");
 
-    let _ = db.run_query(".insert type id = 1 name = artictle");
-    let _ = db.run_query(".insert type id = 2 name = blog");
-    let _ = db.run_query(".insert type id = 3 name = book");
-    let _ = db.run_query(".insert document id = 1 title = title1 content = content1 type = 2 published = true");
-    let _ = db.run_query(".insert document id = 2 title = title2 content = content2 type = 2 published = false");
+    let _ = db.run_query(".insert type tuple id = 1 name = artictle");
+    let _ = db.run_query(".insert type tuple id = 2 name = blog");
+    let _ = db.run_query(".insert type tuple id = 3 name = book");
+    let _ = db.run_query(".insert document tuple id = 1 title = title1 content = content1 type = 2 published = true");
+    let _ = db.run_query(".insert document tuple id = 2 title = title2 content = content2 type = 2 published = false");
 
     db
 }
@@ -70,7 +70,7 @@ fn test_single_join() {
 fn test_update() {
     let db = prepare_db();
 
-    let _ = db.run_query(".insert document id = 1 title = updated_title content = content type = 2 published = true");
+    let _ = db.run_query(".insert document tuple id = 1 title = updated_title content = content type = 2 published = true");
 
     let result = db.run_query("scan document | filter document.id = 1").unwrap();
     assert_eq!(result.tuples().next().unwrap().element("document.title").unwrap().to_string(), "updated_title");

@@ -12,7 +12,7 @@ impl Database {
         let mut target = self.object(cmd.target)
             .ok_or_else(|| format!("Relation {} not found", cmd.target))?
             .borrow_mut();
-        let query: Query = cmd.tuple.clone().into();
+        let query: Query = cmd.contents.clone().into();
 
         match &query.source {
             dsl::Source::Tuple(values) => {
@@ -21,15 +21,6 @@ impl Database {
             },
             _ => Err(Error("Unsupported query type for insert".into())),
         }
-    }
-}
-
-impl PartialTuple for &dsl::Insert<'_> {
-    fn write_element_at<A, W>(&self, attr: &A, out: W) -> bool
-    where A: NamedAttribute,
-    W: Write
-    {
-        self.tuple.as_slice().write_element_at(attr, out)
     }
 }
 
