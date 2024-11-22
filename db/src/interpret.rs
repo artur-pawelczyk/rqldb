@@ -60,7 +60,7 @@ impl Interpreter {
         }
     }
 
-    // TODO: Return something useful for delete, not an error
+    // TODO: Return something useful for insert and delete, not an error
     pub fn run_query(&self, query: &str) -> Result<QueryResults, Box<dyn Error>> {
         let mut handler = SimpleOutputHandler::new();
         self.handle_line(query, &mut handler)?;
