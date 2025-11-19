@@ -73,11 +73,11 @@ impl Filter {
 }
 
 pub(crate) trait ByteTuple<'a> {
-    fn bytes(&'a self, attr: &impl PositionalAttribute) -> Option<&[u8]>;
+    fn bytes(&'a self, attr: &impl PositionalAttribute) -> Option<&'a [u8]>;
 }
 
 impl<'a> ByteTuple<'a> for Tuple<'a> {
-    fn bytes(&'a self, attr: &impl PositionalAttribute) -> Option<&[u8]> {
+    fn bytes(&'a self, attr: &impl PositionalAttribute) -> Option<&'a [u8]> {
         self.raw_element(attr)
     }
 }

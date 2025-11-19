@@ -84,7 +84,7 @@ impl<'a> Tuple<'a> {
         self.attributes.iter()
     }
 
-    pub fn element(&self, name: &str) -> Option<Element> {
+    pub fn element(&self, name: &str) -> Option<Element<'_>> {
         let mut found_attr = None;
         let mut offset = 0usize;
 

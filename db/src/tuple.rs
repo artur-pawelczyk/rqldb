@@ -60,7 +60,7 @@ impl<'a> Tuple<'a> {
         &self.raw
     }
 
-    pub(crate) fn element(&self, attr: &impl PositionalAttribute) -> Option<Element> {
+    pub(crate) fn element(&self, attr: &impl PositionalAttribute) -> Option<Element<'_>> {
         let pos = attr.pos();
 
         if let Some(obj_id) = attr.object_id() {

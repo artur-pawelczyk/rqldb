@@ -62,16 +62,16 @@ impl TableId for &Column<'_> {
 }
 
 pub trait AttributeIdentifier {
-    fn find_in_schema(self, schema: &Schema) -> Option<Column>;
-    fn find_in_relation(self, rel: &Relation) -> Option<Column>;
+    fn find_in_schema(self, schema: &Schema) -> Option<Column<'_>>;
+    fn find_in_relation(self, rel: &Relation) -> Option<Column<'_>>;
 }
 
 impl AttributeIdentifier for &str {
-    fn find_in_schema(self, schema: &Schema) -> Option<Column> {
+    fn find_in_schema(self, schema: &Schema) -> Option<Column<'_>> {
         schema.find_column(self)
     }
 
-    fn find_in_relation(self, rel: &Relation) -> Option<Column> {
+    fn find_in_relation(self, rel: &Relation) -> Option<Column<'_>> {
         let (rel_name, _) = split_name(self)?;
         if rel_name == rel.name.as_ref() {
             rel.find_column(self)
@@ -82,12 +82,12 @@ impl AttributeIdentifier for &str {
 }
 
 impl AttributeIdentifier for &AttributeRef {
-    fn find_in_schema(self, schema: &Schema) -> Option<Column> {
+    fn find_in_schema(self, schema: &Schema) -> Option<Column<'_>> {
         let rel = schema.relations.get(self.rel_id? as usize)?;
         rel.attribute_by_id(self.attr_id)
     }
 
-    fn find_in_relation(self, rel: &Relation) -> Option<Column> {
+    fn find_in_relation(self, rel: &Relation) -> Option<Column<'_>> {
         if self.rel_id? == rel.id {
             rel.attribute_by_id(self.attr_id)
         } else {
@@ -251,7 +251,7 @@ impl Schema {
     /// assert!(schema.create_table("example").column("id", Type::NUMBER).add().is_none());
     /// ```
     #[must_use]
-    pub fn create_table(&mut self, name: &str) -> TableBuilder {
+    pub fn create_table(&mut self, name: &str) -> TableBuilder<'_> {
         TableBuilder { schema: self, name: name.to_string(), columns: vec![] }
     }
 
@@ -273,7 +273,7 @@ impl Schema {
     /// schema.create_table("example").indexed_column("id", Type::NUMBER).column("name", Type::TEXT).add();
     /// assert_eq!(schema.find_column("example.id").unwrap().name(), "example.id");
     /// ```
-    pub fn find_column(&self, s: &str) -> Option<Column> {
+    pub fn find_column(&self, s: &str) -> Option<Column<'_>> {
         let rel_name = s.split('.').next()?;
         self.find_relation(rel_name).and_then(|rel| rel.find_column(s))
     }
@@ -350,7 +350,7 @@ impl Relation {
         &self.name
     }
 
-    pub fn attributes(&self) -> ColumnIter {
+    pub fn attributes(&self) -> ColumnIter<'_> {
         ColumnIter { table: self, pos: 0, rel_id: self.id }
     }
 
@@ -383,7 +383,7 @@ impl Relation {
     /// schema.create_table("example").indexed_column("id", Type::NUMBER).column("name", Type::TEXT).add();
     /// assert_eq!(schema.find_relation("example").unwrap().indexed_column().unwrap().short_name(), "id");
     /// ```
-    pub fn indexed_column(&self) -> Option<Column> {
+    pub fn indexed_column(&self) -> Option<Column<'_>> {
         self.columns.iter().enumerate().find(|(_, col)| col.indexed).map(|(pos, col)| Column {
             table: self,
             inner: col,
@@ -402,7 +402,7 @@ impl Relation {
     /// schema.create_table("example").indexed_column("id", Type::NUMBER).column("name", Type::TEXT).add();
     /// assert_eq!(schema.find_relation("example").unwrap().find_column("example.name").unwrap().short_name(), "name");
     /// ```
-    pub fn find_column(&self, name: &str) -> Option<Column> {
+    pub fn find_column(&self, name: &str) -> Option<Column<'_>> {
         self.columns.iter().enumerate()
             .find(|(_, col)| col.name.as_ref() == name)
             .map(|(pos, col)| Column {
@@ -413,7 +413,7 @@ impl Relation {
             })
     }
 
-    fn attribute_by_id(&self, attr_id: u32) -> Option<Column> {
+    fn attribute_by_id(&self, attr_id: u32) -> Option<Column<'_>> {
         let rel = self.columns.get(attr_id as usize)?;
         Some(Column {
             table: self,

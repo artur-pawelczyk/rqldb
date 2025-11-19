@@ -127,7 +127,7 @@ impl IndexedObject {
             .and_modify(|v| v.retain(|x| id != *x));
     }
 
-    pub(crate) fn get(&self, id: TupleId) -> Tuple {
+    pub(crate) fn get(&self, id: TupleId) -> Tuple<'_> {
         let tuple = self.pages.tuple_by_id(id);
         let contents = tuple.contents();
         Tuple::with_object(contents, self).with_id(id)

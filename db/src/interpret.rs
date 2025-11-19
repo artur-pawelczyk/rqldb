@@ -67,7 +67,7 @@ impl Interpreter {
         Ok(handler.0?)
     }
 
-    pub fn database(&self) -> Ref<Database> {
+    pub fn database(&self) -> Ref<'_, Database> {
         self.db.borrow()
     }
 
