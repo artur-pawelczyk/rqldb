@@ -55,11 +55,13 @@ impl Shell {
             last_command: String::new(),
         };
 
-        if let Err(e) = self.interpreter.handle_line(input, &mut handler) {
-            writeln!(output, "{e}").unwrap();
-        } else if !handler.last_command.is_empty() {
-            if let Err(e) = self.handle_custom_command(&handler.last_command, output) {
+        match self.interpreter.handle_line(input, &mut handler) {
+            Err(e) => {
                 writeln!(output, "{e}").unwrap();
+            } _ => if !handler.last_command.is_empty() {
+                if let Err(e) = self.handle_custom_command(&handler.last_command, output) {
+                    writeln!(output, "{e}").unwrap();
+                }
             }
         }
     }

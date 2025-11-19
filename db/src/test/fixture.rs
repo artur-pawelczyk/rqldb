@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, iter};
 
 use crate::{dsl::{Insert, TupleBuilder}, Database, Definition};
 
-use super::gen::Generator;
+use super::r#gen::Generator;
 
 #[derive(Default)]
 pub struct Dataset(Vec<Box<dyn Fixture>>);
@@ -52,8 +52,8 @@ impl Relation {
         }
     }
 
-    fn attribute(mut self, name: &'static str, gen: Generator) -> Self {
-        self.attributes.insert(name, gen);
+    fn attribute(mut self, name: &'static str, generator: Generator) -> Self {
+        self.attributes.insert(name, generator);
         self
     }
 
@@ -66,11 +66,11 @@ impl Relation {
 impl From<&Relation> for Definition {
     fn from(rel: &Relation) -> Self {
         let mut def = Definition::relation(rel.name);
-        for (name, gen) in &rel.attributes {
+        for (name, generator) in &rel.attributes {
             if Some(name) == rel.index.as_ref() {
-                def = def.indexed_attribute(name, gen.kind());
+                def = def.indexed_attribute(name, generator.kind());
             } else {
-                def = def.attribute(name, gen.kind());
+                def = def.attribute(name, generator.kind());
             }
         }
 
@@ -100,8 +100,8 @@ impl Fixture for Document {
     fn generate_data(&self, db: &mut Database, relations: &[Relation]) {
         for _ in 1..=self.0 {
             let mut tuple = TupleBuilder::new();
-            for (name, gen) in &relations.iter().find(|r| r.name == "document").unwrap().attributes {
-                tuple = tuple.inferred(name, gen.next());
+            for (name, generator) in &relations.iter().find(|r| r.name == "document").unwrap().attributes {
+                tuple = tuple.inferred(name, generator.next());
             }
 
             db.insert(&Insert::insert_into("document").tuple(tuple)).unwrap();

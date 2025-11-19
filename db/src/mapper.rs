@@ -85,16 +85,18 @@ pub(crate) struct JoinMapper {
 impl<'a> Mapper<'a> for JoinMapper {
     fn apply(&'a self, output: OutTuple) -> Option<OutTuple<'a>> {
         let key = output.element(&self.joinee_key)?;
-        if let Some(join_tuple) = self.joiner.borrow().iter()
+        match self.joiner.borrow().iter()
             .find(|join_tuple| join_tuple.element(&self.joiner_key).map(|e| e.bytes() == key).unwrap_or(false)) {
-                let mut raw = output.into_raw();
-                raw.extend(join_tuple.raw_bytes());
-                return Some(OutTuple {
-                    attrs: &self.attributes_after,
-                    raw,
-                })
-            } else {
-                None
+                Some(join_tuple) => {
+                    let mut raw = output.into_raw();
+                    raw.extend(join_tuple.raw_bytes());
+                    return Some(OutTuple {
+                        attrs: &self.attributes_after,
+                        raw,
+                    })
+                } _ => {
+                    None
+                }
             }
     }
 

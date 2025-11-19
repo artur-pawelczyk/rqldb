@@ -208,10 +208,10 @@ enum Sink {
 impl Sink {
     fn accept_tuple(&mut self, tuple: &Tuple) {
         match self {
-            Self::Count(ref mut count) => *count += 1,
-            Self::Sum(attr, ref mut sum) => *sum += tuple.element(attr).unwrap().as_number().unwrap(),
-            Self::Max(attr, ref mut max) => *max = std::cmp::max(*max, tuple.element(attr).unwrap().as_number().unwrap()),
-            Self::Return(attrs, ref mut results) => results.push(tuple_to_cells(attrs, tuple)),
+            Self::Count(count) => *count += 1,
+            Self::Sum(attr, sum) => *sum += tuple.element(attr).unwrap().as_number().unwrap(),
+            Self::Max(attr, max) => *max = std::cmp::max(*max, tuple.element(attr).unwrap().as_number().unwrap()),
+            Self::Return(attrs, results) => results.push(tuple_to_cells(attrs, tuple)),
             Self::NoOp => {},
         }
     }
