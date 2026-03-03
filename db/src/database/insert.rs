@@ -2,6 +2,7 @@ use std::io::Write;
 
 use crate::bytes::write_as_bytes;
 use crate::object::{NamedAttribute, PartialTuple, TupleAddError};
+use crate::Tuple;
 use crate::{dsl, Database, Query};
 use crate::database::Result;
 
@@ -9,15 +10,29 @@ use super::Error;
 
 impl Database {
     pub fn insert<'a, T: Into<Query<'a>> + Clone + 'a>(&self, cmd: &dsl::Insert<T>) -> Result<()> {
-        let mut target = self.object(cmd.target)
-            .ok_or_else(|| format!("Relation {} not found", cmd.target))?
-            .borrow_mut();
         let query: Query = cmd.contents.clone().into();
 
         match &query.source {
             dsl::Source::Tuple(values) => {
+                let mut target = self.object(cmd.target)
+                    .ok_or_else(|| format!("Relation {} not found", cmd.target))?
+                    .borrow_mut();
                 target.add_tuple(&values.as_slice())
                     .map_err(Error::from)
+            },
+            dsl::Source::TableScan(_) => {
+                let result = self.execute_query(&query)?;
+                let tuples = result.tuples().collect::<Vec<_>>();
+
+                let mut target = self.object(cmd.target)
+                    .ok_or_else(|| format!("Relation {} not found", cmd.target))?
+                    .borrow_mut();
+
+                for tuple in tuples {
+                    target.add_tuple(&tuple)?;
+                }
+
+                Ok(())
             },
             _ => Err(Error("Unsupported query type for insert".into())),
         }
@@ -32,6 +47,16 @@ impl PartialTuple for &[dsl::TupleAttr<'_>] {
             .find(|elem| elem.name == attr.name() || elem.name == attr.short_name())
             .map(|elem| write_as_bytes(attr.kind(), &elem.value, &mut out).is_ok() )
             .unwrap_or(false)
+    }
+}
+
+impl PartialTuple for Tuple<'_> {
+    fn write_element_at<A, W>(&self, attr: &A, mut out: W) -> bool
+    where A: NamedAttribute,
+          W: Write {
+        self.element(attr.name())
+            .map(|elem| out.write_all(elem.as_bytes()))
+            .is_some()
     }
 }
 
@@ -88,7 +113,7 @@ mod tests {
     }
 
     #[test]
-    fn update() {
+    fn replace() {
         let mut db = Database::default();
         db.define(&Definition::relation("document").indexed_attribute("id", Type::NUMBER).attribute("content", Type::TEXT)).unwrap();
 
@@ -108,7 +133,7 @@ mod tests {
     }
 
     #[test]
-    fn update_with_index() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    fn replace_with_index() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let db = Dataset::default()
             .add(fixture::Document::size(1))
             .add(fixture::DocIdIndex)
@@ -124,6 +149,23 @@ mod tests {
         let result = db.execute_query(&Query::scan_index("document.id", Operator::EQ, "1"))?;
         let mut tuples = result.tuples();
         assert_eq!(tuples.next().unwrap().element("document.content").unwrap().to_string(), "updated content");
+
+        Ok(())
+    }
+
+    #[test]
+    fn update() -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let db = Dataset::default()
+            .add(fixture::Document::size(1))
+            .db();
+
+        db.insert(&Query::scan("document")
+                               .set("document.content", "updated")
+                               .insert_into("document"))?;
+
+        let result = db.execute_query(&Query::scan("document"))?;
+        let mut tuples = result.tuples();
+        assert_eq!(tuples.next().unwrap().element("document.content").unwrap().to_string(), "updated");
 
         Ok(())
     }

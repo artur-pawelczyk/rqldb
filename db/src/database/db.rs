@@ -80,7 +80,6 @@ impl Database {
             s => todo!("{}", s),
         };
 
-        let attributes = plan.final_attributes().iter().map(Into::into).collect();
         let mut mappers: Vec<Box<dyn for<'a> Mapper<'a>>> = Vec::new();
 
         // TODO: Remove this for loop
@@ -110,10 +109,7 @@ impl Database {
             mappers: Box::from(mappers),
         };
 
-        Ok(QueryResults {
-            attributes,
-            results: Cell::new(Box::new(results)),
-        })
+        Ok(results.into())
     }
 
     fn execute_plan_immediate(&self, plan: Plan) -> Result<QueryResults> {
@@ -281,6 +277,21 @@ impl ResultIter {
             Some(output.into_raw())
         } else {
             None
+        }
+    }
+}
+
+impl From<ResultIter> for QueryResults {
+    fn from(value: ResultIter) -> Self {
+        let attributes = if let Some(last_mapper) = value.mappers.last() {
+            last_mapper.attributes_after().iter().map(ResultAttribute::from).collect()
+        } else {
+            value.source.borrow().attributes().map(ResultAttribute::from).collect()
+        };
+
+        QueryResults {
+            attributes,
+            results: Cell::new(Box::new(value)),
         }
     }
 }

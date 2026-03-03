@@ -119,6 +119,7 @@ pub(crate) enum Source {
 
 impl Source {
     pub fn attributes(&self) -> Vec<Attribute> {
+        // FIXME: `obj.borrow()` as fail if the same object is alreay open for writing
         match &self {
             Self::Tuple(values) => values.keys().cloned().collect(),
             Self::TableScan(obj) => obj.borrow().attributes().cloned().collect(),

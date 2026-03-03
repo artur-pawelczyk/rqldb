@@ -30,7 +30,7 @@ impl Interpreter {
     }
 
     pub fn handle_line(&self, input: &str, output: &mut impl OutputHandler) -> Result<(), Box<dyn Error>> {
-        match dbg!(self.read_command(input)) {
+        match self.read_command(input) {
             Command::Define(args) => {
                 let command = parse_definition(args)?;
                 self.db.borrow_mut().define(&command)?;
