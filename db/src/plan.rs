@@ -16,6 +16,7 @@ use crate::schema::Type;
 use crate::tuple::Tuple;
 
 use core::fmt;
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -178,8 +179,9 @@ impl<'a> From<&'a dsl::Mapper<'a>> for QueryMapper<'a> {
         match mapper.function {
             "set" => {
                 match &mapper.args[..] {
-                    [attr, value] => Self::Set(attr, value),
-                    _ => panic!(),
+                    [attr, Cow::Borrowed("="), value] => Self::Set(attr, value),
+                    // TODO: Return an error instead of an empty mapper
+                    _ => Self::Noop,
                 }
             },
             _ => Self::Noop,

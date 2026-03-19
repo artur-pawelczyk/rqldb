@@ -1,4 +1,4 @@
-.define relation document id::NUMBER content::TEXT type::NUMBER
+.define relation document id::NUMBER::KEY content::TEXT type::NUMBER
 .define relation type id::NUMBER name::TEXT
 
 # Insert tuples into "type" relation

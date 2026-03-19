@@ -57,15 +57,25 @@ impl<'a> Query<'a> {
         self
     }
 
+    // TODO: args sould be [impl Encode]
     pub fn apply(mut self, function: &'a str, args: &[&'a str]) -> Self {
         self.finisher = Finisher::Apply(function, args.to_vec());
+        self
+    }
+
+    // TODO: args sould be [impl Encode]
+    pub fn map(mut self, function: &'a str, args: &[&'a str]) -> Self {
+        self.mappers.push(Mapper {
+            function,
+            args: args.iter().map(|a| Cow::from(*a)).collect(),
+        });
         self
     }
 
     pub fn set(mut self, attr: &'a str, value: impl Encode<'a>) -> Self {
         self.mappers.push(Mapper {
             function: "set",
-            args: Box::from([attr.into(), value.encode()]),
+            args: Box::from([attr.into(), "=".into(), value.encode()]),
         });
         self
     }
@@ -569,7 +579,7 @@ mod tests {
     #[test]
     fn map_set() {
         let query = Query::scan("example").set("example.name", "new name");
-        assert_eq!(query.to_string(), "scan example | map set example.name \"new name\"");
+        assert_eq!(query.to_string(), "scan example | map set example.name = \"new name\"");
     }
 
     #[test]

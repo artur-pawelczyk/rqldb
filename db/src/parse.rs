@@ -32,7 +32,7 @@ impl fmt::Display for ParseError {
         match self {
             Self::Msg(msg, pos) => write!(f, "{msg} at {pos}"),
             Self::UnexpectedToken(actual, expected, pos) if expected.is_empty() => write!(f, "Unexpected token {actual} at {pos}"),
-            Self::UnexpectedToken(actual, expected, pos) => write!(f, "Expected {actual}, got {expected} at {pos}"),
+            Self::UnexpectedToken(actual, expected, pos) => write!(f, "Expected {expected}, got {actual} at {pos}"),
         }
     }
 }
@@ -76,6 +76,12 @@ pub fn parse_query(query_str: &str) -> Result<Query<'_>, ParseError> {
                     let function = read_symbol(tokenizer.next()?)?;
                     let args = read_list(&mut tokenizer)?;
                     query = query.apply(function, &args);
+
+                }
+                "map" => {
+                    let function = read_symbol(tokenizer.next()?)?;
+                    let args = read_list(&mut tokenizer)?;
+                    query = query.map(function, &args);
                 }
                 "count" => {
                     check_if_end(tokenizer.next()?)?;
@@ -204,7 +210,7 @@ fn read_list<'a>(tokenizer: &mut Tokenizer<'a>) -> Result<Vec<&'a str>, ParseErr
             Token::End(_) => break,
             Token::SymbolWithType(_, _, _) => return Err(ParseError::from(token).expected("typed field")),
             Token::SymbolWithKeyType(_, _, _) => return Err(ParseError::from(token).expected("typed field")),
-            Token::Op(_, _) => todo!(),
+            Token::Op(op, _) => values.push(op),
         }
     }
 
@@ -303,6 +309,7 @@ mod tests {
         assert_parse!("scan example | count");
         assert_parse!("scan_index example.id = 1");
         assert_parse!("scan example | apply sum example.n");
+        assert_parse!("scan example | map set example.n = 1");
     }
 
     #[test]
