@@ -30,7 +30,7 @@ impl Interpreter {
     }
 
     pub fn handle_line(&self, input: &str, output: &mut impl OutputHandler) -> Result<(), Box<dyn Error>> {
-        match self.read_command(input) {
+        match self.read_command(input)? {
             Command::Define(args) => {
                 let command = parse_definition(args)?;
                 self.db.borrow_mut().define(&command)?;
@@ -71,24 +71,27 @@ impl Interpreter {
         self.db.borrow()
     }
 
-    fn read_command<'a>(&self, input: &'a str) -> Command<'a> {
+    fn read_command<'a>(&self, input: &'a str) -> Result<Command<'a>, CommandError> {
         if input.is_empty() || input.chars().next() == Some('#') {
-            Command::Empty
+            Ok(Command::Empty)
         } else if input.chars().next() == Some('.') {
             let mut words = Words(input);
-            let cmd = words.next().unwrap();
+            let cmd = match words.next() {
+                Some(cmd) => cmd,
+                None => return Ok(Command::Empty),
+            };
 
             match cmd {
-                ".define" => Command::Define(words.rest().trim()),
-                ".delete" => Command::Delete(words.rest().trim()),
+                ".define" => Ok(Command::Define(words.rest().trim())),
+                ".delete" => Ok(Command::Delete(words.rest().trim())),
                 ".insert" => {
-                    let target = words.next().unwrap(); // TODO: Return 'Result'
-                    Command::Insert(target, words.rest().trim())
+                    let target = words.next().ok_or(CommandError)?;
+                    Ok(Command::Insert(target, words.rest().trim()))
                 },
-                _ => Command::Custom(&input[1..]),
+                _ => Ok(Command::Custom(&input[1..])),
             }
         } else {
-            Command::Query(input)
+            Ok(Command::Query(input))
         }
     }
 }
@@ -163,6 +166,17 @@ impl<'a> Iterator for Words<'a> {
 impl<'a> Words<'a> {
     fn rest(&self) -> &'a str {
         self.0
+    }
+}
+
+#[derive(Debug)]
+struct CommandError;
+impl std::error::Error for CommandError {
+}
+
+impl fmt::Display for CommandError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "command error")
     }
 }
 
