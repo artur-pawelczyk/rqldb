@@ -86,7 +86,12 @@ impl Interpreter {
                 ".delete" => Ok(Command::Delete(words.rest().trim())),
                 ".insert" => {
                     let target = words.next().ok_or(CommandError)?;
-                    Ok(Command::Insert(target, words.rest().trim()))
+                    let dir_symbol = words.next().ok_or(CommandError)?;
+                    if dir_symbol == "<" {
+                        Ok(Command::Insert(target, words.rest().trim()))
+                    } else {
+                        Err(CommandError)
+                    }
                 },
                 _ => Ok(Command::Custom(&input[1..])),
             }
@@ -212,6 +217,22 @@ mod tests {
 
         assert!(handler.custom_commands.is_empty());
         assert!(handler.results.is_empty());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_insert_command() -> Result<(), Box<dyn Error>> {
+        let db = Dataset::default()
+            .add(fixture::Document::empty())
+            .generate(Database::default());
+        let interpreter = Interpreter::with_database(db);
+        let mut handler = MockOutputHandler::default();
+
+        let result = interpreter.handle_line(".insert document < tuple id = 1 content = something", &mut handler);
+        dbg!(&result);
+
+        assert!(result.is_ok());
 
         Ok(())
     }
