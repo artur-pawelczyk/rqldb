@@ -12,7 +12,7 @@ pub(crate) enum ObjectView<'a> {
 impl<'a> From<&'a Source> for ObjectView<'a> {
     fn from(source: &'a Source) -> Self {
         match source {
-            Source::TableScan(obj) => {
+            Source::Scan(obj) => {
                 ObjectView::Ref(obj.borrow())
             },
             Source::Tuple(values_map) => {

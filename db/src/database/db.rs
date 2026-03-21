@@ -57,7 +57,7 @@ impl Database {
 
         drop(source);
         let mut object = match &plan.source {
-            Source::TableScan(obj) => obj.borrow_mut(),
+            Source::Scan(obj) => obj.borrow_mut(),
             Source::IndexScan(obj, _) => obj.borrow_mut(),
             _ => { return Err(format!("Cannot execute delete for this type of query").into()); }
         };
@@ -75,7 +75,7 @@ impl Database {
         let ids = ObjectView::from(&plan.source).iter().map(|t| t.id()).collect::<VecDeque<_>>();
 
         let source = match &plan.source {
-            Source::TableScan(obj) => Rc::clone(obj),
+            Source::Scan(obj) => Rc::clone(obj),
             Source::IndexScan(obj, _) => Rc::clone(obj),
             s => todo!("{}", s),
         };

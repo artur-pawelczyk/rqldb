@@ -111,7 +111,7 @@ impl Join {
 
 #[derive(Default)]
 pub(crate) enum Source {
-    TableScan(SharedObject), // TODO: Rename to 'RelationScan'
+    Scan(SharedObject), // TODO: Rename to 'RelationScan'
     Tuple(BTreeMap<Attribute, String>),
     IndexScan(SharedObject, Vec<u8>),
     #[default]
@@ -123,7 +123,7 @@ impl Source {
         // FIXME: `obj.borrow()` as fail if the same object is alreay open for writing
         match &self {
             Self::Tuple(values) => values.keys().cloned().collect(),
-            Self::TableScan(obj) => obj.borrow().attributes().cloned().collect(),
+            Self::Scan(obj) => obj.borrow().attributes().cloned().collect(),
             Self::IndexScan(obj, _) => obj.borrow().attributes().cloned().collect(),
             _ => vec![]
         }
@@ -133,7 +133,7 @@ impl Source {
 impl fmt::Display for Source {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::TableScan(o) => write!(f, "TableScan({})", o.borrow().id()),
+            Self::Scan(o) => write!(f, "TableScan({})", o.borrow().id()),
             Self::Tuple(m) => write!(f, "Tuple({})", m.len()),
             Self::IndexScan(o, key) => write!(f, "IndexScan({}, {})", o.borrow().id(), key.len()),
             Self::Nil => write!(f, "Nil"),
@@ -195,7 +195,7 @@ fn compute_query_mappers<'q>(query: &'q dsl::Query) -> impl Iterator<Item = Quer
 
 impl Source {
     fn scan_table(obj: &SharedObject) -> Self {
-        Source::TableScan(Rc::clone(obj))
+        Source::Scan(Rc::clone(obj))
     }
 
     fn from_map(map: &HashMap<&str, (Type, &str)>) -> Self {
