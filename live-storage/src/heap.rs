@@ -54,7 +54,7 @@ mod tests {
     }
 
     fn temp_heap_file() -> io::Result<PathBuf> {
-        let mut heap_file = tempfile::tempdir()?.into_path();
+        let mut heap_file = tempfile::tempdir()?.keep();
         heap_file.push("object");
         Ok(heap_file)
     }

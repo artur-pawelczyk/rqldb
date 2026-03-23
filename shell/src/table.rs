@@ -14,22 +14,20 @@ impl Table {
         }
     }
 
-    #[allow(dead_code)]
-    fn title(&self) -> Title {
-        Title{ table: self }
+    fn title(&self) -> Title<'_> {
+        Title { table: self }
     }
 
     pub(crate) fn add_title_cell(&mut self, name: &str) {
         self.columns.push(Column::new(name));
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn row(&mut self) -> TempRow {
+    pub(crate) fn row(&mut self) -> TempRow<'_> {
         TempRow{ table: self, row: Vec::new() }
     }
 
-    #[allow(dead_code)]
-    fn rows(&self) -> Vec<Row> {
+    #[cfg(test)]
+    fn rows(&self) -> Vec<Row<'_>> {
         self.rows.iter().map(|row| Row{ row, table: self }).collect()
     }
 }
@@ -106,11 +104,13 @@ impl<'a> TempRow<'a> {
     }
 }
 
+#[cfg(test)]
 struct Row<'a> {
     table: &'a Table,
     row: &'a [String],
 }
 
+#[cfg(test)]
 impl<'a> Display for Row<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let len = self.row.len();

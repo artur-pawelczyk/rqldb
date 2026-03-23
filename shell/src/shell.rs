@@ -106,7 +106,7 @@ impl Shell {
         }
     }
 
-    fn database(&self) -> Ref<Database> {
+    fn database(&self) -> Ref<'_, Database> {
         self.interpreter.database()
     }
 

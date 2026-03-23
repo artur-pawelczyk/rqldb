@@ -414,7 +414,6 @@ impl<'a> Insert<'a, ()> {
         Self { target, contents: () }
     }
 
-    #[deprecated]
     pub fn tuple<T: Into<Query<'a>>>(self, tuple: T) -> Insert<'a>
     where T: IntoTuple<'a>,
     {
