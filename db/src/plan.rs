@@ -111,7 +111,7 @@ impl Join {
 
 #[derive(Default)]
 pub(crate) enum Source {
-    Scan(SharedObject), // TODO: Rename to 'RelationScan'
+    Scan(SharedObject),
     Tuple(BTreeMap<Attribute, String>),
     IndexScan(SharedObject, Vec<u8>),
     #[default]

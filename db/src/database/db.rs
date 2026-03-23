@@ -261,18 +261,6 @@ impl ResultIter {
             output = mapper.apply(output)?;
         }
 
-        // TODO: Use mappers for joins
-        // for join in &self.joins {
-        //     let key = tuple.element(join.joinee_key());
-        //     if let Some(join_tuple) = join.source_object()
-        //         .borrow().iter()
-        //         .find(|join_tuple| join_tuple.element(join.joiner_key()) == key) {
-        //             output.extend(join_tuple.raw_bytes());
-        //         } else {
-        //             return None;
-        //         }
-        // }
-
         if test_filters(&self.filters, &output) {
             Some(output.into_raw())
         } else {
