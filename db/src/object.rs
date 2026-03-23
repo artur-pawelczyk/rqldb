@@ -187,7 +187,7 @@ impl IndexedObject {
     pub(crate) fn vaccum(&mut self) {
         let old_heap = std::mem::take(&mut self.pages);
         for tuple in old_heap.tuples() {
-            self.pages.push(&tuple.contents());
+            self.pages.push(tuple.contents());
         }
 
         self.reindex();

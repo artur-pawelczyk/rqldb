@@ -13,7 +13,7 @@ pub(crate) fn dump_create(rel: &Relation) -> Definition {
     })
 }
 
-pub(crate) fn dump_values<'a>(rel: &str, values: QueryResults, writer: &mut impl fmt::Write) {
+pub(crate) fn dump_values(rel: &str, values: QueryResults, writer: &mut impl fmt::Write) {
     for tuple in values.tuples() {
         let mut map = BTreeMap::new();
         for attr in tuple.attributes() {

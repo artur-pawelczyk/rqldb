@@ -114,7 +114,7 @@ pub struct Element<'a> {
 
 impl<'a> Element<'a> {
     pub fn as_bytes(&self) -> &[u8] {
-        &self.contents
+        self.contents
     }
 
     pub fn len(&self) -> usize {
@@ -179,7 +179,7 @@ impl TryFrom<&Element<'_>> for i32 {
 
     fn try_from(value: &Element) -> Result<Self, Self::Error> {
         if value.kind == Type::NUMBER {
-            let bytes: [u8; 4] = slice_to_array(&value.contents)?;
+            let bytes: [u8; 4] = slice_to_array(value.contents)?;
             Ok(i32::from_be_bytes(bytes))
         } else {
             Err(())

@@ -47,7 +47,7 @@ impl Database {
     }
 
     pub fn delete(&self, cmd: &dsl::Delete) -> Result<()> {
-        let plan = compute_plan(&self, &cmd.0)?;
+        let plan = compute_plan(self, &cmd.0)?;
         let source = ObjectView::from(&plan.source);
 
         let ids = source.iter()
@@ -59,7 +59,7 @@ impl Database {
         let mut object = match &plan.source {
             Source::Scan(obj) => obj.borrow_mut(),
             Source::IndexScan(obj, _) => obj.borrow_mut(),
-            _ => { return Err(format!("Cannot execute delete for this type of query").into()); }
+            _ => { return Err("Cannot execute delete for this type of query".into()); }
         };
 
         object.remove_tuples(&ids);
@@ -166,7 +166,7 @@ impl Database {
 
     pub fn read_object(&mut self, id: ObjectId, r: impl io::Read) -> Result<()> {
         let obj = self.objects.get(id as usize).ok_or_else(|| format!("No such object: {id}"))?;
-        obj.borrow_mut().read(r).map_err(|_| format!("IO error"))?;
+        obj.borrow_mut().read(r).map_err(|_| "IO error")?;
         Ok(())
     }
 

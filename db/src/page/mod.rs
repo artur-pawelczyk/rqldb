@@ -64,7 +64,7 @@ impl TryFrom<&[u8]> for LinePointer {
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         let a = read_u16(value);
-        let b = read_u16(&value.index(size_of::<LpIndex>()..));
+        let b = read_u16(value.index(size_of::<LpIndex>()..));
         Ok(Self(a, b))
     }
 }
@@ -124,7 +124,7 @@ impl<'a> PageMut<'a> {
     }
 
     fn line_pointers(&'a self) -> impl Iterator<Item = LinePointer> + 'a {
-        let lp_count = read_u32(&self.contents);
+        let lp_count = read_u32(self.contents);
         let lp_end = lp_count as usize * LinePointer::self_size() + LP_COUNT.len();
         debug_assert!(lp_count < 1024);
         LinePointerIter(&self.contents[4..lp_end])

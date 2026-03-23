@@ -84,4 +84,4 @@ impl Generator {
     }
 }
 
-const LETTERS: &'static str = "abcdefgh";
+const LETTERS: &str = "abcdefgh";

@@ -99,7 +99,7 @@ pub fn parse_query(query_str: &str) -> Result<Query<'_>, ParseError> {
 }
 
 pub fn parse_delete(query_str: &str) -> Result<Delete<'_>, ParseError> {
-    parse_query(query_str).map(|q| Delete(q))
+    parse_query(query_str).map(Delete)
 }
 
 fn check_if_end(token: Token) -> Result<(), ParseError> {

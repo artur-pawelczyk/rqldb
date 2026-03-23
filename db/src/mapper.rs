@@ -71,7 +71,7 @@ impl<'a> Mapper<'a> for AppendMapper<'a> {
     }
 
     fn attributes_after(&self) -> Vec<Attribute> {
-        self.attributes_after.iter().cloned().collect()
+        self.attributes_after.to_vec()
     }
 }
 
@@ -101,7 +101,7 @@ impl<'a> Mapper<'a> for JoinMapper {
     }
 
     fn attributes_after(&self) -> Vec<Attribute> {
-        self.attributes_after.iter().cloned().collect()
+        self.attributes_after.to_vec()
     }
 }
 
@@ -115,7 +115,7 @@ impl<'a> Mapper<'a> for NoopMapper {
     }
 
     fn attributes_after(&self) -> Vec<Attribute> {
-        self.0.iter().cloned().collect()
+        self.0.to_vec()
     }
 }
 
@@ -135,7 +135,7 @@ impl<'a> Mapper<'a> for SetMapper {
     }
 
     fn attributes_after(&self) -> Vec<Attribute> {
-        self.attributes_after.iter().cloned().collect()
+        self.attributes_after.to_vec()
     }
 }
 

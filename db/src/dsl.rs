@@ -341,10 +341,7 @@ pub enum Finisher<'a> {
 
 impl Finisher<'_> {
     fn is_default(&self) -> bool {
-        match self {
-            Self::AllColumns => true,
-            _ => false,
-        }
+        matches!(self, Self::AllColumns)
     }
 }
 
@@ -414,8 +411,8 @@ impl<'a> Insert<'a, ()> {
         Self { target, contents: () }
     }
 
-    pub fn tuple<T: Into<Query<'a>>>(self, tuple: T) -> Insert<'a>
-    where T: IntoTuple<'a>,
+    pub fn tuple<T>(self, tuple: T) -> Insert<'a>
+    where T: IntoTuple<'a>, T: Into<Query<'a>>,
     {
         Insert { contents: tuple.into(), target: self.target }
     }
@@ -464,7 +461,7 @@ impl<'a> From<Vec<TupleAttr<'a>>> for Query<'a> {
 
 impl<'a> From<TupleBuilder<'a>> for Query<'a> {
     fn from(builder: TupleBuilder<'a>) -> Self {
-        Query::from(builder.build())
+        builder.build()
     }
 }
 

@@ -150,7 +150,7 @@ impl<'a> Element<'a> {
     }
 
     pub(crate) fn name(&self) -> &str {
-        &self.name
+        self.name
     }
 }
 

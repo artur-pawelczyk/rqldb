@@ -5,22 +5,22 @@ use crate::{object::ObjectId, page::BlockId, schema::Relation, Database};
 type EventResult = Result<(), Box<dyn Error>>;
 
 pub trait EventSource {
-    fn on_define_relation(&mut self, handler: impl Fn(&Self, &Relation) -> () + 'static);
-    fn on_add_tuple(&mut self, handler: impl Fn(ObjectId, &[u8]) -> () + 'static);
-    fn on_delete_tuple(&mut self, handler: impl Fn(u32) -> () + 'static);
+    fn on_define_relation(&mut self, handler: impl Fn(&Self, &Relation) + 'static);
+    fn on_add_tuple(&mut self, handler: impl Fn(ObjectId, &[u8]) + 'static);
+    fn on_delete_tuple(&mut self, handler: impl Fn(u32) + 'static);
     fn on_page_modified(&mut self, handler: impl Fn(ObjectId, BlockId, &[u8]) -> EventResult + 'static);
 }
 
 impl EventSource for Database {
-    fn on_define_relation(&mut self, handler: impl Fn(&Self, &Relation) -> () + 'static) {
+    fn on_define_relation(&mut self, handler: impl Fn(&Self, &Relation) + 'static) {
         self.handler.borrow_mut().on_def_relation = Some(Box::new(handler));
     }
 
-    fn on_add_tuple(&mut self, handler: impl Fn(ObjectId, &[u8]) -> () + 'static) {
+    fn on_add_tuple(&mut self, handler: impl Fn(ObjectId, &[u8]) + 'static) {
         self.handler.borrow_mut().on_add_tuple = Some(Box::new(handler));
     }
 
-    fn on_delete_tuple(&mut self, handler: impl Fn(u32) -> () + 'static) {
+    fn on_delete_tuple(&mut self, handler: impl Fn(u32) + 'static) {
         self.handler.borrow_mut().on_delete_tuple = Some(Box::new(handler));
     }
 
@@ -31,23 +31,29 @@ impl EventSource for Database {
 
 #[derive(Default)]
 pub(crate) struct EventHandler {
-    on_def_relation: Option<Box<dyn Fn(&Database, &Relation) -> ()>>,
-    on_add_tuple: Option<Box<dyn Fn(ObjectId, &[u8]) -> ()>>,
-    on_delete_tuple: Option<Box<dyn Fn(u32) -> ()>>,
+    on_def_relation: Option<Box<dyn Fn(&Database, &Relation)>>,
+    on_add_tuple: Option<Box<dyn Fn(ObjectId, &[u8])>>,
+    on_delete_tuple: Option<Box<dyn Fn(u32)>>,
     on_page_modified: Option<Box<dyn Fn(ObjectId, BlockId, &[u8]) -> EventResult>>,
 }
 
 impl EventHandler {
     pub(crate) fn emit_define_relation(&self, db: &Database, rel: &Relation) {
-        self.on_def_relation.as_ref().map(|h| h(db, rel));
+        if let Some(h) = self.on_def_relation.as_ref() {
+            h(db, rel);
+        }
     }
 
     pub(crate) fn emit_add_tuple(&self, obj: ObjectId, bytes: &[u8]) {
-        self.on_add_tuple.as_ref().map(|h| h(obj, bytes));
+        if let Some(h) = self.on_add_tuple.as_ref() {
+            h(obj, bytes);
+        }
     }
 
     pub(crate) fn emit_delete_tuple(&self, tid: u32) {
-        self.on_delete_tuple.as_ref().map(|h| h(tid));
+        if let Some(h) = self.on_delete_tuple.as_ref() {
+            h(tid);
+        }
     }
 
     pub(crate) fn emit_page_modified(&self, obj: ObjectId, block: BlockId, page: &[u8]) {
