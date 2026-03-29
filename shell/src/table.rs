@@ -3,7 +3,7 @@ use std::fmt;
 
 pub(crate) struct Table {
     columns: Vec<Column>,
-    rows: Vec<Vec<String>>,
+    rows: Vec<Box<str>>,
 }
 
 impl Table {
@@ -26,9 +26,16 @@ impl Table {
         TempRow{ table: self, row: Vec::new() }
     }
 
+    fn width(&self) -> usize {
+        self.columns.len()
+    }
+
     #[cfg(test)]
     fn rows(&self) -> Vec<Row<'_>> {
-        self.rows.iter().map(|row| Row{ row, table: self }).collect()
+        self.rows
+            .chunks(self.width())
+            .map(|row| Row { row: row.as_ref(), table: self })
+            .collect()
     }
 }
 
@@ -45,7 +52,7 @@ impl Display for Table {
             }
         }
 
-        for row in &self.rows {
+        for row in self.rows.chunks(self.width()) {
             writeln!(f)?;
             for (column, cell) in zip(self.columns.iter(), row.iter()) {
                 let padding = column.width - 1;
@@ -86,12 +93,12 @@ impl Display for Column {
 
 pub(crate) struct TempRow<'a> {
     table: &'a mut Table,
-    row: Vec<String>,
+    row: Vec<Box<str>>,
 }
 
 impl<'a> TempRow<'a> {
-    pub(crate) fn cell(mut self, content: impl Display) -> Self {
-        self.row.push(content.to_string());
+    pub(crate) fn cell(mut self, content: impl ToString) -> Self {
+        self.row.push(content.to_string().into());
         self
     }
 
@@ -100,14 +107,14 @@ impl<'a> TempRow<'a> {
             col.width = max(col.width, cell.len() + 2);
         }
 
-        self.table.rows.push(self.row);
+        self.table.rows.extend(self.row);
     }
 }
 
 #[cfg(test)]
 struct Row<'a> {
     table: &'a Table,
-    row: &'a [String],
+    row: &'a [Box<str>],
 }
 
 #[cfg(test)]
@@ -158,18 +165,21 @@ mod tests {
     }
 
     #[test]
-    fn test_single_row() {
+    fn test_simple_table() {
         let mut table = Table::new();
         table.add_title_cell("123");
         table.add_title_cell("123");
 
         table.row().cell("a".to_string()).cell("b".to_string()).add();
-        assert_eq!(table.rows().get(0).unwrap().to_string(), "| a   | b   |");
+        table.row().cell("c".to_string()).cell("d".to_string()).add();
 
+        assert_eq!(table.rows().get(0).unwrap().to_string(), "| a   | b   |");
+        assert_eq!(table.rows().get(1).unwrap().to_string(), "| c   | d   |");
         assert_eq!(table.to_string(),
                    "| 123 | 123 |\n\
                     |-----|-----|\n\
-                    | a   | b   |");
+                    | a   | b   |\n\
+                    | c   | d   |");
     }
 
     #[test]
