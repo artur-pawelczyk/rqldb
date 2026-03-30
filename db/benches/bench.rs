@@ -51,7 +51,7 @@ fn benchmark_delete(c: &mut Criterion) {
     }
 
     c.bench_function("delete", |b| {
-        b.iter_batched(|| prepare_db(), |db| {
+        b.iter_batched(prepare_db, |db| {
             db.delete(&Query::scan("document").delete()).unwrap();
         }, criterion::BatchSize::PerIteration);
     });

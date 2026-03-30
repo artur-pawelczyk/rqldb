@@ -82,6 +82,7 @@ impl fmt::Display for PageError {
 
 impl std::error::Error for PageError {}
 
+#[derive(Default)]
 struct Header {
     deleted: bool,
 }
@@ -94,12 +95,6 @@ impl Header {
     fn write(&self, out: &mut [u8]) {
         let deleted: u8 = if self.deleted { 1 } else { 0 };
         out[..Self::size()].copy_from_slice(&[deleted]);
-    }
-}
-
-impl Default for Header {
-    fn default() -> Self {
-        Self { deleted: false }
     }
 }
 
@@ -163,8 +158,7 @@ impl<'a> PageMut<'a> {
         }
 
         let lp = lp.unwrap();
-        let mut header = Header::default();
-        header.deleted = true;
+        let header = Header { deleted: true };
         let tuple = &mut self.contents[lp];
         header.write(&mut tuple[0..Header::size()]);
     }
@@ -245,7 +239,7 @@ impl<'a> RawTuple<'a> {
     }
 
     fn is_deleted(&self) -> bool {
-        if self.contents[0] == 0 { false } else { true }
+        self.contents[0] != 0
     }
 }
 

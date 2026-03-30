@@ -264,7 +264,7 @@ impl QueryResults {
         match order {
             SortOrder::SmallestFirst => Ok(Self {
                 attributes: self.attributes,
-                results: Cell::new(Box::new(sorted_contents.into_iter().map(|(_, v)| v))),
+                results: Cell::new(Box::new(sorted_contents.into_values())),
             }),
             SortOrder::LargestFirst => Ok(Self {
                 attributes: self.attributes,

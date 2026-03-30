@@ -6,7 +6,7 @@ use rqldb_live_storage::LiveStorage;
 fn main() {
     let mut db = db_dir_argument()
         .map(|p| LiveStorage::new(&p).create_db().unwrap())
-        .unwrap_or(Database::default());
+        .unwrap_or_default();
 
     if db.schema().find_relation("document").is_none() {
         db.define(&Definition::relation("document")

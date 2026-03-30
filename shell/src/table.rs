@@ -34,7 +34,7 @@ impl Table {
     fn rows(&self) -> Vec<Row<'_>> {
         self.rows
             .chunks(self.width())
-            .map(|row| Row { row: row.as_ref(), table: self })
+            .map(|row| Row { row, table: self })
             .collect()
     }
 }

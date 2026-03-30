@@ -12,7 +12,7 @@ pub(crate) fn read_schema<R: Read>(reader: R) -> Result<Vec<Table>, Error> {
         let name = rel_doc.get_str("name")?.to_string();
         let mut columns = Vec::new();
         for col in rel_doc.get_array("columns")? {
-            let col_doc = col.as_document().ok_or(Error::UnexpectedValueError)?;
+            let col_doc = col.as_document().ok_or(Error::UnexpectedValue)?;
             let name = col_doc.get_str("name")?;
             let kind = col_doc.get_str("kind")?.parse().unwrap();
             let indexed = col_doc.get_bool("indexed")?;
@@ -69,10 +69,10 @@ pub(crate) struct Column {
 
 #[derive(Debug)]
 pub(crate) enum Error {
-    IOError(io::Error),
-    SerializationError(Box<dyn std::error::Error>),
-    DeserializationError(Box<dyn std::error::Error>),
-    UnexpectedValueError,
+    IO(io::Error),
+    Serialization(Box<dyn std::error::Error>),
+    Deserialization(Box<dyn std::error::Error>),
+    UnexpectedValue,
 }
 
 impl std::error::Error for Error {}
@@ -80,34 +80,34 @@ impl std::error::Error for Error {}
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::IOError(e) => write!(f, "{e}"),
-            Self::SerializationError(e) => write!(f, "Serialization error: {e}"),
-            Self::DeserializationError(e) => write!(f, "Deserialization error: {e}"),
-            Self::UnexpectedValueError => write!(f, "Unexpected value while deserializing schema"),
+            Self::IO(e) => write!(f, "{e}"),
+            Self::Serialization(e) => write!(f, "Serialization error: {e}"),
+            Self::Deserialization(e) => write!(f, "Deserialization error: {e}"),
+            Self::UnexpectedValue => write!(f, "Unexpected value while deserializing schema"),
         }
     }
 }
 
 impl From<io::Error> for Error {
     fn from(e: io::Error) -> Error {
-        Error::IOError(e)
+        Error::IO(e)
     }
 }
 
 impl From<bson::ser::Error> for Error {
     fn from(e: bson::ser::Error) -> Self {
-        Self::SerializationError(Box::new(e))
+        Self::Serialization(Box::new(e))
     }
 }
 
 impl From<bson::de::Error> for Error {
     fn from(e: bson::de::Error) -> Self {
-        Self::DeserializationError(Box::new(e))
+        Self::Deserialization(Box::new(e))
     }
 }
 
 impl From<bson::document::ValueAccessError> for Error {
     fn from(e: bson::document::ValueAccessError) -> Self {
-        Self::DeserializationError(Box::new(e))
+        Self::Deserialization(Box::new(e))
     }
 }

@@ -20,7 +20,9 @@ impl Database {
         );
 
         let rel_id = relation.id;
-        self.schema().find_relation(rel_id).map(|r| self.handler.borrow().emit_define_relation(self, r));
+        if let Some(r) = self.schema().find_relation(rel_id) {
+            self.handler.borrow().emit_define_relation(self, r);
+        }
 
         Ok(())
     }

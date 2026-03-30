@@ -162,7 +162,7 @@ fn read_sort_args(args: &str) -> Option<(Box<str>, SortOrder)> {
 fn maybe_read_command(input: &str) -> Option<(&str, &str)> {
     if !input.is_empty() {
         if let Some(cmd_end) = input.char_indices().find(|(_, c)| c.is_ascii_whitespace()).map(|(i, _)| i) {
-            Some((&input[..cmd_end], &input[cmd_end..].trim()))
+            Some((&input[..cmd_end], input[cmd_end..].trim()))
         } else {
             Some((input, ""))
         }

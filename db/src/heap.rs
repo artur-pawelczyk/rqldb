@@ -60,7 +60,7 @@ impl Heap {
 
     pub(crate) fn read(&mut self, mut r: impl io::Read) -> io::Result<()> {
         r.read_to_end(&mut self.pages)?;
-        debug_assert!(self.pages.len() % PAGE_SIZE == 0);
+        debug_assert!(self.pages.len().is_multiple_of(PAGE_SIZE));
         Ok(())
     }
 

@@ -52,7 +52,7 @@ impl LiveStorage {
         let dir = self.dir.clone();
         db.on_page_modified(move |obj_id, block, bytes| {
             let mut path = dir.clone();
-            path.push(&obj_id.to_string());
+            path.push(obj_id.to_string());
             let mut heap = Heap::open(&path)?;
             heap.write_page(block, bytes)?;
             Ok(())

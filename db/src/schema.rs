@@ -194,17 +194,12 @@ struct InnerColumn {
     indexed: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Type {
     BYTE(u8),
     NUMBER, TEXT, BOOLEAN,
+    #[default]
     NONE
-}
-
-impl Default for Type {
-    fn default() -> Self {
-        Self::NONE
-    }
 }
 
 impl fmt::Display for Type {

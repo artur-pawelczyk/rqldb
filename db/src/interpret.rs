@@ -162,7 +162,7 @@ impl<'a> Iterator for Words<'a> {
         if word.is_empty() {
             None
         } else {
-            self.0 = &self.0[word_end..].trim_start();
+            self.0 = self.0[word_end..].trim_start();
             Some(word)
         }
     }

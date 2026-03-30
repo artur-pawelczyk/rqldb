@@ -57,11 +57,10 @@ impl EventHandler {
     }
 
     pub(crate) fn emit_page_modified(&self, obj: ObjectId, block: BlockId, page: &[u8]) {
-        self.on_page_modified.as_ref().map(|h| {
-            if let Err(e) = h(obj, block, page) {
+        if let Some(h) = self.on_page_modified.as_ref() 
+            && let Err(e) = h(obj, block, page) {
                 eprintln!("Error while emiting insert page event: {e}");
             }
-        });
     }
 }
 

@@ -262,7 +262,7 @@ fn compute_source<'query>(dsl_source: &'query dsl::Source) -> Result<QuerySource
     match dsl_source {
         dsl::Source::Tuple(values) => {
             let tuple = values.iter().map(|attr| {
-                let name = attr.name.as_ref();
+                let name = attr.name;
                 let kind = attr.kind.unwrap_or(Type::NONE);
                 let value = attr.value.as_ref();
                 (name, (kind, value))
@@ -287,7 +287,7 @@ fn compute_filters(plan: Plan, query: &dsl::Query) -> Result<Plan> {
     let attributes = plan.final_attributes();
     let mut filters = Vec::with_capacity(query.filters.len());
     for dsl_filter in &query.filters {
-        if let Some(attr) = attributes.iter().find(|attr| attr == &filter_left(dsl_filter)) {
+        if let Some(attr) = attributes.iter().find(|attr| attr == filter_left(dsl_filter)) {
             if attr.kind == Type::NONE {
                 return Err(format!("Cannot filter untyped attribute {}", attr.name()));
             }
