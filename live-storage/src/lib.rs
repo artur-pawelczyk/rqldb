@@ -4,7 +4,7 @@ mod schema;
 use std::{fs::{create_dir_all, File}, io, path::{Path, PathBuf}};
 
 use heap::Heap;
-use rqldb::{object::ObjectId, schema::Schema, Database, EventSource};
+use rqldb::{object::ObjectId, schema::Schema as DbSchema, Database, EventSource};
 use schema::{read_schema, write_schema};
 
 pub struct LiveStorage {
@@ -46,7 +46,7 @@ impl LiveStorage {
                 .open(&schema_file)
                 .unwrap();
 
-            write_schema(&mut f, db.schema()).unwrap();
+            write_schema(&mut f, db.schema().into()).unwrap();
         });
 
         let dir = self.dir.clone();
@@ -89,11 +89,11 @@ impl LiveStorage {
 }
 
 fn read_database(file: &Path) -> io::Result<Database> {
-    let mut schema = Schema::default();
-    let mut relations = read_schema(File::open(file)?).unwrap();
-    relations.sort_by_key(|x| x.id);
-    for rel in relations {
-        rel.columns.iter().fold(schema.create_table(&rel.name), |acc, col| {
+    let mut db_schema = DbSchema::default();
+    let mut schema = read_schema(File::open(file)?).unwrap();
+    schema.tables.sort_by_key(|x| x.id);
+    for rel in schema.tables {
+        rel.columns.iter().fold(db_schema.create_table(&rel.name), |acc, col| {
             if col.indexed {
                 acc.indexed_column(&col.name, col.kind)
             } else {
@@ -102,7 +102,7 @@ fn read_database(file: &Path) -> io::Result<Database> {
         }).add();
     }
 
-    Ok(Database::with_schema(schema))
+    Ok(Database::with_schema(db_schema))
 }
 
 #[cfg(test)]

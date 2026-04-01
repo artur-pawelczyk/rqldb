@@ -1,9 +1,9 @@
 use core::fmt;
 use std::io::{self, Read, Write};
 
-use rqldb::{schema::Schema, Type};
+use rqldb::{Type, schema::{Relation, Schema as DbSchema}};
 
-pub(crate) fn read_schema<R: Read>(reader: R) -> Result<Vec<Table>, Error> {
+pub(crate) fn read_schema<R: Read>(reader: R) -> Result<Schema, Error> {
     let doc = bson::Document::from_reader(reader)?;
     let mut tables = Vec::new();
 
@@ -24,22 +24,22 @@ pub(crate) fn read_schema<R: Read>(reader: R) -> Result<Vec<Table>, Error> {
     }
 
 
-    Ok(tables)
+    Ok(Schema { tables })
 }
 
-pub(crate) fn write_schema<W: Write>(writer: &mut W, schema: &Schema) -> Result<(), Error> {
+pub(crate) fn write_schema<W: Write>(writer: &mut W, schema: Schema) -> Result<(), Error> {
     let mut relations = bson::Array::new();
-    for rel in &schema.relations {
+    for rel in &schema.tables {
         let mut rel_doc = bson::Document::new();
         rel_doc.insert("id", rel.id as i64);
         rel_doc.insert("name", rel.name.as_ref());
 
         let mut col_arr = bson::Array::new();
-        for col in rel.attributes() {
+        for col in rel.columns.as_ref() {
             let mut col_doc = bson::Document::new();
-            col_doc.insert("name", col.short_name());
-            col_doc.insert("kind", col.kind().to_string());
-            col_doc.insert("indexed", col.indexed());
+            col_doc.insert("name", col.name.as_ref());
+            col_doc.insert("kind", col.kind.to_string());
+            col_doc.insert("indexed", col.indexed);
             col_arr.push(bson::Bson::Document(col_doc));
         }
 
@@ -55,10 +55,37 @@ pub(crate) fn write_schema<W: Write>(writer: &mut W, schema: &Schema) -> Result<
     Ok(())
 }
 
+pub(crate) struct Schema {
+    pub(crate) tables: Vec<Table>,
+}
+
+impl From<&DbSchema> for Schema {
+    fn from(value: &DbSchema) -> Self {
+        Self { tables: value.relations.iter().map(Into::into).collect() }
+    }
+}
+
 pub(crate) struct Table {
     pub(crate) id: usize,
     pub(crate) name: Box<str>,
     pub(crate) columns: Box<[Column]>,
+}
+
+impl From<&Relation> for Table {
+    fn from(value: &Relation) -> Self {
+        let columns = value.attributes()
+            .map(|attr| Column {
+                name: attr.short_name().into(),
+                kind: attr.kind(),
+                indexed: attr.indexed()
+            }).collect();
+
+        Self {
+            id: value.id as usize,
+            name: value.name().into(),
+            columns
+        }
+    }
 }
 
 pub(crate) struct Column {
