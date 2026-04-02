@@ -2,6 +2,7 @@ use core::fmt;
 use std::io::{self, Read, Write};
 
 use rqldb::{Type, schema::{Relation, Schema as DbSchema}};
+use serde::Serialize;
 
 pub(crate) fn read_schema<R: Read>(reader: R) -> Result<Schema, Error> {
     let doc = bson::Document::from_reader(reader)?;
@@ -55,6 +56,7 @@ pub(crate) fn write_schema<W: Write>(writer: &mut W, schema: Schema) -> Result<(
     Ok(())
 }
 
+#[derive(Serialize)]
 pub(crate) struct Schema {
     pub(crate) tables: Vec<Table>,
 }
@@ -65,6 +67,7 @@ impl From<&DbSchema> for Schema {
     }
 }
 
+#[derive(Serialize)]
 pub(crate) struct Table {
     pub(crate) id: usize,
     pub(crate) name: Box<str>,
@@ -88,6 +91,7 @@ impl From<&Relation> for Table {
     }
 }
 
+#[derive(Serialize)]
 pub(crate) struct Column {
     pub(crate) name: Box<str>,
     pub(crate) kind: Type,
@@ -97,8 +101,7 @@ pub(crate) struct Column {
 #[derive(Debug)]
 pub(crate) enum Error {
     IO(io::Error),
-    Serialization(Box<dyn std::error::Error>),
-    Deserialization(Box<dyn std::error::Error>),
+    Bson(Box<dyn std::error::Error>),
     UnexpectedValue,
 }
 
@@ -108,8 +111,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::IO(e) => write!(f, "{e}"),
-            Self::Serialization(e) => write!(f, "Serialization error: {e}"),
-            Self::Deserialization(e) => write!(f, "Deserialization error: {e}"),
+            Self::Bson(e) => write!(f, "Bson error: {e}"),
             Self::UnexpectedValue => write!(f, "Unexpected value while deserializing schema"),
         }
     }
@@ -121,20 +123,8 @@ impl From<io::Error> for Error {
     }
 }
 
-impl From<bson::ser::Error> for Error {
-    fn from(e: bson::ser::Error) -> Self {
-        Self::Serialization(Box::new(e))
-    }
-}
-
-impl From<bson::de::Error> for Error {
-    fn from(e: bson::de::Error) -> Self {
-        Self::Deserialization(Box::new(e))
-    }
-}
-
-impl From<bson::document::ValueAccessError> for Error {
-    fn from(e: bson::document::ValueAccessError) -> Self {
-        Self::Deserialization(Box::new(e))
+impl From<bson::error::Error> for Error {
+    fn from(value: bson::error::Error) -> Self {
+        Error::Bson(Box::new(value))
     }
 }

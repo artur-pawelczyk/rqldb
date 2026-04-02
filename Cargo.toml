@@ -13,3 +13,6 @@ description = "Experimental, purely relational database"
 authors = ["Artur Pawelczyk"]
 license = "MIT"
 repository = "https://github.com/artur-pawelczyk/rqldb/"
+
+[workspace.dependencies]
+serde = { version = "1.0.228", features = ["derive"] }

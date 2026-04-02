@@ -9,7 +9,8 @@ version.workspace = true
 
 [dependencies]
 rqldb = { path = "../db" }
-bson = "2.9.0"
+bson = "3.1.0"
+serde = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3.10.1"

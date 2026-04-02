@@ -1,5 +1,7 @@
 use std::{fmt, str::FromStr};
 
+use serde::Serialize;
+
 use crate::{object::Attribute, tuple::PositionalAttribute};
 
 #[derive(Default, PartialEq)]
@@ -195,6 +197,7 @@ struct InnerColumn {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Serialize)]
 pub enum Type {
     BYTE(u8),
     NUMBER, TEXT, BOOLEAN,
