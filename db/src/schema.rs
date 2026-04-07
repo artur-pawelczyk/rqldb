@@ -1,6 +1,6 @@
 use std::{fmt, str::FromStr};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{object::Attribute, tuple::PositionalAttribute};
 
@@ -197,7 +197,7 @@ struct InnerColumn {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)] // TODO: Delete the serde dependency
 pub enum Type {
     BYTE(u8),
     NUMBER, TEXT, BOOLEAN,

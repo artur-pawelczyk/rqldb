@@ -2,61 +2,23 @@ use core::fmt;
 use std::io::{self, Read, Write};
 
 use rqldb::{Type, schema::{Relation, Schema as DbSchema}};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 pub(crate) fn read_schema<R: Read>(reader: R) -> Result<Schema, Error> {
     let doc = bson::Document::from_reader(reader)?;
-    let mut tables = Vec::new();
+    let schema: Schema = bson::deserialize_from_document(doc)?;
 
-    for rel_doc in doc.get_array("relations")?.iter().flat_map(|o| o.as_document()) {
-        let id = rel_doc.get_i64("id")? as usize;
-        let name = rel_doc.get_str("name")?.to_string();
-        let mut columns = Vec::new();
-        for col in rel_doc.get_array("columns")? {
-            let col_doc = col.as_document().ok_or(Error::UnexpectedValue)?;
-            let name = col_doc.get_str("name")?;
-            let kind = col_doc.get_str("kind")?.parse().unwrap();
-            let indexed = col_doc.get_bool("indexed")?;
-
-            columns.push(Column { name: Box::from(name), kind, indexed });
-        }
-
-        tables.push(Table { id, name: Box::from(name), columns: Box::from(columns) });
-    }
-
-
-    Ok(Schema { tables })
+    Ok(schema)
 }
 
 pub(crate) fn write_schema<W: Write>(writer: &mut W, schema: Schema) -> Result<(), Error> {
-    let mut relations = bson::Array::new();
-    for rel in &schema.tables {
-        let mut rel_doc = bson::Document::new();
-        rel_doc.insert("id", rel.id as i64);
-        rel_doc.insert("name", rel.name.as_ref());
-
-        let mut col_arr = bson::Array::new();
-        for col in rel.columns.as_ref() {
-            let mut col_doc = bson::Document::new();
-            col_doc.insert("name", col.name.as_ref());
-            col_doc.insert("kind", col.kind.to_string());
-            col_doc.insert("indexed", col.indexed);
-            col_arr.push(bson::Bson::Document(col_doc));
-        }
-
-        rel_doc.insert("columns", col_arr);
-
-        relations.push(bson::Bson::Document(rel_doc));
-    }
-
-    let mut doc = bson::Document::new();
-    doc.insert("relations", relations);
-
+    let doc = bson::serialize_to_document(&schema)?;
     doc.to_writer(writer)?;
+
     Ok(())
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub(crate) struct Schema {
     pub(crate) tables: Vec<Table>,
 }
@@ -67,7 +29,7 @@ impl From<&DbSchema> for Schema {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub(crate) struct Table {
     pub(crate) id: usize,
     pub(crate) name: Box<str>,
@@ -91,7 +53,7 @@ impl From<&Relation> for Table {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub(crate) struct Column {
     pub(crate) name: Box<str>,
     pub(crate) kind: Type,
@@ -102,7 +64,6 @@ pub(crate) struct Column {
 pub(crate) enum Error {
     IO(io::Error),
     Bson(Box<dyn std::error::Error>),
-    UnexpectedValue,
 }
 
 impl std::error::Error for Error {}
@@ -112,7 +73,6 @@ impl fmt::Display for Error {
         match self {
             Self::IO(e) => write!(f, "{e}"),
             Self::Bson(e) => write!(f, "Bson error: {e}"),
-            Self::UnexpectedValue => write!(f, "Unexpected value while deserializing schema"),
         }
     }
 }
