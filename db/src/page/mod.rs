@@ -7,6 +7,8 @@ use std::{mem::size_of, ops::{Index, IndexMut, Range}};
 
 pub use tuple_id::{BlockId, TupleId};
 
+use crate::transaction::TransactionId;
+
 pub const PAGE_SIZE: usize = 8 * 1024;
 
 type LpIndex = u16;
@@ -82,31 +84,47 @@ impl fmt::Display for PageError {
 
 impl std::error::Error for PageError {}
 
-#[derive(Default)]
 struct Header {
-    deleted: bool,
+    /// Transaction that invalidated this tuple (by updating or deleting)
+    t_end: TransactionId,
+}
+
+impl Default for Header {
+    fn default() -> Self {
+        Self { t_end: TransactionId::nil() }
+    }
 }
 
 impl Header {
     const fn size() -> usize {
-        1
+        4
     }
 
     fn write(&self, out: &mut [u8]) {
-        let deleted: u8 = if self.deleted { 1 } else { 0 };
-        out[..Self::size()].copy_from_slice(&[deleted]);
+        let t_end: [u8; Header::size()] = self.t_end.into();
+        out[..t_end.len()].copy_from_slice(&t_end);
+    }
+
+    fn read(header: [u8; 4]) -> Self {
+        Self { t_end: TransactionId::from(header) }
     }
 }
 
 pub(crate) struct PageMut<'a> {
     block_id: u32,
+    transaction: TransactionId,
     pub(crate) contents: &'a mut [u8],
 }
 
 impl<'a> PageMut<'a> {
     pub(crate) fn new(block_id: u32, contents: &'a mut [u8]) -> Self {
         debug_assert!(contents.len() == PAGE_SIZE);
-        Self { block_id, contents }
+        Self { block_id, contents, transaction: TransactionId::default() }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn transaction(self, t: TransactionId) -> Self {
+        Self { transaction: t, ..self }
     }
 
     pub(crate) fn push(&mut self, b: &[u8]) -> Result<TupleId, PageError> {
@@ -158,7 +176,7 @@ impl<'a> PageMut<'a> {
         }
 
         let lp = lp.unwrap();
-        let header = Header { deleted: true };
+        let header = Header { t_end: self.transaction };
         let tuple = &mut self.contents[lp];
         header.write(&mut tuple[0..Header::size()]);
     }
@@ -169,6 +187,7 @@ pub(crate) struct Page<'a> {
     contents: &'a [u8],
     current_tuple: usize,
     tuple_count: usize,
+    transaction: TransactionId,
 }
 
 impl<'a> Page<'a> {
@@ -176,7 +195,16 @@ impl<'a> Page<'a> {
         debug_assert!(contents.len() == PAGE_SIZE);
         let tuple_count = read_u32(contents) as usize;
         let contents = &contents[LP_COUNT.len()..];
-        Self { block_id, contents, tuple_count, current_tuple: 0 }
+        Self {
+            block_id, contents, tuple_count,
+            current_tuple: 0,
+            transaction: TransactionId::default()
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn transaction(self, t: TransactionId) -> Self {
+        Self { transaction: t, ..self }
     }
 
     pub(crate) fn tuple_by_id(&self, tid: TupleId) -> RawTuple<'a> {
@@ -213,7 +241,7 @@ impl<'a> Iterator for Page<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(t) = self.next_internal() {
-            if t.is_deleted() {
+            if t.is_deleted(self.transaction) {
                 continue;
             } else {
                 return Some(t)
@@ -238,8 +266,9 @@ impl<'a> RawTuple<'a> {
         &self.contents[Header::size()..]
     }
 
-    fn is_deleted(&self) -> bool {
-        self.contents[0] != 0
+    fn is_deleted(&self, t: TransactionId) -> bool {
+        let h = Header::read(self.contents[0..Header::size()].try_into().unwrap());
+        h.t_end >= t
     }
 }
 
@@ -318,12 +347,14 @@ mod tests {
     fn test_delete_tuple_from_page() -> Result<(), Box<dyn Error>> {
         let mut buffer = [0u8; PAGE_SIZE];
         let tuple = [1, 0, 0, 0];
+        let creating_transaction = TransactionId::default();
+        let deleting_transaction = creating_transaction + 1;
 
-        let tid = PageMut::new(0, &mut buffer).push(&tuple)?;
-        PageMut::new(0, &mut buffer).push(&tuple)?;
-        PageMut::new(0, &mut buffer).delete(tid);
+        let tid = PageMut::new(0, &mut buffer).transaction(creating_transaction).push(&tuple)?;
+        PageMut::new(0, &mut buffer).transaction(creating_transaction).push(&tuple)?;
+        PageMut::new(0, &mut buffer).transaction(deleting_transaction).delete(tid);
 
-        assert_eq!(Page::new(0, &buffer).count(), 1);
+        assert_eq!(Page::new(0, &buffer).transaction(deleting_transaction).count(), 1);
 
         Ok(())
     }

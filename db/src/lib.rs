@@ -13,6 +13,7 @@ pub mod page;
 mod heap;
 pub mod interpret;
 mod mapper;
+mod transaction;
 
 #[cfg(test)]
 pub mod test;
